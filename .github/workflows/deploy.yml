@@ -37,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
-      # Verify all Python files syntax
+      # Verify Python files
       - name: Verify Python Syntax
         working-directory: ai-parser
         run: |
@@ -52,6 +52,9 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY1 }}
           script: |
             echo "===== DEPLOY START ====="
+
+            # PM2 full path
+            PM2="/root/.nvm/versions/node/v20.20.2/bin/pm2"
 
             # Move to project directory
             cd ~/ai_resume/Ai_resumeparser/ai-parser || exit 1
@@ -73,15 +76,15 @@ jobs:
 
             echo "Restarting PM2 process..."
 
-            pm2 restart ai-backend || \
-            pm2 start main.py \
+            $PM2 restart ai-backend || \
+            $PM2 start main.py \
               --name ai-backend \
               --interpreter ./venv/bin/python
 
             echo "Saving PM2..."
-            pm2 save
+            $PM2 save
 
             echo "PM2 Status:"
-            pm2 list
+            $PM2 list
 
             echo "===== DEPLOY SUCCESS ====="
