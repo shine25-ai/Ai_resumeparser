@@ -208,14 +208,14 @@ export default function Upload() {
   };
 
   return (
-    <div className="bg-[#030514] text-slate-100 min-h-screen p-6 rounded-2xl space-y-6 font-sans relative">
+    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
       {/* Title Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-100">Resume Upload & AI Extractor</h1>
+        <h1 className="text-xl font-bold text-slate-900">Resume Upload & AI Extractor</h1>
         {parsedResponse && (
           <button
             onClick={() => setShowModal(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg flex items-center gap-2"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer"
           >
             View Parsed Resume Popup
           </button>
@@ -223,22 +223,22 @@ export default function Upload() {
       </div>
 
       {/* Main Container Card Wrapper */}
-      <div className="bg-[#030514] rounded-2xl p-8 border border-slate-800 shadow-sm space-y-8">
+      <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-xs space-y-8">
         {/* Step Wizard Header */}
-        <div className="flex items-center justify-between max-w-3xl mx-auto px-4 py-2 border-b border-slate-800 pb-6">
+        <div className="flex items-center justify-between max-w-3xl mx-auto px-4 py-2 border-b border-slate-200 pb-6">
           {steps.map((step, idx) => (
             <div key={step.number} className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${step.active ? "bg-blue-600 text-white" : "bg-slate-900 text-slate-400 border border-slate-800"
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${step.active ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500 border border-slate-200"
                   }`}>
                   {step.number}
                 </span>
-                <span className={`text-xs font-bold ${step.active ? "text-blue-400" : "text-slate-400"}`}>
+                <span className={`text-xs font-bold ${step.active ? "text-indigo-600" : "text-slate-500"}`}>
                   {step.title}
                 </span>
               </div>
               {idx < steps.length - 1 && (
-                <span className="text-slate-600 mx-4 font-light text-sm">→</span>
+                <span className="text-slate-300 mx-4 font-light text-sm">→</span>
               )}
             </div>
           ))}
@@ -246,14 +246,14 @@ export default function Upload() {
 
         {/* Toast Message for Existing Email Update */}
         {toastMessage && (
-          <div className="p-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl flex items-center justify-between text-amber-300 shadow-xl backdrop-blur-md">
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-amber-700 shadow-sm">
             <div className="flex items-center gap-3">
-              <CheckCircle2 size={20} className="text-amber-400 shrink-0" />
+              <CheckCircle2 size={20} className="text-amber-600 shrink-0" />
               <p className="text-xs sm:text-sm font-semibold">{toastMessage}</p>
             </div>
             <button
               onClick={() => setToastMessage(null)}
-              className="text-amber-400 hover:text-amber-200 p-1 rounded-lg transition-colors"
+              className="text-amber-600 hover:text-amber-800 p-1 rounded-lg transition-colors cursor-pointer"
             >
               <X size={16} />
             </button>
@@ -265,7 +265,7 @@ export default function Upload() {
           {/* Left / Drag & Drop Upload Zone (2 cols) */}
           <div className="lg:col-span-2">
             <div
-              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center transition-all duration-300 ${isDragging ? "border-blue-500 bg-blue-950/20" : "border-slate-800 bg-[#030514] hover:border-blue-500/50"
+              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center transition-all duration-300 ${isDragging ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 bg-slate-50 hover:border-indigo-400"
                 }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -273,50 +273,48 @@ export default function Upload() {
             >
               {/* Cloud Icon */}
               <div className="relative mb-4 flex items-center justify-center">
-                <UploadCloud className="text-slate-600 w-24 h-24 stroke-1" />
-                <span className="absolute text-blue-500 text-xl font-bold">↑</span>
+                <UploadCloud className="text-slate-400 w-24 h-24 stroke-1" />
+                <span className="absolute text-indigo-600 text-xl font-bold">↑</span>
               </div>
 
-              <h3 className="text-base font-bold text-slate-100 mb-4">
+              <h3 className="text-base font-bold text-slate-900 mb-4">
                 Drag & Drop your resume here (PDF, DOC, DOCX)
               </h3>
 
-              <span className="text-xs text-slate-400 mb-4">or</span>
+              <span className="text-xs text-slate-500 mb-4">or</span>
 
-              <label className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm mb-6">
+              <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm mb-6">
                 Browse Files
                 <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileInput} />
               </label>
 
-              <span className="text-xs text-slate-400 mb-8">
+              <span className="text-xs text-slate-500 mb-8">
                 Supports PDF, DOC, DOCX (Max 20MB)
               </span>
 
               {/* Divider */}
               <div className="w-full flex items-center gap-4 mb-6">
-                <div className="h-px bg-slate-800 flex-1"></div>
-                <span className="text-xs text-slate-400 font-medium">or</span>
-                <div className="h-px bg-slate-800 flex-1"></div>
+                <div className="h-px bg-slate-200 flex-1"></div>
+                <span className="text-xs text-slate-500 font-medium">or</span>
+                <div className="h-px bg-slate-200 flex-1"></div>
               </div>
-
-              {/* LinkedIn Import Removed per user request */}
             </div>
 
             {/* Selected File & Actions */}
             {file && (
-              <div className="mt-4 p-4 rounded-xl border border-slate-800 bg-[#030514] flex items-center justify-between">
+              <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <FileText className="text-blue-400" size={20} />
+                  <FileText className="text-indigo-600" size={20} />
                   <div>
-                    <p className="text-xs font-bold text-slate-100">{file.name}</p>
-                    <p className="text-[11px] text-slate-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p className="text-xs font-bold text-slate-900">{file.name}</p>
+                    <p className="text-[11px] text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                   </div>
                 </div>
 
                 <button
                   onClick={handleParse}
                   disabled={isParsing}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 shadow-md"
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 shadow-md cursor-pointer"
                 >
                   {isParsing ? (
                     <>
@@ -331,26 +329,26 @@ export default function Upload() {
             )}
 
             {pollingError && (
-              <div className="mt-4 p-3 bg-red-950/30 border border-red-800/40 rounded-xl text-xs text-red-400">
+              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
                 <strong>Error:</strong> {pollingError}
               </div>
             )}
 
             {parsedResponse && (
-              <div className="mt-6 p-5 bg-[#0a0d24] border border-emerald-800/50 rounded-2xl space-y-4 shadow-lg">
+              <div className="mt-6 p-5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-4 shadow-sm">
                 {parsedResponse.is_auto_updated && (
-                  <div className="p-3 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center gap-2 font-semibold">
-                    <CheckCircle2 size={16} className="text-amber-400 shrink-0" />
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2 font-semibold">
+                    <CheckCircle2 size={16} className="text-amber-600 shrink-0" />
                     <span>{toastMessage || "This candidate profile already exists, so the resume has been updated"}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-emerald-700 flex items-center gap-2">
                     <CheckCircle2 size={16} /> Resume Uploaded & Auto Extracted Successfully!
                   </h4>
                   <button
                     onClick={() => setShowModal(true)}
-                    className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-semibold transition-all"
+                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer"
                   >
                     Open Extracted Details Popup
                   </button>
@@ -358,12 +356,12 @@ export default function Upload() {
 
                 {parsedResponse.s3_url && (
                   <div className="text-xs flex items-center gap-2">
-                    <span className="text-slate-400 font-medium">S3 Link: </span>
+                    <span className="text-slate-600 font-medium">S3 Link: </span>
                     <a
                       href={parsedResponse.s3_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-blue-400 underline hover:text-blue-300 break-all flex items-center gap-1"
+                      className="text-indigo-600 underline hover:text-indigo-800 break-all flex items-center gap-1"
                     >
                       {parsedResponse.s3_url} <ExternalLink size={12} />
                     </a>
@@ -376,23 +374,23 @@ export default function Upload() {
           {/* Right Column: Tips & Recent Uploads */}
           <div className="space-y-6">
             {/* Upload Tips Box */}
-            <div className="bg-[#030514] p-6 rounded-2xl border border-slate-800 space-y-4">
-              <h3 className="text-sm font-bold text-slate-100">Upload Tips</h3>
-              <ul className="space-y-3 text-xs text-slate-300">
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+              <h3 className="text-sm font-bold text-slate-900">Upload Tips</h3>
+              <ul className="space-y-3 text-xs text-slate-700">
                 <li className="flex items-start gap-2">
-                  <span className="text-slate-500 text-base leading-none">◇</span>
+                  <span className="text-slate-400 text-base leading-none">◇</span>
                   <span>Upload latest resume (PDF / DOC / DOCX)</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-slate-500 text-base leading-none">◇</span>
+                  <span className="text-slate-400 text-base leading-none">◇</span>
                   <span>Ensure all experience sections are clear</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-slate-500 text-base leading-none">◇</span>
+                  <span className="text-slate-400 text-base leading-none">◇</span>
                   <span>Auto extracts Skills, Projects, CTC & History</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-slate-500 text-base leading-none">◇</span>
+                  <span className="text-slate-400 text-base leading-none">◇</span>
                   <span>Max file size: 20MB</span>
                 </li>
               </ul>
@@ -405,26 +403,26 @@ export default function Upload() {
 
       {/* PARSED RESUME DETAILS POPUP MODAL */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#080c24] border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-900">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#040718]">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <CheckCircle2 className="text-emerald-400" size={20} /> Extracted Resume Information
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <CheckCircle2 className="text-emerald-600" size={20} /> Extracted Resume Information
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">Module 2 – AI Resume Parsing Results</p>
+                <p className="text-xs text-slate-500 mt-1">Module 2 – AI Resume Parsing Results</p>
               </div>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+                className="p-2 hover:bg-slate-200 rounded-xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex items-center gap-2 px-6 border-b border-slate-800 bg-[#06091e] overflow-x-auto text-xs py-2">
+            <div className="flex items-center gap-2 px-6 border-b border-slate-200 bg-white overflow-x-auto text-xs py-2">
               {[
                 { id: "personal", label: "Personal Information", icon: User },
                 { id: "experience", label: "Experience", icon: Briefcase },
@@ -440,9 +438,9 @@ export default function Upload() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer ${activeTab === tab.id
+                      ? "bg-indigo-600 text-white shadow-md"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                       }`}
                   >
                     <Icon size={14} />
@@ -453,11 +451,11 @@ export default function Upload() {
             </div>
 
             {/* Modal Body Content */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-[#05081c]">
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
               {/* Tab 1: Personal Information */}
               {activeTab === "personal" && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Personal Information</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Personal Information</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <FieldBox label="Full Name" value={personal.full_name} />
                     <FieldBox label="Phone Number" value={personal.phone_number} />
@@ -472,12 +470,12 @@ export default function Upload() {
               {/* Tab 2: Experience */}
               {activeTab === "experience" && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Work Experience</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Work Experience</h4>
                   {expList.length === 0 ? (
                     <p className="text-xs text-slate-500 italic">No experience records specified.</p>
                   ) : (
                     expList.map((exp: any, idx: number) => (
-                      <div key={idx} className="bg-[#030514] border border-slate-800 p-4 rounded-xl space-y-3">
+                      <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <FieldBox label="Company" value={exp.company} />
                           <FieldBox label="Designation" value={exp.designation} />
@@ -493,12 +491,12 @@ export default function Upload() {
               {/* Tab 3: Education */}
               {activeTab === "education" && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Education History</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Education History</h4>
                   {eduList.length === 0 ? (
                     <p className="text-xs text-slate-500 italic">No education records specified.</p>
                   ) : (
                     eduList.map((edu: any, idx: number) => (
-                      <div key={idx} className="bg-[#030514] border border-slate-800 p-4 rounded-xl space-y-3">
+                      <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <FieldBox label="Degree" value={edu.degree} />
                           <FieldBox label="Specialization" value={edu.specialization} />
@@ -515,12 +513,12 @@ export default function Upload() {
               {/* Tab 4: Certifications */}
               {activeTab === "certifications" && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Certifications</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Certifications</h4>
                   {certList.length === 0 ? (
                     <p className="text-xs text-slate-500 italic">No certification records specified.</p>
                   ) : (
                     certList.map((cert: any, idx: number) => (
-                      <div key={idx} className="bg-[#030514] border border-slate-800 p-4 rounded-xl space-y-3">
+                      <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <FieldBox label="Certification Name" value={cert.name} />
                           <FieldBox label="Issued By" value={cert.issued_by} />
@@ -535,7 +533,7 @@ export default function Upload() {
               {/* Tab 5: Skills */}
               {activeTab === "skills" && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Skills Breakdown</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Skills Breakdown</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <SkillPillGroup title="Primary Skills" items={skills.primary_skills} />
                     <SkillPillGroup title="Frameworks" items={skills.frameworks} />
@@ -548,13 +546,13 @@ export default function Upload() {
               {/* Tab 6: Projects */}
               {activeTab === "projects" && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Projects</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Projects</h4>
                   {projList.length === 0 ? (
                     <p className="text-xs text-slate-500 italic">No projects specified.</p>
                   ) : (
                     projList.map((proj: any, idx: number) => (
-                      <div key={idx} className="bg-[#030514] border border-slate-800 p-4 rounded-xl space-y-3">
-                        <h5 className="text-xs font-bold text-emerald-400">Project #{idx + 1}: {proj.name || "Untitled"}</h5>
+                      <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
+                        <h5 className="text-xs font-bold text-emerald-700">Project #{idx + 1}: {proj.name || "Untitled"}</h5>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           <FieldBox label="Domain" value={proj.domain} />
                           <FieldBox label="Duration" value={proj.duration} />
@@ -571,12 +569,12 @@ export default function Upload() {
               {/* Tab 7: AI Evaluation */}
               {activeTab === "evaluation" && (
                 <div className="space-y-6">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">AI Insight & Evaluation</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">AI Insight & Evaluation</h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className="bg-[#030514] border border-blue-900/50 p-4 rounded-xl flex flex-col items-center justify-center text-center">
-                      <span className="text-xs font-bold text-slate-400 mb-1">AI Technical Score</span>
-                      <span className="text-3xl font-black text-blue-400">{aiEval.ai_technical_score || "N/A"}/100</span>
+                    <div className="bg-white border border-indigo-200 p-4 rounded-xl flex flex-col items-center justify-center text-center shadow-xs">
+                      <span className="text-xs font-bold text-slate-500 mb-1">AI Technical Score</span>
+                      <span className="text-3xl font-black text-indigo-600">{aiEval.ai_technical_score || "N/A"}/100</span>
                     </div>
                     <FieldBox label="Experience Level" value={aiEval.experience_level} />
                     <FieldBox label="Job Hopping Risk" value={aiEval.career_analysis?.job_hopping_risk} />
@@ -592,8 +590,8 @@ export default function Upload() {
                   </div>
 
                   {aiEval.personality_analysis && (
-                    <div className="bg-[#030514] border border-slate-800 p-5 rounded-xl space-y-4">
-                      <h5 className="text-xs font-bold text-slate-300">Personality & Trait Inference</h5>
+                    <div className="bg-white border border-slate-200 p-5 rounded-xl space-y-4 shadow-xs">
+                      <h5 className="text-xs font-bold text-slate-800">Personality & Trait Inference</h5>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <FieldBox label="Leadership" value={`${aiEval.personality_analysis.leadership}/100`} />
                         <FieldBox label="Team Player" value={`${aiEval.personality_analysis.team_player}/100`} />
@@ -608,23 +606,23 @@ export default function Upload() {
               {/* Tab 8: Additional Documents */}
               {activeTab === "documents" && (
                 <div className="space-y-6">
-                  <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider">Candidate Documents</h4>
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Candidate Documents</h4>
 
                   {/* Upload Form */}
-                  <div className="bg-[#030514] border border-slate-800 p-5 rounded-xl space-y-4">
-                    <h5 className="text-xs font-bold text-slate-200">Upload New Document</h5>
+                  <div className="bg-white border border-slate-200 p-5 rounded-xl space-y-4 shadow-xs">
+                    <h5 className="text-xs font-bold text-slate-800">Upload New Document</h5>
                     <div className="flex flex-col md:flex-row gap-4 items-center">
                       <input
                         type="text"
                         placeholder="Title (Optional)"
                         value={otherDocTitle}
                         onChange={e => setOtherDocTitle(e.target.value)}
-                        className="bg-slate-900 border border-slate-800 text-xs text-white p-2.5 rounded-lg focus:outline-none focus:border-blue-500 w-full md:w-1/4"
+                        className="bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2.5 rounded-lg focus:outline-none focus:border-indigo-500 w-full md:w-1/4"
                       />
                       <select
                         value={otherDocType}
                         onChange={e => setOtherDocType(e.target.value)}
-                        className="bg-slate-900 border border-slate-800 text-xs text-white p-2.5 rounded-lg focus:outline-none focus:border-blue-500 w-full md:w-1/4"
+                        className="bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2.5 rounded-lg focus:outline-none focus:border-indigo-500 w-full md:w-1/4"
                       >
                         <option value="Cover Letter">Cover Letter</option>
                         <option value="ID Proof">ID Proof</option>
@@ -636,13 +634,13 @@ export default function Upload() {
                       <input
                         type="file"
                         onChange={e => e.target.files && setOtherDocFile(e.target.files[0])}
-                        className="text-xs text-slate-300 w-full md:w-1/2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                        className="text-xs text-slate-600 w-full md:w-1/2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border border-indigo-200 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
                       />
 
                       <button
                         onClick={handleUploadOtherDoc}
                         disabled={!otherDocFile || isUploadingDoc}
-                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap w-full md:w-auto"
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap w-full md:w-auto cursor-pointer"
                       >
                         {isUploadingDoc ? "Uploading..." : "Upload"}
                       </button>
@@ -656,21 +654,21 @@ export default function Upload() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {otherDocs.map((doc: any, idx: number) => (
-                          <div key={idx} className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+                          <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-xs">
                             <div className="flex items-center gap-3 overflow-hidden">
-                              <div className="bg-blue-900/30 p-2 rounded-lg text-blue-400">
+                              <div className="bg-indigo-50 border border-indigo-200 p-2 rounded-lg text-indigo-600">
                                 <Paperclip size={16} />
                               </div>
                               <div className="overflow-hidden">
-                                <p className="text-xs font-bold text-slate-200 truncate">{doc.title || doc.filename}</p>
-                                <p className="text-[10px] text-slate-400">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                                <p className="text-xs font-bold text-slate-900 truncate">{doc.title || doc.filename}</p>
+                                <p className="text-[10px] text-slate-500">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
                               </div>
                             </div>
                             <a
                               href={doc.s3_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-blue-400 hover:text-blue-300 bg-blue-900/20 p-2 rounded-lg transition-colors"
+                              className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 border border-indigo-200 p-2 rounded-lg transition-colors"
                             >
                               <ExternalLink size={14} />
                             </a>
@@ -684,11 +682,11 @@ export default function Upload() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-[#040718] flex items-center justify-between">
-              <span className="text-xs text-slate-400 font-mono">Status: Ready for AI Evaluation</span>
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-mono">Status: Ready for AI Evaluation</span>
               <button
                 onClick={() => setShowModal(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-colors"
+                className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 Close Popup
               </button>
@@ -704,18 +702,18 @@ function FieldBox({ label, value, isLink, fullWidth }: { label: string; value?: 
   const displayVal = value && value.toString().trim() ? value.toString() : "N/A";
   return (
     <div className={`space-y-1 ${fullWidth ? "col-span-full" : ""}`}>
-      <label className="text-[11px] font-medium text-slate-400 block">{label}</label>
+      <label className="text-[11px] font-medium text-slate-500 block">{label}</label>
       {isLink && displayVal !== "N/A" ? (
         <a
           href={displayVal.startsWith("http") ? displayVal : `https://${displayVal}`}
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-blue-400 hover:underline break-all block font-medium"
+          className="text-xs text-indigo-600 hover:underline break-all block font-medium"
         >
           {displayVal}
         </a>
       ) : (
-        <span className={`text-xs block font-semibold ${displayVal === "N/A" ? "text-slate-600 italic" : "text-slate-200"}`}>
+        <span className={`text-xs block font-semibold ${displayVal === "N/A" ? "text-slate-400 italic" : "text-slate-800"}`}>
           {displayVal}
         </span>
       )}
@@ -726,8 +724,8 @@ function FieldBox({ label, value, isLink, fullWidth }: { label: string; value?: 
 function SkillPillGroup({ title, items }: { title: string; items?: any[] }) {
   const list = Array.isArray(items) ? items : [];
   return (
-    <div className="bg-[#030514] border border-slate-800 p-3.5 rounded-xl space-y-2">
-      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide block">{title}</span>
+    <div className="bg-white border border-slate-200 p-3.5 rounded-xl space-y-2 shadow-xs">
+      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">{title}</span>
       <div className="flex flex-wrap gap-1.5">
         {list.length > 0 ? (
           list.map((item, idx) => {
@@ -736,13 +734,13 @@ function SkillPillGroup({ title, items }: { title: string; items?: any[] }) {
               displayItem = item.name || item.skill || JSON.stringify(item);
             }
             return (
-              <span key={idx} className="bg-blue-950/60 border border-blue-800/40 text-blue-300 px-2.5 py-0.5 rounded-md text-[11px] font-medium">
+              <span key={idx} className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-2.5 py-0.5 rounded-md text-[11px] font-medium">
                 {String(displayItem)}
               </span>
             );
           })
         ) : (
-          <span className="text-[11px] text-slate-600 italic">None extracted</span>
+          <span className="text-[11px] text-slate-400 italic">None extracted</span>
         )}
       </div>
     </div>

@@ -344,17 +344,17 @@ export default function JDMatch() {
   };
 
   return (
-    <div className="bg-[#030514] text-slate-100 min-h-screen p-6 rounded-2xl space-y-6 font-sans relative">
+    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
       {/* Success Banner */}
       {successMessage && (
-        <div className="bg-emerald-950/70 border border-emerald-500/60 text-emerald-300 p-4 rounded-xl flex items-center justify-between shadow-lg">
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
-            <CheckCircle size={20} className="text-emerald-400" />
+            <CheckCircle size={20} className="text-emerald-600" />
             <span className="text-xs font-semibold">{successMessage}</span>
           </div>
           <button
             onClick={() => setSuccessMessage(null)}
-            className="text-emerald-400 hover:text-white transition-colors"
+            className="text-emerald-600 hover:text-emerald-800 transition-colors cursor-pointer"
           >
             <X size={16} />
           </button>
@@ -364,13 +364,13 @@ export default function JDMatch() {
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100">JD Matching & Candidate Filter</h1>
-          <p className="text-xs text-slate-400">Match resume documents in MongoDB against Job Description parameters</p>
+          <h1 className="text-xl font-bold text-slate-900">JD Matching & Candidate Filter</h1>
+          <p className="text-xs text-slate-500">Match resume documents in MongoDB against Job Description parameters</p>
         </div>
 
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className="flex items-center gap-2 bg-[#030514] border border-blue-500/60 text-blue-400 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-950/30 transition-colors shadow-sm cursor-pointer"
+          className="flex items-center gap-2 bg-white border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors shadow-xs cursor-pointer"
         >
           <Filter size={14} />
           {showFilters ? "Hide Filter Panel" : "Show Filter Panel"}
@@ -379,15 +379,15 @@ export default function JDMatch() {
 
       {/* Multi-Filter Input Card Panel */}
       {showFilters && (
-        <div className="bg-[#090d21] p-5 rounded-2xl border border-slate-800 space-y-4 shadow-lg">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-3">
-            <h2 className="text-xs font-extrabold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-3">
+            <h2 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
               <Filter size={14} /> Unified JD Filter
             </h2>
             <button
               onClick={fetchMatchedCandidates}
               disabled={loading}
-              className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-md disabled:opacity-50 w-full md:w-auto"
+              className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm disabled:opacity-50 w-full md:w-auto"
             >
               {loading ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
               Apply & Search
@@ -395,13 +395,13 @@ export default function JDMatch() {
           </div>
 
           <div className="space-y-3">
-            <label className="text-[11px] font-semibold text-slate-400 block">
+            <label className="text-[11px] font-semibold text-slate-600 block">
               Search by Skills, Location, Role, Experience, or Year of Passing
             </label>
             
             <div className="relative" ref={dropdownRef}>
-              <div className="flex items-center bg-[#030514] border border-slate-700 rounded-xl px-3 py-2 focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
-                <Search size={16} className="text-slate-500 mr-2" />
+              <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+                <Search size={16} className="text-slate-400 mr-2" />
                 <input
                   type="text"
                   value={searchInput}
@@ -416,10 +416,10 @@ export default function JDMatch() {
                   }}
                   onFocus={() => setIsDropdownOpen(true)}
                   placeholder="e.g. 'React', 'New York', 'Software Engineer'..."
-                  className="w-full bg-transparent text-sm text-slate-200 focus:outline-none placeholder-slate-600"
+                  className="w-full bg-transparent text-sm text-slate-800 focus:outline-none placeholder-slate-400"
                 />
                 {searchInput && (
-                  <button onClick={() => setSearchInput("")} className="text-slate-500 hover:text-slate-300 transition-colors">
+                  <button onClick={() => setSearchInput("")} className="text-slate-400 hover:text-slate-600 transition-colors">
                     <X size={14} />
                   </button>
                 )}
@@ -427,19 +427,19 @@ export default function JDMatch() {
 
               {/* Autocomplete Dropdown */}
               {isDropdownOpen && searchInput && (
-                <div className="absolute z-10 w-full mt-1 bg-[#0a0f25] border border-slate-700 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
                   {suggestions.length > 0 ? (
                     <ul className="py-2">
                       {suggestions.map((s, idx) => (
                         <li
                           key={idx}
                           onClick={() => addPill(s.category, s.value)}
-                          className="px-4 py-2 hover:bg-indigo-600/20 cursor-pointer flex flex-col group transition-colors"
+                          className="px-4 py-2 hover:bg-indigo-50 cursor-pointer flex flex-col group transition-colors"
                         >
-                          <span className="text-xs font-bold text-indigo-400 group-hover:text-indigo-300">
+                          <span className="text-xs font-bold text-indigo-600">
                             {s.category}
                           </span>
-                          <span className="text-sm text-slate-200 group-hover:text-white">
+                          <span className="text-sm text-slate-800 group-hover:text-indigo-900 font-medium">
                             {s.value} {s.category.includes("Exp") ? "Yrs" : ""}
                           </span>
                         </li>
@@ -457,11 +457,11 @@ export default function JDMatch() {
             {/* Active Pills Display */}
             <div className="pt-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-400">Active Filters:</span>
+                <span className="text-[11px] font-semibold text-slate-600">Active Filters:</span>
                 {pills.length > 0 && (
                   <button
                     onClick={clearAllPills}
-                    className="text-[10px] text-rose-400 hover:underline font-semibold cursor-pointer"
+                    className="text-[10px] text-rose-600 hover:underline font-semibold cursor-pointer"
                   >
                     Clear All
                   </button>
@@ -473,14 +473,14 @@ export default function JDMatch() {
                   pills.map((pill) => (
                     <span
                       key={pill.id}
-                      className="bg-indigo-950/80 border border-indigo-700/60 text-indigo-200 text-xs px-3 py-1.5 rounded-xl font-semibold flex items-center gap-2 group hover:border-indigo-500 transition-colors"
+                      className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs px-3 py-1.5 rounded-xl font-semibold flex items-center gap-2 group transition-colors"
                     >
                       <span className="opacity-70 text-[10px] uppercase tracking-wider">{pill.category}:</span>
                       <span>{pill.value} {pill.category.includes("Exp") ? "Yrs" : ""}</span>
                       <button
                         type="button"
                         onClick={() => removePill(pill.id)}
-                        className="text-indigo-400 hover:text-white font-bold ml-1 flex items-center bg-indigo-900/50 rounded-full p-0.5 group-hover:bg-indigo-500/50 transition-colors"
+                        className="text-indigo-600 hover:text-indigo-900 font-bold ml-1 flex items-center bg-indigo-100 rounded-full p-0.5 transition-colors cursor-pointer"
                       >
                         <X size={12} />
                       </button>
@@ -496,15 +496,15 @@ export default function JDMatch() {
       )}
 
       {/* Matched Results Table Section */}
-      <div className="bg-[#030514] rounded-2xl p-6 border border-slate-800 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
           <div className="flex items-center gap-3">
-            <UserCheck size={18} className="text-emerald-400" />
-            <h2 className="text-sm font-bold text-slate-100">
+            <UserCheck size={18} className="text-emerald-600" />
+            <h2 className="text-sm font-bold text-slate-900">
               Matched Candidates ({matchedResumes.length})
             </h2>
             {selectedCandidateIds.length > 0 && (
-              <span className="bg-indigo-950/80 border border-indigo-700 text-indigo-300 text-[11px] px-2.5 py-0.5 rounded-full font-bold">
+              <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] px-2.5 py-0.5 rounded-full font-bold">
                 {selectedCandidateIds.length} Selected
               </span>
             )}
@@ -514,7 +514,7 @@ export default function JDMatch() {
             <button
               onClick={handleOpenAssignModal}
               disabled={matchedResumes.length === 0}
-              className="flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50 w-full sm:w-auto"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50 w-full sm:w-auto"
             >
               <Calendar size={15} />
               Assign Interview Globally ({selectedCandidateIds.length > 0 ? selectedCandidateIds.length : matchedResumes.length})
@@ -525,11 +525,11 @@ export default function JDMatch() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-800 text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
+              <tr className="border-b border-slate-200 text-[11px] text-slate-500 font-semibold uppercase tracking-wider">
                 <th className="py-3 px-3 w-10">
-                  <button onClick={handleSelectAll} className="text-slate-400 hover:text-indigo-400 transition-colors cursor-pointer">
+                  <button onClick={handleSelectAll} className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer">
                     {selectedCandidateIds.length > 0 && selectedCandidateIds.length === matchedResumes.length ? (
-                      <CheckSquare size={16} className="text-indigo-400" />
+                      <CheckSquare size={16} className="text-indigo-600" />
                     ) : (
                       <Square size={16} />
                     )}
@@ -544,19 +544,19 @@ export default function JDMatch() {
                 <th className="py-3 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-xs">
+            <tbody className="divide-y divide-slate-200 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
-                      <RefreshCw size={16} className="animate-spin text-indigo-500" />
+                      <RefreshCw size={16} className="animate-spin text-indigo-600" />
                       <span>Fetching matched candidates from backend API...</span>
                     </div>
                   </td>
                 </tr>
               ) : matchedResumes.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
                     No matching candidate records found. Try adjusting filter parameters.
                   </td>
                 </tr>
@@ -577,20 +577,20 @@ export default function JDMatch() {
                   const isSelected = selectedCandidateIds.includes(row.id);
 
                   return (
-                    <tr key={row.id} className={`hover:bg-slate-900/40 transition-colors ${isSelected ? "bg-indigo-950/30" : ""}`}>
+                    <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${isSelected ? "bg-indigo-50/50" : ""}`}>
                       <td className="py-3.5 px-3">
-                        <button onClick={() => toggleSelectCandidate(row.id)} className="text-slate-400 hover:text-indigo-400 cursor-pointer">
-                          {isSelected ? <CheckSquare size={16} className="text-indigo-400" /> : <Square size={16} />}
+                        <button onClick={() => toggleSelectCandidate(row.id)} className="text-slate-400 hover:text-indigo-600 cursor-pointer">
+                          {isSelected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} />}
                         </button>
                       </td>
-                      <td className="py-3.5 px-3 font-bold text-slate-100">{name}</td>
-                      <td className="py-3.5 px-3 text-slate-300 font-medium">{role}</td>
-                      <td className="py-3.5 px-3 text-slate-400">{exp}</td>
-                      <td className="py-3.5 px-3 text-slate-400">{loc}</td>
+                      <td className="py-3.5 px-3 font-bold text-slate-900">{name}</td>
+                      <td className="py-3.5 px-3 text-slate-700 font-medium">{role}</td>
+                      <td className="py-3.5 px-3 text-slate-500">{exp}</td>
+                      <td className="py-3.5 px-3 text-slate-500">{loc}</td>
                       <td className="py-3.5 px-3">
                         <div className="flex flex-wrap gap-1 max-w-xs">
                           {skillsList.slice(0, 4).map((s, idx) => (
-                            <span key={idx} className="bg-indigo-950/60 border border-indigo-800/40 text-indigo-300 text-[10px] px-2 py-0.5 rounded">
+                            <span key={idx} className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] px-2 py-0.5 rounded">
                               {s}
                             </span>
                           ))}
@@ -602,7 +602,7 @@ export default function JDMatch() {
                         </div>
                       </td>
                       <td className="py-3.5 px-3">
-                        <span className="font-bold text-emerald-400 text-xs">
+                        <span className="font-bold text-emerald-600 text-xs">
                           {score}%
                         </span>
                       </td>
@@ -612,12 +612,12 @@ export default function JDMatch() {
                             href={row.s3_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/40 px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                            className="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
                           >
                             View Resume
                           </a>
                         ) : (
-                          <span className="text-slate-500 text-xs">No File</span>
+                          <span className="text-slate-400 text-xs">No File</span>
                         )}
                       </td>
                     </tr>
@@ -631,25 +631,25 @@ export default function JDMatch() {
 
       {/* GLOBAL INTERVIEW ASSIGNMENT MODAL (COLORFUL & USER-FRIENDLY UI) */}
       {isAssignModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-gradient-to-b from-[#0e1338] via-[#090d29] to-[#050719] border border-indigo-500/40 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-[0_0_60px_rgba(79,70,229,0.25)] relative">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
             
             {/* Modal Header */}
-            <div className="flex justify-between items-start border-b border-indigo-500/20 pb-4">
+            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/30 text-white">
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-600 shadow-xs">
                   <Sparkles size={22} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-white tracking-wide">
+                    <h2 className="text-lg font-bold text-slate-900 tracking-wide">
                       Assign Global Interview Session
                     </h2>
-                    <span className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-sm">
+                    <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-xs">
                       {selectedCandidateIds.length > 0 ? selectedCandidateIds.length : matchedResumes.length} Candidate(s)
                     </span>
                   </div>
-                  <p className="text-xs text-indigo-300/80 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Schedule and save interview records for all selected candidates into MongoDB database
                   </p>
                 </div>
@@ -657,7 +657,7 @@ export default function JDMatch() {
 
               <button
                 onClick={() => setIsAssignModalOpen(false)}
-                className="text-slate-400 hover:text-white p-2 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 transition-all cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -665,52 +665,52 @@ export default function JDMatch() {
 
             <form onSubmit={handleAssignInterviewSubmit} className="space-y-6 text-xs">
               
-              {/* SECTION 1: JOB & INTERVIEW SETUP (INDIGO THEME) */}
-              <div className="bg-[#121842]/60 border border-indigo-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
-                <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
-                  <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
+              {/* SECTION 1: JOB & INTERVIEW SETUP */}
+              <div className="bg-slate-50 border border-indigo-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                  <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
                     <Briefcase size={15} />
                     <span>Job Role, Location & Interview Setup</span>
                   </div>
-                  <span className="text-[10px] text-indigo-300/60 font-mono">Schema: job_location / job_type</span>
+                  <span className="text-[10px] text-slate-500 font-mono">Schema: job_location / job_type</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      Job Title / Role <span className="text-rose-400">*</span>
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      Job Title / Role <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       placeholder="e.g. Senior Fullstack Engineer"
                       value={interviewForm.job_title}
                       onChange={(e) => setInterviewForm({ ...interviewForm, job_title: e.target.value })}
-                      className="w-full bg-[#05081c] border border-indigo-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Building2 size={13} className="text-indigo-400" /> Job Location
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Building2 size={13} className="text-indigo-600" /> Job Location
                     </label>
                     <input
                       type="text"
                       placeholder="e.g. Bangalore / Remote / Hybrid"
                       value={interviewForm.job_location}
                       onChange={(e) => setInterviewForm({ ...interviewForm, job_location: e.target.value })}
-                      className="w-full bg-[#05081c] border border-indigo-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Briefcase size={13} className="text-indigo-400" /> Job Type
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Briefcase size={13} className="text-indigo-600" /> Job Type
                     </label>
                     <select
                       value={interviewForm.job_type}
                       onChange={(e) => setInterviewForm({ ...interviewForm, job_type: e.target.value })}
-                      className="w-full bg-[#05081c] border border-indigo-900/80 rounded-xl px-3.5 py-2.5 text-indigo-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
                     >
                       <option value="Full Time">💼 Full Time</option>
                       <option value="Part Time">⏱️ Part Time</option>
@@ -723,13 +723,13 @@ export default function JDMatch() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Layers size={13} className="text-indigo-400" /> Interview Type
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Layers size={13} className="text-indigo-600" /> Interview Type
                     </label>
                     <select
                       value={interviewForm.interview_type}
                       onChange={(e) => setInterviewForm({ ...interviewForm, interview_type: e.target.value as InterviewTypeEnum })}
-                      className="w-full bg-[#05081c] border border-indigo-900/80 rounded-xl px-3.5 py-2.5 text-indigo-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
                     >
                       <option value="TECHNICAL">💻 TECHNICAL</option>
                       <option value="HR">👥 HR SCREENING</option>
@@ -741,75 +741,75 @@ export default function JDMatch() {
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Hash size={13} className="text-indigo-400" /> Round Number
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Hash size={13} className="text-indigo-600" /> Round Number
                     </label>
                     <input
                       type="number"
                       min="1"
                       value={interviewForm.round_number}
                       onChange={(e) => setInterviewForm({ ...interviewForm, round_number: Number(e.target.value) })}
-                      className="w-full bg-[#05081c] border border-indigo-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-bold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-bold"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* SECTION 2: SCHEDULE & MEETING LINK (CYAN THEME) */}
-              <div className="bg-[#0b1b36]/60 border border-cyan-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
-                <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs border-b border-cyan-500/20 pb-2">
+              {/* SECTION 2: SCHEDULE & MEETING LINK */}
+              <div className="bg-slate-50 border border-sky-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                <div className="flex items-center gap-2 text-sky-700 font-bold text-xs border-b border-sky-100 pb-2">
                   <Clock size={15} />
                   <span>Date, Time & Video Meeting</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Calendar size={13} className="text-cyan-400" /> Scheduled Date <span className="text-rose-400">*</span>
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Calendar size={13} className="text-sky-600" /> Scheduled Date <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="date"
                       value={interviewForm.scheduled_date}
                       onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_date: e.target.value })}
-                      className="w-full bg-[#05081c] border border-cyan-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Clock size={13} className="text-cyan-400" /> Scheduled Time <span className="text-rose-400">*</span>
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Clock size={13} className="text-sky-600" /> Scheduled Time <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="time"
                       value={interviewForm.scheduled_time}
                       onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_time: e.target.value })}
-                      className="w-full bg-[#05081c] border border-cyan-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold">Duration (Minutes)</label>
+                    <label className="block text-slate-700 mb-1 font-semibold">Duration (Minutes)</label>
                     <input
                       type="number"
                       step="15"
                       value={interviewForm.duration_minutes}
                       onChange={(e) => setInterviewForm({ ...interviewForm, duration_minutes: Number(e.target.value) })}
-                      className="w-full bg-[#05081c] border border-cyan-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Video size={13} className="text-cyan-400" /> Meeting Platform
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Video size={13} className="text-sky-600" /> Meeting Platform
                     </label>
                     <select
                       value={interviewForm.meeting_platform}
                       onChange={(e) => setInterviewForm({ ...interviewForm, meeting_platform: e.target.value })}
-                      className="w-full bg-[#05081c] border border-cyan-900/80 rounded-xl px-3.5 py-2.5 text-cyan-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sky-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium cursor-pointer"
                     >
                       <option value="Google Meet">🎥 Google Meet</option>
                       <option value="Zoom">📹 Zoom</option>
@@ -819,83 +819,83 @@ export default function JDMatch() {
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold">Meeting Link / Address</label>
+                    <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
                     <input
                       type="text"
                       placeholder="https://meet.google.com/abc-defg-hij"
                       value={interviewForm.meeting_link}
                       onChange={(e) => setInterviewForm({ ...interviewForm, meeting_link: e.target.value })}
-                      className="w-full bg-[#05081c] border border-cyan-900/80 rounded-xl px-3.5 py-2.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* SECTION 3: INTERVIEWER & LOCATION (PURPLE & EMERALD THEME) */}
+              {/* SECTION 3: INTERVIEWER & LOCATION */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Interviewer Box */}
-                <div className="bg-[#181033]/60 border border-purple-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
-                  <div className="flex items-center gap-2 text-purple-400 font-bold text-xs border-b border-purple-500/20 pb-2">
+                <div className="bg-slate-50 border border-purple-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center gap-2 text-purple-700 font-bold text-xs border-b border-purple-100 pb-2">
                     <UserCheck size={15} />
                     <span>Interviewer Details</span>
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold">Interviewer Name <span className="text-rose-400">*</span></label>
+                    <label className="block text-slate-700 mb-1 font-semibold">Interviewer Name <span className="text-rose-500">*</span></label>
                     <input
                       type="text"
                       placeholder="e.g. Alex Rivera (Tech Lead)"
                       value={interviewForm.interviewer_name}
                       onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })}
-                      className="w-full bg-[#05081c] border border-purple-900/80 rounded-xl px-3.5 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <Mail size={12} className="text-purple-400" /> Email Address
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <Mail size={12} className="text-purple-600" /> Email Address
                     </label>
                     <input
                       type="email"
                       placeholder="interviewer@company.com"
                       value={interviewForm.interviewer_email}
                       onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_email: e.target.value })}
-                      className="w-full bg-[#05081c] border border-purple-900/80 rounded-xl px-3.5 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                     />
                   </div>
                 </div>
 
                 {/* Location & Verification Box */}
-                <div className="bg-[#0b241b]/60 border border-emerald-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
-                  <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
-                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                <div className="bg-slate-50 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                    <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs">
                       <MapPin size={15} />
                       <span>Interview Location & Verification</span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <MapPin size={12} className="text-emerald-400" /> Interview Location
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <MapPin size={12} className="text-emerald-600" /> Interview Location
                     </label>
                     <input
                       type="text"
                       placeholder="e.g. Conference Room A / Bangalore Office"
                       value={interviewForm.interview_location || interviewForm.location}
                       onChange={(e) => setInterviewForm({ ...interviewForm, interview_location: e.target.value, location: e.target.value })}
-                      className="w-full bg-[#05081c] border border-emerald-900/80 rounded-xl px-3.5 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                      <ShieldCheck size={12} className="text-emerald-400" /> HR Call Verification
+                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                      <ShieldCheck size={12} className="text-emerald-600" /> HR Call Verification
                     </label>
                     <select
                       value={interviewForm.hr_call_verification}
                       onChange={(e) => setInterviewForm({ ...interviewForm, hr_call_verification: e.target.value })}
-                      className="w-full bg-[#05081c] border border-emerald-900/80 rounded-xl px-3.5 py-2 text-emerald-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-bold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-bold cursor-pointer"
                     >
                       <option value="Verified">✅ Verified (Eligible)</option>
                       <option value="Pending">⏳ Pending Verification</option>
@@ -906,10 +906,10 @@ export default function JDMatch() {
                 </div>
               </div>
 
-              {/* SECTION 5: DOCUMENTS & UPLOAD & NOTES (ROSE THEME) */}
-              <div className="bg-[#240b19]/60 border border-rose-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
-                <div className="flex items-center justify-between border-b border-rose-500/20 pb-2">
-                  <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
+              {/* SECTION 5: DOCUMENTS & UPLOAD & NOTES */}
+              <div className="bg-slate-50 border border-rose-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-rose-100 pb-2">
+                  <div className="flex items-center gap-2 text-rose-700 font-bold text-xs">
                     <FileText size={15} />
                     <span>Interview Document Files (URLs & Upload)</span>
                   </div>
@@ -917,11 +917,11 @@ export default function JDMatch() {
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-slate-300 font-semibold flex items-center gap-1">
-                      <FileText size={12} className="text-rose-400" /> Attached Document Files (URLs or Uploaded filenames)
+                    <label className="text-slate-700 font-semibold flex items-center gap-1">
+                      <FileText size={12} className="text-rose-600" /> Attached Document Files (URLs or Uploaded filenames)
                     </label>
                     {/* FILE UPLOAD BUTTON */}
-                    <label className="inline-flex items-center gap-1 bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-200 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-sm">
+                    <label className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
                       <Upload size={13} />
                       <span>Browse / Attach Files</span>
                       <input
@@ -937,38 +937,38 @@ export default function JDMatch() {
                     rows={2}
                     value={interviewForm.interview_document_files}
                     onChange={(e) => setInterviewForm({ ...interviewForm, interview_document_files: e.target.value })}
-                    className="w-full bg-[#05081c] border border-rose-900/80 rounded-xl px-3.5 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all font-mono text-[11px]"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-[11px]"
                     placeholder="Document names or URLs (one per line)... Use button above to attach files directly."
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1">
-                    <AlignLeft size={12} className="text-rose-400" /> Notes / Special Instructions
+                  <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                    <AlignLeft size={12} className="text-rose-600" /> Notes / Special Instructions
                   </label>
                   <textarea
                     rows={2}
                     value={interviewForm.notes}
                     onChange={(e) => setInterviewForm({ ...interviewForm, notes: e.target.value })}
-                    className="w-full bg-[#05081c] border border-rose-900/80 rounded-xl px-3.5 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all font-medium"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                     placeholder="Key assessment areas, candidate prep notes, internal guidelines..."
                   />
                 </div>
               </div>
 
               {/* Action Buttons Footer */}
-              <div className="flex justify-end items-center gap-4 pt-4 border-t border-indigo-500/20">
+              <div className="flex justify-end items-center gap-4 pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsAssignModalOpen(false)}
-                  className="px-5 py-2.5 bg-slate-900 border border-slate-700 text-slate-300 rounded-xl hover:bg-slate-800 hover:text-white font-bold transition-all cursor-pointer"
+                  className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-200 font-bold transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={assignLoading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-600/30 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 active:scale-95"
                 >
                   {assignLoading ? (
                     <>

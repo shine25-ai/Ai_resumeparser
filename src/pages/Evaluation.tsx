@@ -97,15 +97,15 @@ export default function Evaluation() {
 
   if (error || !candidate) {
     return (
-      <div className="bg-[#030514] text-slate-100 min-h-screen p-6 rounded-2xl space-y-6 font-sans">
+      <div className="bg-white text-slate-800 border border-slate-200 shadow-sm min-h-screen p-6 rounded-2xl space-y-6 font-sans">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 bg-[#030514] border border-slate-800 text-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm cursor-pointer"
+          className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
         >
           <ArrowLeft size={14} />
           Back
         </button>
-        <div className="p-8 text-center text-red-400 bg-red-950/20 border border-red-900/40 rounded-2xl">
+        <div className="p-8 text-center text-rose-700 bg-rose-50 border border-rose-200 rounded-2xl font-semibold">
           {error || "Candidate profile record not found."}
         </div>
       </div>
@@ -256,13 +256,13 @@ export default function Evaluation() {
   };
 
   return (
-    <div className="bg-[#030514] text-slate-100 min-h-screen p-6 rounded-2xl space-y-6 font-sans relative">
+    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
       {/* Top Bar Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-100">Candidate Profile</h1>
+          <h1 className="text-xl font-bold text-slate-900">Candidate Profile</h1>
           {latestHrUpdate && (
-            <span className="bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+            <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
               HR Updated
             </span>
           )}
@@ -278,7 +278,7 @@ export default function Evaluation() {
                 setSelectedResumeId(newId);
                 navigate(`/evaluation/${newId}`, { replace: true });
               }}
-              className="w-full bg-[#0b0f29] border border-indigo-500/40 text-slate-200 text-xs rounded-xl px-3 py-2 pr-8 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm font-medium"
+              className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 pr-8 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-xs font-medium"
             >
               {resumesLoading ? (
                 <option value="" disabled>Loading candidates...</option>
@@ -295,21 +295,14 @@ export default function Evaluation() {
                 const label = detailsStr ? `${fullName} (${detailsStr})` : fullName;
 
                 return (
-                  <option key={res.id} value={res.id} className="bg-[#030514] text-slate-200 py-1">
+                  <option key={res.id} value={res.id} className="bg-white text-slate-800 py-1">
                     {label}
                   </option>
                 );
               })}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" />
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-600 pointer-events-none" />
           </div>
-
-          {/* <button className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-900 rounded-lg transition-colors border border-slate-800">
-            <Bell size={18} />
-          </button>
-          <button className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-900 rounded-lg transition-colors border border-slate-800">
-            <Settings size={18} />
-          </button> */}
         </div>
       </div>
 
@@ -317,7 +310,7 @@ export default function Evaluation() {
       <div className="flex justify-between items-center relative">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 bg-[#030514] border border-slate-800 text-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm cursor-pointer"
+          className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
         >
           <ArrowLeft size={14} />
           Back
@@ -329,7 +322,7 @@ export default function Evaluation() {
               href={s3Url}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-indigo-600/30 transition-colors shadow-sm"
+              className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors shadow-xs"
             >
               <ExternalLink size={14} />
               Open Original Resume
@@ -340,19 +333,19 @@ export default function Evaluation() {
           <div className="relative">
             <button
               onClick={() => setIsActionsOpen(!isActionsOpen)}
-              className="flex items-center gap-1.5 bg-[#030514] border border-slate-800 text-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
             >
               Actions
               <ChevronDown size={14} />
             </button>
 
             {isActionsOpen && (
-              <div className="absolute right-0 mt-2 w-44 bg-[#090d28] border border-slate-700/80 rounded-xl shadow-xl z-30 py-1 font-sans">
+              <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1 font-sans">
                 <button
                   onClick={handleOpenEditModal}
-                  className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-indigo-600/30 transition-colors text-left"
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 transition-colors text-left cursor-pointer"
                 >
-                  <Edit3 size={14} className="text-indigo-400" />
+                  <Edit3 size={14} className="text-indigo-600" />
                   Edit Evaluation
                 </button>
               </div>
@@ -364,33 +357,33 @@ export default function Evaluation() {
       {/* Profile Overview Header Card & Score Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Profile Card (2 cols) */}
-        <div className="lg:col-span-2 bg-[#030514] p-6 rounded-2xl border border-slate-800 shadow-sm flex flex-col sm:flex-row items-center gap-6">
-          <div className="w-24 h-24 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-indigo-400 flex-shrink-0 shadow-sm">
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-6">
+          <div className="w-24 h-24 rounded-full bg-indigo-50 border-2 border-indigo-200 flex items-center justify-center text-indigo-600 flex-shrink-0 shadow-xs">
             <User size={40} />
           </div>
 
           <div className="space-y-3 text-center sm:text-left flex-1">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
-              <h2 className="text-xl font-extrabold text-slate-100">{name}</h2>
-              <span className="bg-emerald-950/60 border border-emerald-800/50 text-emerald-400 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+              <h2 className="text-xl font-extrabold text-slate-900">{name}</h2>
+              <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
                 {status}
               </span>
-              <span className="bg-indigo-950/60 border border-indigo-800/50 text-indigo-300 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+              <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
                 {expLevel} Level
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-2 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-2 text-xs text-slate-500">
               <div className="flex items-center gap-1.5">
-                <Mail size={14} className="text-slate-400" />
+                <Mail size={14} className="text-slate-500" />
                 <span>{email}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Phone size={14} className="text-slate-400" />
+                <Phone size={14} className="text-slate-500" />
                 <span>{phone}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <MapPin size={14} className="text-slate-400" />
+                <MapPin size={14} className="text-slate-500" />
                 <span>{location}</span>
               </div>
             </div>
@@ -398,14 +391,14 @@ export default function Evaluation() {
             {(linkedin || github) && (
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-2 text-xs">
                 {linkedin && (
-                  <a href={linkedin.startsWith("http") ? linkedin : `https://${linkedin}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-blue-400 font-semibold hover:underline">
+                  <a href={linkedin.startsWith("http") ? linkedin : `https://${linkedin}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline">
                     <span className="bg-[#0a66c2] text-white w-3.5 h-3.5 rounded-xs flex items-center justify-center text-[9px] font-bold">in</span>
                     <span className="truncate max-w-[200px]">{linkedin}</span>
                   </a>
                 )}
                 {github && (
-                  <a href={github.startsWith("http") ? github : `https://${github}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-blue-400 font-semibold hover:underline">
-                    <svg className="w-3.5 h-3.5 fill-current text-slate-300" viewBox="0 0 24 24">
+                  <a href={github.startsWith("http") ? github : `https://${github}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline">
+                    <svg className="w-3.5 h-3.5 fill-current text-slate-600" viewBox="0 0 24 24">
                       <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
                     </svg>
                     <span>{github}</span>
@@ -417,28 +410,28 @@ export default function Evaluation() {
         </div>
 
         {/* AI Profile Score Card (1 col) */}
-        <div className="bg-[#030514] p-6 rounded-2xl border border-slate-800 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div className="space-y-3">
-            <h3 className="text-xs font-bold text-slate-100">AI Technical Score</h3>
+            <h3 className="text-xs font-bold text-slate-900">AI Technical Score</h3>
             <div className="flex items-baseline gap-1">
-              <span className="text-3xl font-extrabold text-slate-100">{aiScore}</span>
-              <span className="text-xs text-slate-400 font-semibold">/100</span>
+              <span className="text-3xl font-extrabold text-slate-900">{aiScore}</span>
+              <span className="text-xs text-slate-500 font-semibold">/100</span>
             </div>
-            <span className="text-xs font-bold text-emerald-400 block">{scoreLabel}</span>
+            <span className="text-xs font-bold text-emerald-600 block">{scoreLabel}</span>
           </div>
 
           {/* Gauge Ring Visual */}
           <div className="relative w-20 h-20 flex items-center justify-center">
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
               <path
-                className="text-slate-800"
+                className="text-slate-200"
                 strokeWidth="3.5"
                 stroke="currentColor"
                 fill="none"
                 d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
               />
               <path
-                className="text-emerald-500 stroke-current"
+                className="text-emerald-600 stroke-current"
                 strokeWidth="3.5"
                 strokeDasharray={`${aiScore}, 100`}
                 strokeLinecap="round"
@@ -451,62 +444,62 @@ export default function Evaluation() {
       </div>
 
       {/* Metrics Row: Total Experience & HR / Evaluation Overview */}
-      <div className="bg-[#030514] p-6 rounded-2xl border border-slate-800 shadow-sm grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 divide-x divide-slate-800">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 divide-x divide-slate-200">
         <div className="space-y-1">
-          <span className="text-xs font-semibold text-slate-400">Total Experience</span>
-          <div className="text-base font-extrabold text-slate-100">{totalExp}</div>
+          <span className="text-xs font-semibold text-slate-500">Total Experience</span>
+          <div className="text-base font-extrabold text-slate-900">{totalExp}</div>
         </div>
 
         <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-400">Leadership Score</span>
-          <div className="text-base font-extrabold text-indigo-400">
+          <span className="text-xs font-semibold text-slate-500">Leadership Score</span>
+          <div className="text-base font-extrabold text-indigo-600">
             {activeLeadership !== null ? `${activeLeadership}%` : "N/A"}
           </div>
         </div>
 
         <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-400">Team Player</span>
-          <div className="text-base font-extrabold text-emerald-400">
+          <span className="text-xs font-semibold text-slate-500">Team Player</span>
+          <div className="text-base font-extrabold text-emerald-600">
             {activeTeamPlayer !== null ? `${activeTeamPlayer}%` : "N/A"}
           </div>
         </div>
 
         <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-400">Communication</span>
-          <div className="text-base font-extrabold text-blue-400">
+          <span className="text-xs font-semibold text-slate-500">Communication</span>
+          <div className="text-base font-extrabold text-blue-600">
             {activeCommunication !== null ? `${activeCommunication}%` : "N/A"}
           </div>
         </div>
 
         <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-400">Problem Solving</span>
-          <div className="text-base font-extrabold text-purple-400">
+          <span className="text-xs font-semibold text-slate-500">Problem Solving</span>
+          <div className="text-base font-extrabold text-purple-600">
             {activeProblemSolving !== null ? `${activeProblemSolving}%` : "N/A"}
           </div>
         </div>
 
         <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-400">Job Hopping Risk</span>
-          <div className="text-base font-extrabold text-amber-400">
+          <span className="text-xs font-semibold text-slate-500">Job Hopping Risk</span>
+          <div className="text-base font-extrabold text-amber-600">
             {activeJobHopping !== null ? (typeof activeJobHopping === "number" ? `${activeJobHopping}%` : activeJobHopping) : "N/A"}
           </div>
         </div>
       </div>
 
       {/* Content Tabs Wrapper */}
-      <div className="bg-[#030514] rounded-2xl p-6 border border-slate-800 shadow-sm space-y-6">
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
         {/* Navigation Tabs Header */}
-        <div className="flex items-center gap-6 border-b border-slate-800 pb-4 overflow-x-auto">
+        <div className="flex items-center gap-6 border-b border-slate-200 pb-4 overflow-x-auto">
           {navTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`text-xs font-bold transition-colors whitespace-nowrap relative pb-4 -mb-4 cursor-pointer ${activeTab === tab ? "text-blue-400" : "text-slate-400 hover:text-slate-200"
+              className={`text-xs font-bold transition-colors whitespace-nowrap relative pb-4 -mb-4 cursor-pointer ${activeTab === tab ? "text-indigo-600" : "text-slate-500 hover:text-slate-800"
                 }`}
             >
               {tab}
               {activeTab === tab && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full"></span>
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full"></span>
               )}
             </button>
           ))}
@@ -515,21 +508,21 @@ export default function Evaluation() {
         {/* Tab Content Section */}
         {activeTab === "Experience" && (
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Briefcase size={16} className="text-indigo-400" /> Work Experience
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Briefcase size={16} className="text-indigo-600" /> Work Experience
             </h3>
             {experiences.length > 0 ? (
               <div className="space-y-4">
                 {experiences.map((exp: any, idx: number) => (
-                  <div key={idx} className="p-4 rounded-xl border border-slate-800 bg-[#030514] space-y-2">
+                  <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
                     <div className="flex flex-wrap justify-between items-center">
-                      <h4 className="text-xs font-bold text-slate-100">
-                        {exp.designation || "Role"} - <span className="text-blue-400">{exp.company}</span>
+                      <h4 className="text-xs font-bold text-slate-900">
+                        {exp.designation || "Role"} - <span className="text-indigo-600">{exp.company}</span>
                       </h4>
-                      <span className="text-[11px] text-slate-400 font-medium">{exp.duration || "N/A"}</span>
+                      <span className="text-[11px] text-slate-500 font-medium">{exp.duration || "N/A"}</span>
                     </div>
                     {exp.responsibilities && (
-                      <p className="text-xs text-slate-300 leading-relaxed">
+                      <p className="text-xs text-slate-700 leading-relaxed">
                         {Array.isArray(exp.responsibilities) ? exp.responsibilities.join(" ") : exp.responsibilities}
                       </p>
                     )}
@@ -537,45 +530,45 @@ export default function Evaluation() {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-slate-400">No work experience entries parsed.</div>
+              <div className="text-xs text-slate-500">No work experience entries parsed.</div>
             )}
           </div>
         )}
 
         {activeTab === "Education" && (
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <GraduationCap size={16} className="text-indigo-400" /> Education Details
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <GraduationCap size={16} className="text-indigo-600" /> Education Details
             </h3>
             {education.length > 0 ? (
               education.map((edu: any, idx: number) => (
-                <div key={idx} className="p-4 rounded-xl border border-slate-800 bg-[#030514] flex justify-between items-center text-xs">
+                <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex justify-between items-center text-xs">
                   <div>
-                    <h4 className="font-bold text-slate-100">{edu.degree}</h4>
-                    <p className="text-slate-400">{edu.institution}</p>
-                    {edu.score && <p className="text-[11px] text-emerald-400 mt-0.5">Score / CGPA: {edu.score}</p>}
+                    <h4 className="font-bold text-slate-900">{edu.degree}</h4>
+                    <p className="text-slate-500">{edu.institution}</p>
+                    {edu.score && <p className="text-[11px] text-emerald-600 font-medium mt-0.5">Score / CGPA: {edu.score}</p>}
                   </div>
-                  <span className="text-slate-400 font-medium">{edu.year_of_passing || edu.year}</span>
+                  <span className="text-slate-500 font-medium">{edu.year_of_passing || edu.year}</span>
                 </div>
               ))
             ) : (
-              <div className="text-xs text-slate-400">No education entries parsed.</div>
+              <div className="text-xs text-slate-500">No education entries parsed.</div>
             )}
           </div>
         )}
 
         {activeTab === "Skills" && (
           <div className="space-y-5">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Code size={16} className="text-indigo-400" /> Extracted Technical & Domain Skills
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Code size={16} className="text-indigo-600" /> Extracted Technical & Domain Skills
             </h3>
 
             {primarySkills.length > 0 && (
               <div>
-                <span className="text-xs text-slate-400 block mb-2 font-semibold">Primary Roles / Skills</span>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold">Primary Roles / Skills</span>
                 <div className="flex flex-wrap gap-2">
                   {primarySkills.map((s: string, i: number) => (
-                    <span key={i} className="bg-indigo-950/70 border border-indigo-800/60 text-indigo-300 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                    <span key={i} className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
                       {s}
                     </span>
                   ))}
@@ -585,10 +578,10 @@ export default function Evaluation() {
 
             {databases.length > 0 && (
               <div>
-                <span className="text-xs text-slate-400 block mb-2 font-semibold font-mono">Databases</span>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold font-mono">Databases</span>
                 <div className="flex flex-wrap gap-2">
                   {databases.map((s: string, i: number) => (
-                    <span key={i} className="bg-emerald-950/70 border border-emerald-800/60 text-emerald-300 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                    <span key={i} className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
                       {s}
                     </span>
                   ))}
@@ -598,39 +591,39 @@ export default function Evaluation() {
 
             {allSkills.length > 0 ? (
               <div>
-                <span className="text-xs text-slate-400 block mb-2 font-semibold">All Skills</span>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold">All Skills</span>
                 <div className="flex flex-wrap gap-2">
                   {allSkills.map((skill: string, idx: number) => (
-                    <span key={idx} className="bg-slate-900 border border-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                    <span key={idx} className="bg-slate-50 border border-slate-200 text-slate-800 text-xs px-3 py-1.5 rounded-lg font-semibold">
                       {skill}
                     </span>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-slate-400">No skills parsed.</div>
+              <div className="text-xs text-slate-500">No skills parsed.</div>
             )}
           </div>
         )}
 
         {activeTab === "Projects" && (
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Award size={16} className="text-indigo-400" /> Key Projects
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Award size={16} className="text-indigo-600" /> Key Projects
             </h3>
             {projects.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {projects.map((proj: any, idx: number) => (
-                  <div key={idx} className="p-4 rounded-xl border border-slate-800 bg-[#030514] space-y-2">
+                  <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
                     <div className="flex justify-between items-start">
-                      <h4 className="text-xs font-bold text-slate-100">{proj.name}</h4>
-                      {proj.role && <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{proj.role}</span>}
+                      <h4 className="text-xs font-bold text-slate-900">{proj.name}</h4>
+                      {proj.role && <span className="text-[10px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">{proj.role}</span>}
                     </div>
-                    {proj.description && <p className="text-xs text-slate-300 leading-relaxed">{proj.description}</p>}
+                    {proj.description && <p className="text-xs text-slate-700 leading-relaxed">{proj.description}</p>}
                     {proj.tech_stack && Array.isArray(proj.tech_stack) && (
                       <div className="flex flex-wrap gap-1 pt-1">
                         {proj.tech_stack.map((t: string, ti: number) => (
-                          <span key={ti} className="text-[10px] bg-indigo-950/60 border border-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded">
+                          <span key={ti} className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded">
                             {t}
                           </span>
                         ))}
@@ -640,19 +633,19 @@ export default function Evaluation() {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-slate-400">No projects parsed.</div>
+              <div className="text-xs text-slate-500">No projects parsed.</div>
             )}
           </div>
         )}
 
         {activeTab === "Certifications" && (
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-100">Certifications</h3>
+            <h3 className="text-sm font-bold text-slate-900">Certifications</h3>
             {certifications.length > 0 ? (
-              <ul className="space-y-2 text-xs text-slate-300">
+              <ul className="space-y-2 text-xs text-slate-700">
                 {certifications.map((cert: any, idx: number) => (
                   <li key={idx} className="flex items-center gap-2">
-                    <CheckCircle2 size={14} className="text-emerald-400" />
+                    <CheckCircle2 size={14} className="text-emerald-600" />
                     <span>
                       {typeof cert === 'string' ? cert : `${cert.name || ''} ${cert.issued_by ? `(${cert.issued_by})` : ''} ${cert.year || ''}`}
                     </span>
@@ -660,59 +653,59 @@ export default function Evaluation() {
                 ))}
               </ul>
             ) : (
-              <div className="text-xs text-slate-400">No certifications listed.</div>
+              <div className="text-xs text-slate-500">No certifications listed.</div>
             )}
           </div>
         )}
 
         {activeTab === "Analysis" && (
           <div className="space-y-6 font-sans">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Brain size={16} className="text-indigo-400" /> AI Evaluation & HR Update Comparison
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Brain size={16} className="text-indigo-600" /> AI Evaluation & HR Update Comparison
             </h3>
 
             {/* Side-by-side Dual Cards Grid: Original AI vs HR Updates */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* 1. Original AI Evaluation Baseline Card */}
-              <div className="p-5 rounded-2xl bg-[#090d28] border border-indigo-500/30 space-y-4">
-                <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+              <div className="p-5 rounded-2xl bg-slate-50 border border-indigo-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
-                    <h4 className="text-xs font-extrabold text-slate-100 uppercase tracking-wider">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                    <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
                       Original AI Evaluation Baseline
                     </h4>
                   </div>
-                  <span className="text-[10px] font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
                     AI Generated
                   </span>
                 </div>
 
                 {/* Scores Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 block font-medium">Leadership</span>
-                    <div className="text-base font-extrabold text-indigo-400">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-medium">Leadership</span>
+                    <div className="text-base font-extrabold text-indigo-600">
                       {personality.leadership !== undefined ? `${personality.leadership}%` : "N/A"}
                     </div>
                   </div>
 
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 block font-medium">Team Player</span>
-                    <div className="text-base font-extrabold text-emerald-400">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-medium">Team Player</span>
+                    <div className="text-base font-extrabold text-emerald-600">
                       {personality.team_player !== undefined ? `${personality.team_player}%` : "N/A"}
                     </div>
                   </div>
 
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 block font-medium">Communication</span>
-                    <div className="text-base font-extrabold text-blue-400">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-medium">Communication</span>
+                    <div className="text-base font-extrabold text-blue-600">
                       {personality.communication !== undefined ? `${personality.communication}%` : "N/A"}
                     </div>
                   </div>
 
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 block font-medium">Problem Solving</span>
-                    <div className="text-base font-extrabold text-purple-400">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-medium">Problem Solving</span>
+                    <div className="text-base font-extrabold text-purple-600">
                       {personality.problem_solving !== undefined ? `${personality.problem_solving}%` : "N/A"}
                     </div>
                   </div>
@@ -720,73 +713,73 @@ export default function Evaluation() {
 
                 {/* Career & Lists */}
                 <div className="space-y-3 text-xs pt-1">
-                  <div className="flex justify-between items-center bg-[#030514] p-3 rounded-xl border border-slate-800">
-                    <span className="text-slate-400 font-medium">Job Hopping Risk</span>
-                    <span className="font-bold text-amber-400">{careerAnalysis.job_hopping_risk || "N/A"}</span>
+                  <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 font-medium">Job Hopping Risk</span>
+                    <span className="font-bold text-amber-600">{careerAnalysis.job_hopping_risk || "N/A"}</span>
                   </div>
 
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1.5">
-                    <span className="text-slate-400 font-semibold block text-[11px]">Skill Strengths</span>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-slate-500 font-semibold block text-[11px]">Skill Strengths</span>
                     {originalSkillStrengths && originalSkillStrengths.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {originalSkillStrengths.map((item: string, i: number) => (
-                          <span key={i} className="bg-emerald-950/70 text-emerald-300 border border-emerald-800/50 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                          <span key={i} className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
                             {item}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <span className="text-slate-500 text-[11px]">None flagged</span>
+                      <span className="text-slate-400 text-[11px]">None flagged</span>
                     )}
                   </div>
 
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1.5">
-                    <span className="text-slate-400 font-semibold block text-[11px]">Recommended Upskilling</span>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-slate-500 font-semibold block text-[11px]">Recommended Upskilling</span>
                     {careerAnalysis.recommended_upskilling && Array.isArray(careerAnalysis.recommended_upskilling) && careerAnalysis.recommended_upskilling.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {careerAnalysis.recommended_upskilling.map((item: string, i: number) => (
-                          <span key={i} className="bg-indigo-950/70 text-indigo-300 border border-indigo-800/50 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                          <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
                             {item}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <span className="text-slate-500 text-[11px]">None listed</span>
+                      <span className="text-slate-400 text-[11px]">None listed</span>
                     )}
                   </div>
 
-                  <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1.5">
-                    <span className="text-slate-400 font-semibold block text-[11px]">Skill Weaknesses</span>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-slate-500 font-semibold block text-[11px]">Skill Weaknesses</span>
                     {originalSkillWeaknesses && originalSkillWeaknesses.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {originalSkillWeaknesses.map((item: string, i: number) => (
-                          <span key={i} className="bg-rose-950/70 text-rose-300 border border-rose-800/50 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                          <span key={i} className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
                             {item}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <span className="text-slate-500 text-[11px]">None flagged</span>
+                      <span className="text-slate-400 text-[11px]">None flagged</span>
                     )}
                   </div>
                 </div>
               </div>
 
               {/* 2. HR Update Grid Card */}
-              <div className="p-5 rounded-2xl bg-[#0b1338] border border-emerald-500/40 space-y-4">
-                <div className="flex items-center justify-between border-b border-emerald-500/20 pb-3">
+              <div className="p-5 rounded-2xl bg-slate-50 border border-emerald-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                    <h4 className="text-xs font-extrabold text-slate-100 uppercase tracking-wider">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
+                    <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
                       Latest HR Evaluation Update
                     </h4>
                   </div>
                   {latestHrUpdate ? (
-                    <span className="text-[10px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                       HR Overridden
                     </span>
                   ) : (
-                    <span className="text-[10px] font-semibold bg-slate-900 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-semibold bg-white text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
                       Pending HR Review
                     </span>
                   )}
@@ -796,30 +789,30 @@ export default function Evaluation() {
                   <>
                     {/* Scores Grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-[11px] text-slate-400 block font-medium">Leadership Score</span>
-                        <div className="text-base font-extrabold text-indigo-400">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-medium">Leadership Score</span>
+                        <div className="text-base font-extrabold text-indigo-600">
                           {latestHrUpdate.leadership_score !== undefined ? `${latestHrUpdate.leadership_score}%` : "N/A"}
                         </div>
                       </div>
 
-                      <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-[11px] text-slate-400 block font-medium">Team Player</span>
-                        <div className="text-base font-extrabold text-emerald-400">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-medium">Team Player</span>
+                        <div className="text-base font-extrabold text-emerald-600">
                           {latestHrUpdate.team_player !== undefined ? `${latestHrUpdate.team_player}%` : "N/A"}
                         </div>
                       </div>
 
-                      <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-[11px] text-slate-400 block font-medium">Communication</span>
-                        <div className="text-base font-extrabold text-blue-400">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-medium">Communication</span>
+                        <div className="text-base font-extrabold text-blue-600">
                           {latestHrUpdate.communication !== undefined ? `${latestHrUpdate.communication}%` : "N/A"}
                         </div>
                       </div>
 
-                      <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-[11px] text-slate-400 block font-medium">Problem Solving</span>
-                        <div className="text-base font-extrabold text-purple-400">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-medium">Problem Solving</span>
+                        <div className="text-base font-extrabold text-purple-600">
                           {latestHrUpdate.problem_solving !== undefined ? `${latestHrUpdate.problem_solving}%` : "N/A"}
                         </div>
                       </div>
@@ -827,40 +820,40 @@ export default function Evaluation() {
 
                     {/* Career & Lists */}
                     <div className="space-y-3 text-xs pt-1">
-                      <div className="flex justify-between items-center bg-[#030514] p-3 rounded-xl border border-slate-800">
-                        <span className="text-slate-400 font-medium">Job Hopping Risk</span>
-                        <span className="font-bold text-emerald-400">
+                      <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 font-medium">Job Hopping Risk</span>
+                        <span className="font-bold text-emerald-600">
                           {latestHrUpdate.job_hopping_risk !== undefined ? `${latestHrUpdate.job_hopping_risk}%` : "N/A"}
                         </span>
                       </div>
 
-                      <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1.5">
-                        <span className="text-slate-400 font-semibold block text-[11px]">Recommended Upskilling</span>
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 font-semibold block text-[11px]">Recommended Upskilling</span>
                         {latestHrUpdate.recommended_upskilling && Array.isArray(latestHrUpdate.recommended_upskilling) && latestHrUpdate.recommended_upskilling.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
                             {latestHrUpdate.recommended_upskilling.map((item: string, i: number) => (
-                              <span key={i} className="bg-emerald-950/70 text-emerald-300 border border-emerald-800/50 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                              <span key={i} className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
                                 {item}
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <span className="text-slate-500 text-[11px]">None listed</span>
+                          <span className="text-slate-400 text-[11px]">None listed</span>
                         )}
                       </div>
 
-                      <div className="bg-[#030514] p-3 rounded-xl border border-slate-800 space-y-1.5">
-                        <span className="text-slate-400 font-semibold block text-[11px]">Skill Weaknesses</span>
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 font-semibold block text-[11px]">Skill Weaknesses</span>
                         {latestHrUpdate.skill_weaknesses && Array.isArray(latestHrUpdate.skill_weaknesses) && latestHrUpdate.skill_weaknesses.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
                             {latestHrUpdate.skill_weaknesses.map((item: string, i: number) => (
-                              <span key={i} className="bg-rose-950/70 text-rose-300 border border-rose-800/50 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                              <span key={i} className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
                                 {item}
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <span className="text-slate-500 text-[11px]">None flagged</span>
+                          <span className="text-slate-400 text-[11px]">None flagged</span>
                         )}
                       </div>
 
@@ -872,11 +865,11 @@ export default function Evaluation() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400 space-y-2">
+                  <div className="flex flex-col items-center justify-center py-12 text-center text-slate-500 space-y-2">
                     <p className="text-xs">No HR updates recorded yet for this candidate.</p>
                     <button
                       onClick={handleOpenEditModal}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline"
+                      className="text-xs text-indigo-600 hover:text-indigo-700 font-bold underline cursor-pointer"
                     >
                       Click here to add HR Evaluation values
                     </button>
@@ -887,101 +880,101 @@ export default function Evaluation() {
 
             {/* Side-by-Side Comparison Matrix Table */}
             {latestHrUpdate && (
-              <div className="p-5 rounded-2xl bg-[#030514] border border-slate-800 space-y-4">
-                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   📊 Direct Side-by-Side Value Comparison
                 </h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-800 text-slate-400 bg-[#090d28]">
+                      <tr className="border-b border-slate-200 text-slate-500 bg-white">
                         <th className="py-2.5 px-4 font-semibold">Evaluation Metric</th>
-                        <th className="py-2.5 px-4 font-semibold text-indigo-400">Original AI Value</th>
-                        <th className="py-2.5 px-4 font-semibold text-emerald-400">HR Update Value</th>
-                        <th className="py-2.5 px-4 font-semibold text-slate-300">Status</th>
+                        <th className="py-2.5 px-4 font-semibold text-indigo-600">Original AI Value</th>
+                        <th className="py-2.5 px-4 font-semibold text-emerald-600">HR Update Value</th>
+                        <th className="py-2.5 px-4 font-semibold text-slate-700">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/60 text-slate-200">
+                    <tbody className="divide-y divide-slate-200 text-slate-800">
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Leadership Score</td>
-                        <td className="py-2.5 px-4 text-indigo-300 font-semibold">{personality.leadership !== undefined ? `${personality.leadership}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-300 font-semibold">{latestHrUpdate.leadership_score !== undefined ? `${latestHrUpdate.leadership_score}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Leadership Score</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.leadership !== undefined ? `${personality.leadership}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.leadership_score !== undefined ? `${latestHrUpdate.leadership_score}%` : "N/A"}</td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Team Player</td>
-                        <td className="py-2.5 px-4 text-indigo-300 font-semibold">{personality.team_player !== undefined ? `${personality.team_player}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-300 font-semibold">{latestHrUpdate.team_player !== undefined ? `${latestHrUpdate.team_player}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Team Player</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.team_player !== undefined ? `${personality.team_player}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.team_player !== undefined ? `${latestHrUpdate.team_player}%` : "N/A"}</td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Communication</td>
-                        <td className="py-2.5 px-4 text-indigo-300 font-semibold">{personality.communication !== undefined ? `${personality.communication}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-300 font-semibold">{latestHrUpdate.communication !== undefined ? `${latestHrUpdate.communication}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Communication</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.communication !== undefined ? `${personality.communication}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.communication !== undefined ? `${latestHrUpdate.communication}%` : "N/A"}</td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Problem Solving</td>
-                        <td className="py-2.5 px-4 text-indigo-300 font-semibold">{personality.problem_solving !== undefined ? `${personality.problem_solving}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-300 font-semibold">{latestHrUpdate.problem_solving !== undefined ? `${latestHrUpdate.problem_solving}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Problem Solving</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.problem_solving !== undefined ? `${personality.problem_solving}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.problem_solving !== undefined ? `${latestHrUpdate.problem_solving}%` : "N/A"}</td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Job Hopping Risk</td>
-                        <td className="py-2.5 px-4 text-indigo-300 font-semibold">{careerAnalysis.job_hopping_risk || "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-300 font-semibold">{latestHrUpdate.job_hopping_risk !== undefined ? `${latestHrUpdate.job_hopping_risk}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Job Hopping Risk</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{careerAnalysis.job_hopping_risk || "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.job_hopping_risk !== undefined ? `${latestHrUpdate.job_hopping_risk}%` : "N/A"}</td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Recommended Upskilling</td>
-                        <td className="py-2.5 px-4 text-indigo-300">
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Recommended Upskilling</td>
+                        <td className="py-2.5 px-4 text-indigo-700">
                           {careerAnalysis.recommended_upskilling && Array.isArray(careerAnalysis.recommended_upskilling) ? careerAnalysis.recommended_upskilling.join(", ") : "None"}
                         </td>
-                        <td className="py-2.5 px-4 text-emerald-300">
+                        <td className="py-2.5 px-4 text-emerald-700">
                           {latestHrUpdate.recommended_upskilling && Array.isArray(latestHrUpdate.recommended_upskilling) ? latestHrUpdate.recommended_upskilling.join(", ") : "None"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-300">Skill Weaknesses</td>
-                        <td className="py-2.5 px-4 text-indigo-300">
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Skill Weaknesses</td>
+                        <td className="py-2.5 px-4 text-indigo-700">
                           {originalSkillWeaknesses && originalSkillWeaknesses.length > 0 ? originalSkillWeaknesses.join(", ") : "None"}
                         </td>
-                        <td className="py-2.5 px-4 text-rose-300 font-semibold">
+                        <td className="py-2.5 px-4 text-rose-700 font-semibold">
                           {latestHrUpdate.skill_weaknesses && Array.isArray(latestHrUpdate.skill_weaknesses) && latestHrUpdate.skill_weaknesses.length > 0 ? latestHrUpdate.skill_weaknesses.join(", ") : "None"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                             HR Updated
                           </span>
                         </td>
@@ -998,59 +991,59 @@ export default function Evaluation() {
           <div className="space-y-6 text-xs">
             {/* Original Resume */}
             <div className="space-y-3">
-              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                <FileText size={16} className="text-indigo-400" /> Original Resume
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FileText size={16} className="text-indigo-600" /> Original Resume
               </h3>
               {s3Url ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
-                    <span className="text-slate-300">{candidate?.original_filename || "Resume Document"}</span>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-800 font-medium">{candidate?.original_filename || "Resume Document"}</span>
                     <a
                       href={s3Url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-indigo-400 hover:text-indigo-300 font-semibold underline flex items-center gap-1"
+                      className="text-indigo-600 hover:text-indigo-800 font-semibold underline flex items-center gap-1"
                     >
                       <ExternalLink size={14} /> Open Document
                     </a>
                   </div>
                   <iframe
                     src={s3Url}
-                    className="w-full h-[500px] rounded-xl border border-slate-800"
+                    className="w-full h-[500px] rounded-xl border border-slate-200"
                     title="Resume Viewer"
                   />
                 </div>
               ) : (
-                <p className="text-slate-400">No S3 document URL available for this record.</p>
+                <p className="text-slate-500">No S3 document URL available for this record.</p>
               )}
             </div>
 
             {/* Additional Documents Upload */}
-            <div className="space-y-4 pt-4 border-t border-slate-800">
-              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                <Paperclip size={16} className="text-indigo-400" /> Additional Documents
+            <div className="space-y-4 pt-4 border-t border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Paperclip size={16} className="text-indigo-600" /> Additional Documents
               </h3>
 
               {/* Upload Form */}
-              <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-xl space-y-4">
-                <h4 className="text-xs font-bold text-slate-200">Upload New Document</h4>
+              <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl space-y-4">
+                <h4 className="text-xs font-bold text-slate-800">Upload New Document</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Title</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Title</label>
                     <input
                       type="text"
                       placeholder="e.g. AWS Certification, Offer Letter"
                       value={docTitle}
                       onChange={e => setDocTitle(e.target.value)}
-                      className="w-full bg-[#030514] border border-slate-700 text-xs text-white p-2.5 rounded-lg focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-white border border-slate-200 text-xs text-slate-800 p-2.5 rounded-lg focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Document Type</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Document Type</label>
                     <select
                       value={docType}
                       onChange={e => setDocType(e.target.value)}
-                      className="w-full bg-[#030514] border border-slate-700 text-xs text-white p-2.5 rounded-lg focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-white border border-slate-200 text-xs text-slate-800 p-2.5 rounded-lg focus:outline-none focus:border-indigo-500"
                     >
                       <option value="Cover Letter">Cover Letter</option>
                       <option value="ID Proof">ID Proof</option>
@@ -1065,12 +1058,12 @@ export default function Evaluation() {
                   <input
                     type="file"
                     onChange={e => e.target.files && setDocFile(e.target.files[0])}
-                    className="text-xs text-slate-300 flex-1 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                    className="text-xs text-slate-600 flex-1 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border border-indigo-200 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
                   />
                   <button
                     onClick={handleUploadDoc}
                     disabled={!docFile || isUploadingDoc}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap"
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer shadow-sm"
                   >
                     <Upload size={14} />
                     {isUploadingDoc ? "Uploading..." : "Upload Document"}
@@ -1084,14 +1077,14 @@ export default function Evaluation() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {(candidate?.other_documents || []).map((doc: any, idx: number) => (
-                    <div key={idx} className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+                    <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-xs">
                       <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="bg-indigo-900/30 p-2 rounded-lg text-indigo-400 flex-shrink-0">
+                        <div className="bg-indigo-50 border border-indigo-200 p-2 rounded-lg text-indigo-600 flex-shrink-0">
                           <Paperclip size={16} />
                         </div>
                         <div className="overflow-hidden">
-                          <p className="text-xs font-bold text-slate-200 truncate">{doc.title || doc.filename}</p>
-                          <p className="text-[10px] text-slate-400">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                          <p className="text-xs font-bold text-slate-900 truncate">{doc.title || doc.filename}</p>
+                          <p className="text-[10px] text-slate-500">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
                         </div>
                       </div>
                       {doc.s3_url && (
@@ -1099,7 +1092,7 @@ export default function Evaluation() {
                           href={doc.s3_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-indigo-400 hover:text-indigo-300 bg-indigo-900/20 p-2 rounded-lg transition-colors flex-shrink-0"
+                          className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 border border-indigo-200 p-2 rounded-lg transition-colors flex-shrink-0"
                         >
                           <ExternalLink size={14} />
                         </a>
@@ -1115,15 +1108,15 @@ export default function Evaluation() {
 
       {/* EDIT EVALUATION MODAL */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
-          <div className="bg-[#090d28] border border-indigo-500/30 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                <Edit3 size={18} className="text-indigo-400" /> Edit Candidate Evaluation & HR Ratings
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl text-slate-900">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Edit3 size={18} className="text-indigo-600" /> Edit Candidate Evaluation & HR Ratings
               </h2>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -1132,119 +1125,119 @@ export default function Evaluation() {
             <form onSubmit={handleSaveEdit} className="space-y-5 text-xs">
               {/* Basic Candidate Info */}
               <div className="space-y-3">
-                <h3 className="font-bold text-indigo-300 text-xs uppercase tracking-wider">Candidate Details (Direct Update)</h3>
+                <h3 className="font-bold text-indigo-600 text-xs uppercase tracking-wider">Candidate Details (Direct Update)</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Full Name</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Full Name</label>
                     <input
                       type="text"
                       value={editForm.full_name}
                       onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Email</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Email</label>
                     <input
                       type="email"
                       value={editForm.email}
                       onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Phone</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Phone</label>
                     <input
                       type="text"
                       value={editForm.phone}
                       onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Location</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Location</label>
                     <input
                       type="text"
                       value={editForm.location}
                       onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-slate-400 mb-1 font-semibold">Total Experience Years</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Total Experience Years</label>
                     <input
                       type="number"
                       step="0.5"
                       value={editForm.total_experience_years}
                       onChange={(e) => setEditForm({ ...editForm, total_experience_years: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
                 </div>
               </div>
 
               {/* HR Update Metrics */}
-              <div className="space-y-3 pt-3 border-t border-slate-800">
+              <div className="space-y-3 pt-3 border-t border-slate-200">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-indigo-300 text-xs uppercase tracking-wider">HR Evaluation Ratings (Appended to HR-Update Array)</h3>
-                  <span className="text-[10px] text-slate-400 italic">Does not modify original AI baseline</span>
+                  <h3 className="font-bold text-indigo-600 text-xs uppercase tracking-wider">HR Evaluation Ratings (Appended to HR-Update Array)</h3>
+                  <span className="text-[10px] text-slate-500 italic">Does not modify original AI baseline</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Leadership Score (%)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Leadership Score (%)</label>
                     <input
                       type="number"
                       min="0"
                       max="100"
                       value={editForm.leadership_score}
                       onChange={(e) => setEditForm({ ...editForm, leadership_score: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Team Player Score (%)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Team Player Score (%)</label>
                     <input
                       type="number"
                       min="0"
                       max="100"
                       value={editForm.team_player}
                       onChange={(e) => setEditForm({ ...editForm, team_player: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Communication Score (%)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Communication Score (%)</label>
                     <input
                       type="number"
                       min="0"
                       max="100"
                       value={editForm.communication}
                       onChange={(e) => setEditForm({ ...editForm, communication: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Problem Solving Score (%)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Problem Solving Score (%)</label>
                     <input
                       type="number"
                       min="0"
                       max="100"
                       value={editForm.problem_solving}
                       onChange={(e) => setEditForm({ ...editForm, problem_solving: e.target.value })}
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-slate-400 mb-1 font-semibold">Job Hopping Risk (Score / Rating)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Job Hopping Risk (Score / Rating)</label>
                     <input
                       type="number"
                       min="0"
@@ -1252,47 +1245,47 @@ export default function Evaluation() {
                       value={editForm.job_hopping_risk}
                       onChange={(e) => setEditForm({ ...editForm, job_hopping_risk: e.target.value })}
                       placeholder="e.g. 20"
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-slate-400 mb-1 font-semibold">Recommended Upskilling (Comma-separated)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Recommended Upskilling (Comma-separated)</label>
                     <input
                       type="text"
                       value={editForm.recommended_upskilling}
                       onChange={(e) => setEditForm({ ...editForm, recommended_upskilling: e.target.value })}
                       placeholder="Docker, Kubernetes, System Design"
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-slate-400 mb-1 font-semibold">Skill Weaknesses (Comma-separated)</label>
+                    <label className="block text-slate-600 mb-1 font-semibold">Skill Weaknesses (Comma-separated)</label>
                     <input
                       type="text"
                       value={editForm.skill_weaknesses}
                       onChange={(e) => setEditForm({ ...editForm, skill_weaknesses: e.target.value })}
                       placeholder="GraphQL, Microservices"
-                      className="w-full bg-[#030514] border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Form Action Buttons */}
-              <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-800">
+              <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 transition-colors font-semibold text-xs"
+                  className="px-4 py-2 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 transition-colors font-semibold text-xs cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isUpdating}
-                  className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-colors shadow-lg disabled:opacity-50 text-xs"
+                  className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-md disabled:opacity-50 text-xs cursor-pointer"
                 >
                   {isUpdating ? (
                     <>
