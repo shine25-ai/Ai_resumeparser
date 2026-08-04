@@ -740,9 +740,9 @@ export default function InterviewManagement() {
   };
 
   return (
-    <div className="bg-[#030514] text-slate-100 min-h-screen p-2 rounded-2xl space-y-6 font-sans relative">
+    <div className="bg-[#030514] text-slate-100 min-h-screen py-2 rounded-2xl space-y-6 font-sans relative">
       {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-slate-100">Interview Management</h1>
         </div>
@@ -780,7 +780,7 @@ export default function InterviewManagement() {
       </div>
 
       {/* Main Table Card Wrapper */}
-      <div className="bg-[#030514] rounded-2xl p-6 border border-slate-800 shadow-sm space-y-6">
+      <div className="bg-[#030514] rounded-2xl p-4 border border-slate-800 shadow-sm space-y-6">
         {/* Navigation Filter Tabs Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4 overflow-x-auto gap-4">
           <div className="flex items-center gap-6 overflow-x-auto">
@@ -831,96 +831,116 @@ export default function InterviewManagement() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-[#06091e] shadow-xl">
+            <table className="w-full text-left border-collapse min-w-[1000px]">
               <thead>
-                <tr className="border-b border-slate-800 text-[11px] text-slate-400 font-semibold">
-                  <th className="py-3 px-3 w-10 text-center">
+                <tr className="bg-[#0b0f29] border-b border-slate-800 text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                  <th className="py-3.5 px-4 w-12 text-center">
                     <input
                       type="checkbox"
                       checked={isAllSelected}
                       onChange={handleSelectAllToggle}
-                      className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"
                       title="Select / Deselect all candidates"
                     />
                   </th>
-                  <th className="py-3 px-3">Candidate & Location</th>
-                  <th className="py-3 px-3">Role / Job</th>
-                  <th className="py-3 px-3">Type & Round</th>
-                  <th className="py-3 px-3">Date & Time</th>
-                  <th className="py-3 px-3">HR Verification</th>
-                  <th className="py-3 px-3">Round & Client Feedback</th>
-                  <th className="py-3 px-3">Salary & Joining</th>
-                  <th className="py-3 px-3">Documents</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3 text-right">Actions</th>
+                  <th className="py-3.5 px-4 min-w-[220px]">Candidate Details</th>
+                  <th className="py-3.5 px-4 min-w-[170px]">Role & Round</th>
+                  <th className="py-3.5 px-4 min-w-[170px]">Schedule & HR Call</th>
+                  <th className="py-3.5 px-4 min-w-[260px]">Feedback & Ratings</th>
+                  <th className="py-3.5 px-4 min-w-[140px] text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-xs">
+              <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
                 {filteredInterviews.map((row) => (
-                  <tr key={row.id} className={`hover:bg-slate-900/40 transition-colors ${selectedInterviewIds.includes(row.id) ? "bg-blue-950/20" : ""}`}>
-                    <td className="py-3.5 px-3 text-center">
+                  <tr key={row.id} className={`hover:bg-slate-900/60 transition-colors ${selectedInterviewIds.includes(row.id) ? "bg-blue-950/30" : ""}`}>
+                    <td className="py-4 px-4 text-center">
                       <input
                         type="checkbox"
                         checked={selectedInterviewIds.includes(row.id)}
                         onChange={() => handleSelectRowToggle(row.id)}
-                        className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"
                       />
                     </td>
-                    <td className="py-3.5 px-3">
 
-                      <div className="font-bold text-slate-100">{row.candidate_name}</div>
-                      {row.location && (
-                        <div className="text-[10px] text-indigo-400 font-medium">{row.location}</div>
-                      )}
+                    {/* Candidate Details & Status */}
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-xs shrink-0">
+                          {row.candidate_name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-100 truncate text-xs">{row.candidate_name}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold border ${getStatusBadge(row.status)}`}>
+                              {row.status}
+                            </span>
+                            {row.location && (
+                              <span className="text-[10px] text-indigo-400 font-medium flex items-center gap-0.5 truncate">
+                                <MapPin size={10} />
+                                {row.location}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </td>
-                    <td className="py-3.5 px-3 text-slate-300">{row.job_title}</td>
-                    <td className="py-3.5 px-3 text-slate-400">
-                      <span className="font-semibold text-slate-200">{row.interview_type.replace("_", " ")}</span>
-                      <span className="block text-[10px] text-slate-400">Round {row.round_number}</span>
+
+                    {/* Role & Round */}
+                    <td className="py-4 px-4">
+                      <div className="font-bold text-slate-200 text-xs truncate max-w-[160px]">{row.job_title}</div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="bg-slate-800 text-slate-300 border border-slate-700/80 px-2 py-0.5 rounded text-[10px] font-semibold">
+                          {row.interview_type.replace("_", " ")}
+                        </span>
+                        <span className="bg-blue-950 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                          R{row.round_number}
+                        </span>
+                      </div>
                     </td>
-                    <td className="py-3.5 px-3 text-slate-300 font-medium">
-                      <div>{row.scheduled_date}</div>
-                      <div className="text-[10px] text-slate-400">{row.scheduled_time} ({row.timezone || "IST"})</div>
-                      {row.candidate_requested_date_time && (
-                        <div className="text-[9px] text-amber-400">Req: {row.candidate_requested_date_time}</div>
-                      )}
+
+                    {/* Schedule & HR Call */}
+                    <td className="py-4 px-4">
+                      <div className="font-semibold text-slate-200 text-xs">{row.scheduled_date}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">{row.scheduled_time} ({row.timezone || "IST"})</div>
+                      <div className="mt-1">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${row.hr_call_verification === "Verified"
+                          ? "bg-emerald-950/80 text-emerald-300 border-emerald-800/50"
+                          : "bg-slate-800/90 text-slate-300 border-slate-700"
+                          }`}>
+                          HR: {row.hr_call_verification || "Pending"}
+                        </span>
+                      </div>
                     </td>
-                    <td className="py-3.5 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${row.hr_call_verification === "Verified"
-                        ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800/50"
-                        : "bg-slate-800 text-slate-300 border border-slate-700"
-                        }`}>
-                        {row.hr_call_verification || "Pending"}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3 min-w-[200px]">
+
+                    {/* Feedback & Ratings */}
+                    <td className="py-4 px-4">
                       <div className="space-y-1.5">
-                        {/* Interviewer Round Feedback */}
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span className="bg-indigo-950/90 text-indigo-300 border border-indigo-700/60 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        {/* Interviewer */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="bg-indigo-950/90 text-indigo-300 border border-indigo-700/60 font-bold px-1.5 py-0.5 rounded shrink-0">
                             Interviewer
                           </span>
-                          <span className="text-amber-400 font-bold">⭐ {row.rating ? `${row.rating}/5` : "No Rating"}</span>
+                          <span className="text-amber-400 font-bold shrink-0">⭐ {row.rating ? `${row.rating}/5` : "-"}</span>
                           {row.recommendation && (
-                            <span className="bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.2 rounded text-[9px] font-semibold">
+                            <span className="bg-slate-800 text-slate-200 border border-slate-700 px-1.5 py-0.5 rounded text-[9px] font-semibold truncate max-w-[90px]">
                               {row.recommendation}
                             </span>
                           )}
                         </div>
 
-                        {/* Client Feedback */}
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span className="bg-teal-950/90 text-teal-300 border border-teal-700/60 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        {/* Client */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="bg-teal-950/90 text-teal-300 border border-teal-700/60 font-bold px-1.5 py-0.5 rounded shrink-0">
                             Client
                           </span>
                           {row.client_rating || row.client_recommendation || row.client_name ? (
                             <>
-                              <span className="text-teal-200 font-bold">
+                              <span className="text-teal-200 font-bold truncate max-w-[100px]">
                                 {row.client_name ? `${row.client_name}: ` : ""}⭐ {row.client_rating ? `${row.client_rating}/5` : "-"}
                               </span>
                               {row.client_recommendation && (
-                                <span className="bg-teal-900/60 text-teal-300 border border-teal-700/60 px-1.5 py-0.2 rounded text-[9px] font-semibold">
+                                <span className="bg-teal-900/60 text-teal-300 border border-teal-700/60 px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0">
                                   {row.client_recommendation}
                                 </span>
                               )}
@@ -931,89 +951,62 @@ export default function InterviewManagement() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-3 text-slate-300">
-                      {row.salary_requested && (
-                        <div className="text-[10px] text-slate-400">Req: <span className="text-slate-200 font-medium">{row.salary_requested}</span></div>
-                      )}
-                      {row.final_fit_salary && (
-                        <div className="text-[10px] text-emerald-400">Fit: <span className="font-bold">{row.final_fit_salary}</span></div>
-                      )}
-                      {row.joining_date && (
-                        <div className="text-[9px] text-indigo-300">Join: {row.joining_date}</div>
-                      )}
-                      {!row.salary_requested && !row.final_fit_salary && !row.joining_date && (
-                        <span className="text-slate-500 text-[10px]">N/A</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-3">
-                      {row.interview_document_files && row.interview_document_files.length > 0 ? (
-                        <span className="bg-indigo-950/60 border border-indigo-800/40 text-indigo-300 text-[10px] px-2 py-0.5 rounded font-semibold">
-                          {row.interview_document_files.length} File(s)
-                        </span>
-                      ) : (
-                        <span className="text-slate-500 text-[10px]">None</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${getStatusBadge(row.status)}`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3 text-right">
+
+                    {/* Actions */}
+                    <td className="py-4 px-0 text-right">
                       <div className="flex items-center justify-end gap-1.5 text-blue-400">
                         {/* View Candidate Full History Button */}
                         <button
                           onClick={() => handleOpenDetails(row)}
                           title="View Candidate Full Details & All Rounds History"
-                          className="p-1.5 hover:bg-cyan-950/80 hover:text-cyan-300 rounded-md transition-colors border border-cyan-800/60 cursor-pointer text-cyan-400"
+                          className="p-1.5 hover:bg-cyan-950/80 hover:text-cyan-300 rounded-lg transition-colors border border-cyan-800/60 cursor-pointer text-cyan-400"
                         >
-                          <Eye size={13} />
+                          <Eye size={14} />
+                        </button>
+
+                        {/* Open Single Feedback Modal */}
+                        <button
+                          onClick={() => handleOpenFeedback(row)}
+                          title="Submit Single Candidate Feedback"
+                          className="p-1.5 hover:bg-amber-950/80 hover:text-amber-300 rounded-lg transition-colors border border-amber-800/60 cursor-pointer text-amber-400"
+                        >
+                          <Star size={14} />
                         </button>
 
                         {/* Edit Button */}
                         <button
                           onClick={() => handleOpenEdit(row)}
                           title="Edit Interview"
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 cursor-pointer"
+                          className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800 cursor-pointer text-slate-300"
                         >
-                          <Edit2 size={13} />
+                          <Edit2 size={14} />
                         </button>
 
                         {/* Reschedule Button */}
                         <button
                           onClick={() => handleOpenReschedule(row)}
                           title="Reschedule Date & Time"
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 cursor-pointer text-amber-400"
+                          className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800 cursor-pointer text-amber-400"
                         >
-                          <Calendar size={13} />
-                        </button>
-
-                        {/* Rating / Feedback Button */}
-                        <button
-                          onClick={() => handleOpenFeedback(row)}
-                          title="Submit Feedback & Rating"
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 cursor-pointer text-emerald-400"
-                        >
-                          <Star size={13} />
+                          <Calendar size={14} />
                         </button>
 
                         {/* Schedule Next Round Button */}
                         <button
                           onClick={() => handleOpenNextRound(row)}
-                          title={`Schedule Next Round (Round ${row.round_number + 1})`}
-                          className="p-1.5 hover:bg-purple-950/80 hover:text-purple-300 rounded-md transition-colors border border-purple-800/60 cursor-pointer text-purple-400 flex items-center gap-1 font-bold text-[11px] px-2"
+                          title="Schedule Next Round"
+                          className="p-1.5 hover:bg-purple-950/80 hover:text-purple-300 rounded-lg transition-colors border border-purple-800/60 cursor-pointer text-purple-400"
                         >
-                          <Layers size={13} />
-                          <span>+ Next R{row.round_number + 1}</span>
+                          <Layers size={14} />
                         </button>
 
                         {/* Delete Button */}
                         <button
                           onClick={() => handleOpenDelete(row)}
                           title="Delete Interview"
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 cursor-pointer text-rose-400"
+                          className="p-1.5 hover:bg-rose-950/80 hover:text-rose-300 rounded-lg transition-colors border border-rose-800/60 cursor-pointer text-rose-400"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
