@@ -7,6 +7,7 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 
 from app.schemas.interview import (
+    BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
@@ -117,6 +118,19 @@ class InterviewController:
             data=res.model_dump(),
             message="Interview feedback submitted successfully.",
         )
+
+    async def bulk_submit_feedback(
+        self,
+        payload: BulkInterviewFeedbackRequest,
+        user_id: str,
+    ) -> JSONResponse:
+        """Submit bulk candidate interview feedback."""
+        res = await self.interview_service.bulk_submit_feedback(payload, updated_by=user_id)
+        return success_response(
+            data=[r.model_dump() for r in res],
+            message=f"Successfully submitted bulk feedback for {len(res)} candidates.",
+        )
+
 
     async def delete_interview(self, interview_id: str) -> JSONResponse:
         """Cancel/delete interview."""

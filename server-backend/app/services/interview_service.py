@@ -8,6 +8,7 @@ from app.core.exceptions import NotFoundError
 from app.models.interview import InterviewDocument
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
+    BulkInterviewFeedbackRequest,
     CandidateFullHistoryResponse,
     InterviewBatchCreateRequest,
     InterviewCreateRequest,
@@ -273,6 +274,26 @@ class InterviewService:
 
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
         return InterviewResponse.model_validate(updated_doc)
+
+    async def bulk_submit_feedback(
+        self,
+        payload: BulkInterviewFeedbackRequest,
+        updated_by: Optional[str] = None,
+    ) -> List[InterviewResponse]:
+        """Submit feedback for multiple candidate interviews in bulk."""
+        updated_interviews: List[InterviewResponse] = []
+
+        for item in payload.items:
+            res = await self.submit_feedback(
+                interview_id=item.interview_id,
+                payload=item,
+                updated_by=updated_by,
+            )
+            updated_interviews.append(res)
+
+        logger.info(f"Bulk submitted feedback for {len(updated_interviews)} interviews.")
+        return updated_interviews
+
 
 
     async def delete_interview(self, interview_id: str) -> bool:

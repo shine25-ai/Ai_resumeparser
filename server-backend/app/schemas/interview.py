@@ -226,6 +226,21 @@ class InterviewFeedbackRequest(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BulkFeedbackItem(InterviewFeedbackRequest):
+    """Payload for updating feedback for a single interview within a bulk operation."""
+
+    interview_id: str
+
+
+class BulkInterviewFeedbackRequest(BaseModel):
+    """Payload for submitting feedback for multiple interviews in bulk."""
+
+    items: List[BulkFeedbackItem]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+
 class InterviewResponse(BaseModel):
     """Response schema representing an Interview document."""
 

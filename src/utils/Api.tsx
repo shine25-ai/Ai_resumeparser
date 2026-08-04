@@ -317,6 +317,8 @@ import type {
   UpdateInterviewPayload,
   RescheduleInterviewPayload,
   SubmitFeedbackPayload,
+  BulkFeedbackItemPayload,
+  BulkSubmitFeedbackPayload,
 } from "../types/interview";
 
 export type {
@@ -329,6 +331,8 @@ export type {
   UpdateInterviewPayload,
   RescheduleInterviewPayload,
   SubmitFeedbackPayload,
+  BulkFeedbackItemPayload,
+  BulkSubmitFeedbackPayload,
 };
 
 
@@ -500,6 +504,28 @@ export const submitInterviewFeedback = async (interviewId: string, payload: Subm
 
   return resData.data || resData;
 };
+
+export const bulkSubmitInterviewFeedback = async (payload: BulkSubmitFeedbackPayload) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEWS_URL}/bulk-feedback`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to submit bulk interview feedback");
+  }
+
+  return resData.data || resData;
+};
+
 
 export const deleteInterview = async (interviewId: string) => {
   const token = localStorage.getItem("access_token") || "";

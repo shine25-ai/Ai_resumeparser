@@ -8,6 +8,7 @@ import {
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
+import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
 
 export default function InterviewManagement() {
   const [activeTab, setActiveTab] = useState<string>("All");
@@ -15,6 +16,10 @@ export default function InterviewManagement() {
   const [candidatesList, setCandidatesList] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Bulk Selection & Modal State
+  const [selectedInterviewIds, setSelectedInterviewIds] = useState<string[]>([]);
+  const [isBulkFeedbackOpen, setIsBulkFeedbackOpen] = useState<boolean>(false);
 
   // Modals state
   const [isScheduleOpen, setIsScheduleOpen] = useState<boolean>(false);
@@ -280,6 +285,24 @@ export default function InterviewManagement() {
     const tabNorm = activeTab.toUpperCase().replace(/\s+/g, "_");
     return item.interview_type === tabNorm || item.interview_type.includes(tabNorm);
   });
+
+  // Checkbox Selection Handlers for Bulk Feedback Update
+  const isAllSelected = filteredInterviews.length > 0 && filteredInterviews.every((i) => selectedInterviewIds.includes(i.id));
+
+  const handleSelectAllToggle = () => {
+    if (isAllSelected) {
+      setSelectedInterviewIds([]);
+    } else {
+      setSelectedInterviewIds(filteredInterviews.map((i) => i.id));
+    }
+  };
+
+  const handleSelectRowToggle = (id: string) => {
+    setSelectedInterviewIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
 
   // Calculate live stats based on current active candidate rounds
   const techCount = latestCandidateInterviews.filter((i) => i.interview_type === "TECHNICAL").length;
@@ -724,13 +747,25 @@ export default function InterviewManagement() {
           <h1 className="text-xl font-bold text-slate-100">Interview Management</h1>
         </div>
 
-        <button
-          onClick={() => setIsScheduleOpen(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-lg cursor-pointer"
-        >
-          <Plus size={16} />
-          Schedule Interview
-        </button>
+        <div className="flex items-center gap-3">
+          {selectedInterviewIds.length > 0 && (
+            <button
+              onClick={() => setIsBulkFeedbackOpen(true)}
+              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 cursor-pointer animate-pulse"
+            >
+              <Sparkles size={16} />
+              Bulk Feedback Update ({selectedInterviewIds.length})
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsScheduleOpen(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-lg cursor-pointer"
+          >
+            <Plus size={16} />
+            Schedule Interview
+          </button>
+        </div>
       </div>
 
       {/* 4 Stat Cards Row */}
@@ -747,20 +782,32 @@ export default function InterviewManagement() {
       {/* Main Table Card Wrapper */}
       <div className="bg-[#030514] rounded-2xl p-6 border border-slate-800 shadow-sm space-y-6">
         {/* Navigation Filter Tabs Header */}
-        <div className="flex items-center gap-6 border-b border-slate-800 pb-4 overflow-x-auto">
-          {navTabs.map((tab) => (
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4 overflow-x-auto gap-4">
+          <div className="flex items-center gap-6 overflow-x-auto">
+            {navTabs.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`text-xs font-bold transition-colors whitespace-nowrap relative pb-4 -mb-4 cursor-pointer ${activeTab === tab ? "text-blue-400" : "text-slate-400 hover:text-slate-200"
+                  }`}
+              >
+                {tab}
+                {activeTab === tab && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full"></span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {selectedInterviewIds.length > 0 && (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`text-xs font-bold transition-colors whitespace-nowrap relative pb-4 -mb-4 cursor-pointer ${activeTab === tab ? "text-blue-400" : "text-slate-400 hover:text-slate-200"
-                }`}
+              onClick={() => setIsBulkFeedbackOpen(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer whitespace-nowrap"
             >
-              {tab}
-              {activeTab === tab && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full"></span>
-              )}
+              <Sparkles size={16} />
+              Bulk Feedback Update ({selectedInterviewIds.length})
             </button>
-          ))}
+          )}
         </div>
 
         {/* Interviews Data Table */}
@@ -788,6 +835,15 @@ export default function InterviewManagement() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 text-[11px] text-slate-400 font-semibold">
+                  <th className="py-3 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleSelectAllToggle}
+                      className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      title="Select / Deselect all candidates"
+                    />
+                  </th>
                   <th className="py-3 px-3">Candidate & Location</th>
                   <th className="py-3 px-3">Role / Job</th>
                   <th className="py-3 px-3">Type & Round</th>
@@ -802,8 +858,17 @@ export default function InterviewManagement() {
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs">
                 {filteredInterviews.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-900/40 transition-colors">
+                  <tr key={row.id} className={`hover:bg-slate-900/40 transition-colors ${selectedInterviewIds.includes(row.id) ? "bg-blue-950/20" : ""}`}>
+                    <td className="py-3.5 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedInterviewIds.includes(row.id)}
+                        onChange={() => handleSelectRowToggle(row.id)}
+                        className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="py-3.5 px-3">
+
                       <div className="font-bold text-slate-100">{row.candidate_name}</div>
                       {row.location && (
                         <div className="text-[10px] text-indigo-400 font-medium">{row.location}</div>
@@ -2857,6 +2922,18 @@ export default function InterviewManagement() {
         candidateName={selectedCandidateName}
         fallbackInterview={selectedInterview}
       />
+
+      {/* BULK CANDIDATE FEEDBACK UPDATE MODAL */}
+      <BulkFeedbackModal
+        isOpen={isBulkFeedbackOpen}
+        onClose={() => setIsBulkFeedbackOpen(false)}
+        selectedInterviews={filteredInterviews.filter((i) => selectedInterviewIds.includes(i.id))}
+        onSuccess={() => {
+          setSelectedInterviewIds([]);
+          fetchAllData();
+        }}
+      />
     </div>
   );
 }
+
