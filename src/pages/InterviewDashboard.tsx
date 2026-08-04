@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Video, FileText, UserCheck, Briefcase } from "lucide-react";
+import InterviewRecorder from "../components/InterviewRecorder";
 
 export default function InterviewDashboard() {
   const [selectedRound, setSelectedRound] = useState("Technical Interview");
@@ -106,7 +107,7 @@ export default function InterviewDashboard() {
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
           {/* Top Details / Scorecard Tabs */}
           <div className="flex items-center gap-6 border-b border-slate-200 pb-4">
-            {["Interview Details", "Scorecard"].map((tab) => (
+            {["Interview Details", "Scorecard", "Live Recording"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -121,92 +122,98 @@ export default function InterviewDashboard() {
             ))}
           </div>
 
-          {/* Selected Round Title & Metadata Box */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">
-              {selectedRound} - <span className="text-slate-500 font-medium">Completed</span>
-            </h3>
+          {activeTab === "Live Recording" ? (
+            <InterviewRecorder />
+          ) : (
+            <>
+              {/* Selected Round Title & Metadata Box */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-900">
+                  {selectedRound} - <span className="text-slate-500 font-medium">Completed</span>
+                </h3>
 
-            {/* Meta Attributes Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 block mb-1">Interviewer</span>
-                <span className="text-xs font-bold text-slate-800">Ravi Shankar</span>
-              </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 block mb-1">Date & Time</span>
-                <span className="text-xs font-bold text-slate-800">20 May 2025, 10:00 AM</span>
-              </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 block mb-1">Mode</span>
-                <span className="text-xs font-bold text-slate-800">Google Meet</span>
-              </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 block mb-1">Duration</span>
-                <span className="text-xs font-bold text-slate-800">60 mins</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Evaluation Summary Section */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">Evaluation Summary</h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 items-center">
-              {/* 4 Score Badges */}
-              <div className="sm:col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {evaluationScores.map((item, idx) => (
-                  <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center space-y-2">
-                    <span className="text-[11px] font-semibold text-slate-500 block truncate" title={item.label}>
-                      {item.label}
-                    </span>
-                    <div className="flex items-baseline justify-center gap-0.5">
-                      <span className="text-xl font-extrabold text-slate-900">{item.score}</span>
-                      <span className="text-[10px] text-slate-500 font-semibold">/100</span>
-                    </div>
+                {/* Meta Attributes Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50">
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 block mb-1">Interviewer</span>
+                    <span className="text-xs font-bold text-slate-800">Ravi Shankar</span>
                   </div>
-                ))}
-              </div>
-
-              {/* Overall Score Circle Gauge */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col items-center justify-center text-center space-y-2">
-                <span className="text-[11px] font-semibold text-slate-500 block">Overall Score</span>
-
-                <div className="relative w-16 h-16 flex items-center justify-center">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                    <path
-                      className="text-slate-200"
-                      strokeWidth="3.5"
-                      stroke="currentColor"
-                      fill="none"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                    />
-                    <path
-                      className="text-emerald-600 stroke-current"
-                      strokeWidth="3.5"
-                      strokeDasharray="84, 100"
-                      strokeLinecap="round"
-                      fill="none"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                    />
-                  </svg>
-                  <div className="absolute flex flex-col items-center leading-none">
-                    <span className="text-xs font-bold text-slate-900">84</span>
-                    <span className="text-[8px] text-slate-500">/100</span>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 block mb-1">Date & Time</span>
+                    <span className="text-xs font-bold text-slate-800">20 May 2025, 10:00 AM</span>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 block mb-1">Mode</span>
+                    <span className="text-xs font-bold text-slate-800">Google Meet</span>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 block mb-1">Duration</span>
+                    <span className="text-xs font-bold text-slate-800">60 mins</span>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Interviewer Comments Section */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-sm font-bold text-slate-900">Interviewer Comments</h3>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 leading-relaxed">
-              Strong in Java, Spring Boot and Microservices. Good problem solving skills.
-              Can improve in system design concepts.
-            </div>
-          </div>
+              {/* Evaluation Summary Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-900">Evaluation Summary</h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 items-center">
+                  {/* 4 Score Badges */}
+                  <div className="sm:col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {evaluationScores.map((item, idx) => (
+                      <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center space-y-2">
+                        <span className="text-[11px] font-semibold text-slate-500 block truncate" title={item.label}>
+                          {item.label}
+                        </span>
+                        <div className="flex items-baseline justify-center gap-0.5">
+                          <span className="text-xl font-extrabold text-slate-900">{item.score}</span>
+                          <span className="text-[10px] text-slate-500 font-semibold">/100</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Overall Score Circle Gauge */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col items-center justify-center text-center space-y-2">
+                    <span className="text-[11px] font-semibold text-slate-500 block">Overall Score</span>
+
+                    <div className="relative w-16 h-16 flex items-center justify-center">
+                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                        <path
+                          className="text-slate-200"
+                          strokeWidth="3.5"
+                          stroke="currentColor"
+                          fill="none"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path
+                          className="text-emerald-600 stroke-current"
+                          strokeWidth="3.5"
+                          strokeDasharray="84, 100"
+                          strokeLinecap="round"
+                          fill="none"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                      </svg>
+                      <div className="absolute flex flex-col items-center leading-none">
+                        <span className="text-xs font-bold text-slate-900">84</span>
+                        <span className="text-[8px] text-slate-500">/100</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interviewer Comments Section */}
+              <div className="space-y-3 pt-2">
+                <h3 className="text-sm font-bold text-slate-900">Interviewer Comments</h3>
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 leading-relaxed">
+                  Strong in Java, Spring Boot and Microservices. Good problem solving skills.
+                  Can improve in system design concepts.
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
