@@ -238,3 +238,12 @@ export interface SubmitFeedbackPayload {
   joining_date?: string;
   interview_document_files?: string[];
 }
+
+export interface BulkFeedbackItemPayload extends SubmitFeedbackPayload {
+  interview_id: string;
+}
+
+export interface BulkSubmitFeedbackPayload {
+  items: BulkFeedbackItemPayload[];
+}
+

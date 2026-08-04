@@ -11,6 +11,7 @@ from app.core.database import get_database
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
+    BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
@@ -119,6 +120,20 @@ async def get_interview(
 
 
 @router.put(
+    "/bulk-feedback",
+    status_code=status.HTTP_200_OK,
+    summary="Bulk submit candidate interview feedback",
+    description="Update interviewer and/or client feedback for multiple candidates in a single bulk PUT request.",
+)
+async def bulk_submit_feedback(
+    payload: BulkInterviewFeedbackRequest,
+    current_user: dict = Depends(get_current_active_user),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.bulk_submit_feedback(payload, user_id=current_user["id"])
+
+
+@router.put(
     "/{interview_id}",
     status_code=status.HTTP_200_OK,
     summary="Update interview details",
@@ -161,6 +176,8 @@ async def submit_feedback(
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.submit_feedback(interview_id, payload, user_id=current_user["id"])
+
+
 
 
 @router.delete(
