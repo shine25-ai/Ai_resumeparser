@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Video, FileText, UserCheck, Briefcase } from "lucide-react";
+import InterviewRecorder from "../components/InterviewRecorder";
 
 export default function InterviewDashboard() {
   const [selectedRound, setSelectedRound] = useState("Technical Interview");
@@ -106,7 +107,7 @@ export default function InterviewDashboard() {
         <div className="lg:col-span-2 bg-[#030514] p-6 rounded-2xl border border-slate-800 shadow-sm space-y-6">
           {/* Top Details / Scorecard Tabs */}
           <div className="flex items-center gap-6 border-b border-slate-800 pb-4">
-            {["Interview Details", "Scorecard"].map((tab) => (
+            {["Interview Details", "Scorecard", "Live Recording"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -121,7 +122,11 @@ export default function InterviewDashboard() {
             ))}
           </div>
 
-          {/* Selected Round Title & Metadata Box */}
+          {activeTab === "Live Recording" ? (
+            <InterviewRecorder />
+          ) : (
+            <>
+              {/* Selected Round Title & Metadata Box */}
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-slate-100">
               {selectedRound} - <span className="text-slate-400 font-medium">Completed</span>
@@ -207,6 +212,8 @@ export default function InterviewDashboard() {
               Can improve in system design concepts.
             </div>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>
