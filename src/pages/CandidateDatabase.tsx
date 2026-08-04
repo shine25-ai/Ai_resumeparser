@@ -45,7 +45,7 @@ export default function CandidateDatabase() {
           ? `${item.ai_evaluation.ai_technical_score}%`
           : "85%",
         status: item.status ? item.status.toUpperCase() : "PARSED",
-        statusBg: "bg-emerald-950/60 border-emerald-800/50 text-emerald-400",
+        statusBg: "bg-emerald-50 border-emerald-200 text-emerald-700",
         s3Url: item.s3_url,
         lastUpdated: item.upload_date
           ? new Date(item.upload_date).toLocaleDateString()
@@ -110,16 +110,16 @@ export default function CandidateDatabase() {
   };
 
   return (
-    <div className="bg-[#030514] text-slate-100 min-h-screen p-6 rounded-2xl space-y-6 font-sans">
+    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans">
       {/* Top Header Bar */}
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-100">Candidate Database</h1>
+          <h1 className="text-xl font-bold text-slate-900">Candidate Database</h1>
         </div>
       </div>
 
       {/* Main Table Card Wrapper */}
-      <div className="bg-[#030514] rounded-2xl p-6 border border-slate-800 shadow-sm space-y-6">
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
         {/* Search Input Bar & Action Buttons */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="relative w-full sm:w-80">
@@ -129,16 +129,16 @@ export default function CandidateDatabase() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search candidate..."
-              className="w-full pl-10 pr-10 py-2 bg-[#030514] border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             />
           </div>
 
           <div className="flex items-center gap-3 self-end sm:self-auto">
-            <button className="flex items-center gap-2 bg-[#030514] border border-slate-800 text-slate-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm">
+            <button className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
               <Filter size={14} />
               Filters
             </button>
-            <button className="flex items-center gap-2 bg-[#030514] border border-slate-800 text-slate-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm">
+            <button className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
               <Download size={14} />
               Export
             </button>
@@ -149,13 +149,13 @@ export default function CandidateDatabase() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-800 text-[11px] text-slate-400 font-semibold">
+              <tr className="border-b border-slate-200 text-[11px] text-slate-500 font-semibold">
                 <th className="py-3 px-3 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={selectedIds.length === filteredCandidates.length && filteredCandidates.length > 0}
                     onChange={toggleSelectAll}
-                    className="rounded border-slate-700 bg-slate-900 accent-blue-600 cursor-pointer"
+                    className="rounded border-slate-300 bg-white accent-indigo-600 cursor-pointer"
                   />
                 </th>
                 <th className="py-3 px-3">Candidate ID</th>
@@ -168,49 +168,49 @@ export default function CandidateDatabase() {
                 <th className="py-3 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-xs">
+            <tbody className="divide-y divide-slate-200 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">Loading candidates from database...</td>
+                  <td colSpan={9} className="py-8 text-center text-slate-500">Loading candidates from database...</td>
                 </tr>
               ) : filteredCandidates.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">No candidate records found.</td>
+                  <td colSpan={9} className="py-8 text-center text-slate-500">No candidate records found.</td>
                 </tr>
               ) : (
                 filteredCandidates.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-900/40 transition-colors">
+                  <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3.5 px-3 text-center">
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(row.id)}
                         onChange={() => toggleSelect(row.id)}
-                        className="rounded border-slate-700 bg-slate-900 accent-blue-600 cursor-pointer"
+                        className="rounded border-slate-300 bg-white accent-indigo-600 cursor-pointer"
                       />
                     </td>
-                    <td className="py-3.5 px-3 font-bold text-slate-200">{row.id}</td>
-                    <td className="py-3.5 px-3 font-bold text-slate-100">{row.name}</td>
-                    <td className="py-3.5 px-3 text-slate-300 font-medium">{row.role}</td>
-                    <td className="py-3.5 px-3 text-slate-400">{row.experience}</td>
-                    <td className="py-3.5 px-3 font-bold text-emerald-400">{row.match}</td>
+                    <td className="py-3.5 px-3 font-bold text-slate-800">{row.id}</td>
+                    <td className="py-3.5 px-3 font-bold text-slate-900">{row.name}</td>
+                    <td className="py-3.5 px-3 text-slate-700 font-medium">{row.role}</td>
+                    <td className="py-3.5 px-3 text-slate-500">{row.experience}</td>
+                    <td className="py-3.5 px-3 font-bold text-emerald-600">{row.match}</td>
                     <td className="py-3.5 px-3">
                       <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${row.statusBg}`}>
                         {row.status}
                       </span>
                     </td>
-                    <td className="py-3.5 px-3 text-slate-400">{row.lastUpdated}</td>
+                    <td className="py-3.5 px-3 text-slate-500">{row.lastUpdated}</td>
                     <td className="py-3.5 px-3 text-right">
-                      <div className="flex items-center justify-end gap-2 text-blue-400">
+                      <div className="flex items-center justify-end gap-2 text-indigo-600">
                         <button
                           onClick={() => handleViewDetail(row.realId)}
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-indigo-600 hover:text-indigo-700 cursor-pointer"
                           title="Quick Preview Modal"
                         >
                           <Eye size={14} />
                         </button>
                         <button
                           onClick={() => navigate(`/evaluation/${row.realId}`)}
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 text-slate-300 hover:text-white cursor-pointer"
+                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
                           title="View Candidate Full Evaluation Page"
                         >
                           <User size={14} />
@@ -226,7 +226,7 @@ export default function CandidateDatabase() {
                                     <head>
                                       <title>Resume Preview</title>
                                       <style>
-                                        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #020617; }
+                                        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ffffff; }
                                         iframe { width: 100%; height: 100%; border: none; }
                                       </style>
                                     </head>
@@ -242,7 +242,7 @@ export default function CandidateDatabase() {
                               alert("S3 Resume link is not available for this candidate.");
                             }
                           }}
-                          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors border border-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer"
+                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-500 hover:text-slate-800 cursor-pointer"
                           title="Open PDF Resume Document (New Tab)"
                         >
                           <FileText size={14} />
@@ -257,31 +257,31 @@ export default function CandidateDatabase() {
         </div>
 
         {/* Pagination Footer */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-200 text-xs text-slate-500">
           <span>Showing 1 to {filteredCandidates.length} of {candidates.length} candidates</span>
         </div>
       </div>
 
       {/* Modal for Particular Candidate DB Entry Details */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#090d1f] border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6 shadow-2xl relative space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6 shadow-2xl relative space-y-6">
             <button
               onClick={() => {
                 setShowModal(false);
                 setSelectedCandidateDetail(null);
               }}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg bg-slate-900 border border-slate-800"
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 cursor-pointer"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
-              <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
+            <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-600">
                 <User size={24} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-100">
+                <h2 className="text-lg font-bold text-slate-900">
                   {loadingDetail
                     ? "Fetching Database Entry..."
                     : selectedCandidateDetail?.parsed_data?.full_name ||
@@ -289,39 +289,39 @@ export default function CandidateDatabase() {
                     selectedCandidateDetail?.original_filename ||
                     "Candidate Details"}
                 </h2>
-                <p className="text-xs text-slate-400">ID: {selectedCandidateDetail?.id}</p>
+                <p className="text-xs text-slate-500">ID: {selectedCandidateDetail?.id}</p>
               </div>
             </div>
 
             {loadingDetail ? (
-              <div className="py-12 text-center text-slate-400 text-sm">
+              <div className="py-12 text-center text-slate-500 text-sm">
                 Fetching candidate details from database...
               </div>
             ) : selectedCandidateDetail ? (
               <div className="space-y-6 text-sm">
                 {/* Meta Summary Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                     <span className="text-xs text-slate-500 block">Status</span>
-                    <span className="font-semibold text-emerald-400 text-xs">
+                    <span className="font-semibold text-emerald-600 text-xs">
                       {selectedCandidateDetail.status || "N/A"}
                     </span>
                   </div>
-                  <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                     <span className="text-xs text-slate-500 block">Uploaded On</span>
-                    <span className="font-semibold text-slate-300 text-xs">
+                    <span className="font-semibold text-slate-800 text-xs">
                       {new Date(selectedCandidateDetail.upload_date).toLocaleDateString()}
                     </span>
                   </div>
-                  <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                     <span className="text-xs text-slate-500 block">File Name</span>
-                    <span className="font-semibold text-slate-300 text-xs truncate block" title={selectedCandidateDetail.original_filename}>
+                    <span className="font-semibold text-slate-800 text-xs truncate block" title={selectedCandidateDetail.original_filename}>
                       {selectedCandidateDetail.original_filename}
                     </span>
                   </div>
-                  <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                     <span className="text-xs text-slate-500 block">User ID</span>
-                    <span className="font-semibold text-slate-300 text-xs truncate block">
+                    <span className="font-semibold text-slate-800 text-xs truncate block">
                       {selectedCandidateDetail.user_id}
                     </span>
                   </div>
@@ -329,26 +329,26 @@ export default function CandidateDatabase() {
 
                 {/* Parsed JSON details */}
                 {selectedCandidateDetail.parsed_data && (
-                  <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800/80 space-y-3">
-                    <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <h3 className="text-xs font-semibold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
                       <Briefcase size={14} /> Parsed Resume Profile
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                       <div>
                         <span className="text-slate-500">Email:</span>{" "}
-                        <span className="text-slate-200">{selectedCandidateDetail.parsed_data.email || "N/A"}</span>
+                        <span className="text-slate-800">{selectedCandidateDetail.parsed_data.email || "N/A"}</span>
                       </div>
                       <div>
                         <span className="text-slate-500">Phone:</span>{" "}
-                        <span className="text-slate-200">{selectedCandidateDetail.parsed_data.phone || "N/A"}</span>
+                        <span className="text-slate-800">{selectedCandidateDetail.parsed_data.phone || "N/A"}</span>
                       </div>
                       <div>
                         <span className="text-slate-500">Designation:</span>{" "}
-                        <span className="text-slate-200">{selectedCandidateDetail.parsed_data.designation || "N/A"}</span>
+                        <span className="text-slate-800">{selectedCandidateDetail.parsed_data.designation || "N/A"}</span>
                       </div>
                       <div>
                         <span className="text-slate-500">Experience:</span>{" "}
-                        <span className="text-slate-200">
+                        <span className="text-slate-800">
                           {selectedCandidateDetail.parsed_data.total_experience_years || selectedCandidateDetail.parsed_data.years_of_experience || "N/A"} Yrs
                         </span>
                       </div>
@@ -360,7 +360,7 @@ export default function CandidateDatabase() {
                         <span className="text-xs text-slate-500 block mb-1.5">Skills:</span>
                         <div className="flex flex-wrap gap-1.5">
                           {selectedCandidateDetail.parsed_data.skills.map((skill: string, i: number) => (
-                            <span key={i} className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded text-[11px]">
+                            <span key={i} className="px-2 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded text-[11px]">
                               {skill}
                             </span>
                           ))}
@@ -372,13 +372,13 @@ export default function CandidateDatabase() {
 
                 {/* S3 URL Link */}
                 {selectedCandidateDetail.s3_url && (
-                  <div className="flex items-center justify-between p-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                    <span className="text-xs text-slate-400">AWS S3 File Path</span>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-xs text-slate-500">AWS S3 File Path</span>
                     <a
                       href={selectedCandidateDetail.s3_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-indigo-400 hover:text-indigo-300 font-medium underline"
+                      className="text-xs text-indigo-600 hover:text-indigo-700 font-medium underline"
                     >
                       View Resume Document
                     </a>
@@ -388,10 +388,10 @@ export default function CandidateDatabase() {
                 {/* Extracted Raw Text */}
                 {selectedCandidateDetail.extracted_text && (
                   <div className="space-y-1.5">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                       Extracted Resume Text
                     </h3>
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 max-h-48 overflow-y-auto text-xs text-slate-300 font-mono whitespace-pre-wrap">
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 max-h-48 overflow-y-auto text-xs text-slate-800 font-mono whitespace-pre-wrap">
                       {selectedCandidateDetail.extracted_text}
                     </div>
                   </div>
@@ -399,25 +399,25 @@ export default function CandidateDatabase() {
 
                 {/* Candidate Version History / Resume Logs */}
                 {candidateLogs && candidateLogs.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800">
-                    <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
                       <History size={14} /> Resume Version History ({candidateLogs.length} Old Backup{candidateLogs.length > 1 ? "s" : ""})
                     </h3>
                     <div className="space-y-2 max-h-44 overflow-y-auto">
                       {candidateLogs.map((log: any, idx: number) => (
-                        <div key={log.id || idx} className="p-3 bg-amber-950/20 border border-amber-900/30 rounded-xl text-xs space-y-1">
-                          <div className="flex justify-between items-center text-amber-300 font-medium">
+                        <div key={log.id || idx} className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1">
+                          <div className="flex justify-between items-center text-amber-800 font-medium">
                             <span>{log.action || "AUTOMATIC_EMAIL_UPDATE"}</span>
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] text-slate-500">
                               {log.created_at ? new Date(log.created_at).toLocaleString() : "N/A"}
                             </span>
                           </div>
-                          <p className="text-slate-400 text-[11px]">
-                            Backed up prior values for <span className="text-slate-200">{log.email}</span> before updating.
+                          <p className="text-slate-600 text-[11px]">
+                            Backed up prior values for <span className="text-slate-900 font-semibold">{log.email}</span> before updating.
                           </p>
                           {log.old_data?.original_filename && (
-                            <p className="text-slate-400 text-[11px]">
-                              Previous File: <span className="text-amber-200">{log.old_data.original_filename}</span>
+                            <p className="text-slate-600 text-[11px]">
+                              Previous File: <span className="text-amber-800 font-semibold">{log.old_data.original_filename}</span>
                             </p>
                           )}
                         </div>
@@ -427,7 +427,7 @@ export default function CandidateDatabase() {
                 )}
               </div>
             ) : (
-              <div className="py-8 text-center text-red-400 text-sm">Could not load candidate details.</div>
+              <div className="py-8 text-center text-red-600 text-sm">Could not load candidate details.</div>
             )}
           </div>
         </div>
