@@ -22,6 +22,7 @@ export interface InterviewItem {
   id: string;
   candidate_id: string;
   candidate_name: string;
+  candidate_email?: string;
   resume_id?: string;
   job_id?: string;
   job_title: string;
@@ -76,6 +77,7 @@ export interface InterviewItem {
 export interface CreateInterviewPayload {
   candidate_id: string;
   candidate_name: string;
+  candidate_email?: string;
   resume_id?: string;
   job_id?: string;
   job_title: string;
@@ -246,4 +248,14 @@ export interface BulkFeedbackItemPayload extends SubmitFeedbackPayload {
 export interface BulkSubmitFeedbackPayload {
   items: BulkFeedbackItemPayload[];
 }
+
+export interface SendInterviewEmailPayload {
+  send_to_candidate: boolean;
+  candidate_email?: string;
+  send_to_interviewer: boolean;
+  interviewer_email?: string;
+  template_id?: string;
+  custom_notes?: string;
+}
+
 

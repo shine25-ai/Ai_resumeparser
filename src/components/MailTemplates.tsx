@@ -173,7 +173,26 @@ export default function MailTemplates() {
               <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
                 <ReactQuill theme="snow" value={formData.body} onChange={(content) => setFormData({...formData, body: content})} />
               </div>
-              <p className="text-xs text-slate-500 mt-2">Use double braces for variables, e.g., {'{{candidate_name}}'}</p>
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-slate-700 mb-1.5">Available Variables (Click to copy/insert into template):</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'candidate_name', 'candidate_email', 'interviewer_name', 'interviewer_email',
+                    'job_title', 'scheduled_date', 'scheduled_time', 'timezone', 'duration_minutes',
+                    'meeting_link', 'location', 'interview_type', 'round_number', 'notes', 'company_name'
+                  ].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, body: prev.body + ` {{${v}}}` }))}
+                      className="text-[11px] px-2 py-0.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded border border-slate-200 transition-colors font-mono cursor-pointer"
+                      title={`Click to append {{${v}}} to message body`}
+                    >
+                      {`{{${v}}}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t border-slate-200">

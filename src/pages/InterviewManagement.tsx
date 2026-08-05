@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes,
+  sendInterviewEmail, MAIL_TEMPLATES_URL,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
@@ -35,6 +36,20 @@ export default function InterviewManagement() {
   const [selectedInterview, setSelectedInterview] = useState<InterviewItem | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
+  // Send Mail Popup Modal State
+  const [isSendMailOpen, setIsSendMailOpen] = useState<boolean>(false);
+  const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
+  const [sendMailForm, setSendMailForm] = useState({
+    send_to_candidate: true,
+    candidate_email: "",
+    send_to_interviewer: true,
+    interviewer_email: "",
+    template_id: "",
+    custom_notes: "",
+  });
+  const [sendMailLoading, setSendMailLoading] = useState<boolean>(false);
+  const [sendMailStatus, setSendMailStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const handleOpenDetails = (item: InterviewItem) => {
     setSelectedInterview(item);
     setSelectedCandidateId(item.candidate_id || null);
@@ -46,6 +61,7 @@ export default function InterviewManagement() {
   const [nextRoundForm, setNextRoundForm] = useState({
     candidate_id: "",
     candidate_name: "",
+    candidate_email: "",
     resume_id: "",
     job_id: "",
     job_title: "",
@@ -86,6 +102,7 @@ export default function InterviewManagement() {
   const [scheduleForm, setScheduleForm] = useState({
     candidate_id: "",
     candidate_name: "",
+    candidate_email: "",
     resume_id: "",
     job_title: "",
     job_location: "",
@@ -116,6 +133,7 @@ export default function InterviewManagement() {
 
   const [editForm, setEditForm] = useState({
     candidate_name: "",
+    candidate_email: "",
     job_title: "",
     job_location: "",
     job_type: "Full Time",
@@ -398,6 +416,7 @@ export default function InterviewManagement() {
     setSelectedInterview(item);
     setEditForm({
       candidate_name: item.candidate_name || "",
+      candidate_email: item.candidate_email || "",
       job_title: item.job_title || "",
       job_location: item.job_location || "",
       job_type: item.job_type || "Full Time",
@@ -629,6 +648,96 @@ export default function InterviewManagement() {
     }
   };
 
+  // Open Send Mail Modal
+  const handleOpenSendMail = (item: InterviewItem) => {
+    setSelectedInterview(item);
+    setSendMailStatus(null);
+
+    let candEmail = item.candidate_email || "";
+    if (!candEmail && candidatesList && candidatesList.length > 0) {
+      const matched = candidatesList.find(
+        (c: any) =>
+          (item.candidate_id && (c.id === item.candidate_id || c._id === item.candidate_id)) ||
+          (c.candidate_name && c.candidate_name === item.candidate_name) ||
+          (c.name && c.name === item.candidate_name)
+      );
+      if (matched) {
+        candEmail = matched.email || matched.parsed_data?.email || "";
+      }
+    }
+
+    setSendMailForm({
+      send_to_candidate: true,
+      candidate_email: candEmail,
+      send_to_interviewer: true,
+      interviewer_email: item.interviewer_email || "",
+      template_id: "",
+      custom_notes: item.notes || "",
+    });
+    setIsSendMailOpen(true);
+    fetchMailTemplates();
+  };
+
+  const fetchMailTemplates = async () => {
+    try {
+      const res = await fetch(MAIL_TEMPLATES_URL);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTemplates(data);
+        if (data.length > 0) {
+          const defaultTemp = data.find((t: any) => t.name.toLowerCase().includes("interview")) || data[0];
+          setSendMailForm((prev) => ({ ...prev, template_id: defaultTemp.id || defaultTemp._id }));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch mail templates:", e);
+    }
+  };
+
+  const handleSendMailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInterview) return;
+
+    if (!sendMailForm.send_to_candidate && !sendMailForm.send_to_interviewer) {
+      setSendMailStatus({ type: "error", text: "Please check at least Candidate or Interviewer email option." });
+      return;
+    }
+
+    if (sendMailForm.send_to_candidate && !sendMailForm.candidate_email.trim()) {
+      setSendMailStatus({ type: "error", text: "Candidate email is required to send mail to candidate." });
+      return;
+    }
+
+    if (sendMailForm.send_to_interviewer && !sendMailForm.interviewer_email.trim()) {
+      setSendMailStatus({ type: "error", text: "Interviewer email is required to send mail to interviewer." });
+      return;
+    }
+
+    try {
+      setSendMailLoading(true);
+      setSendMailStatus(null);
+      const res = await sendInterviewEmail(selectedInterview.id, {
+        send_to_candidate: sendMailForm.send_to_candidate,
+        candidate_email: sendMailForm.candidate_email.trim() || undefined,
+        send_to_interviewer: sendMailForm.send_to_interviewer,
+        interviewer_email: sendMailForm.interviewer_email.trim() || undefined,
+        template_id: sendMailForm.template_id || undefined,
+        custom_notes: sendMailForm.custom_notes || undefined,
+      });
+
+      setSendMailStatus({ type: "success", text: res.message || "Interview email sent successfully!" });
+      setTimeout(() => {
+        setIsSendMailOpen(false);
+        setSendMailStatus(null);
+      }, 1800);
+    } catch (err: any) {
+      console.error("Failed to send interview email:", err);
+      setSendMailStatus({ type: "error", text: err.message || "Failed to send interview email." });
+    } finally {
+      setSendMailLoading(false);
+    }
+  };
+
   // Schedule Next Round Handlers
   const handleOpenNextRound = (item: InterviewItem) => {
     setSelectedInterview(item);
@@ -639,6 +748,7 @@ export default function InterviewManagement() {
     setNextRoundForm({
       candidate_id: item.candidate_id || "",
       candidate_name: item.candidate_name || "",
+      candidate_email: item.candidate_email || "",
       resume_id: item.resume_id || "",
       job_id: item.job_id || "",
       job_title: item.job_title || "",
@@ -955,6 +1065,15 @@ export default function InterviewManagement() {
                     {/* Actions */}
                     <td className="py-4 px-0 text-right">
                       <div className="flex items-center justify-end gap-1.5 text-indigo-600">
+                        {/* Send Interview Email Button */}
+                        <button
+                          onClick={() => handleOpenSendMail(row)}
+                          title="Send Email to Candidate & Interviewer"
+                          className="p-1.5 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-indigo-600"
+                        >
+                          <Mail size={14} />
+                        </button>
+
                         {/* View Candidate Full History Button */}
                         <button
                           onClick={() => handleOpenDetails(row)}
@@ -1041,13 +1160,15 @@ export default function InterviewManagement() {
                   value={scheduleForm.candidate_id}
                   onChange={(e) => {
                     const selId = e.target.value;
-                    const found = candidatesList.find((c) => c.id === selId);
+                    const found = candidatesList.find((c) => c.id === selId || c._id === selId);
                     const parsed = found?.parsed_data || {};
                     const nameStr = parsed.full_name || parsed.name || found?.original_filename || "";
+                    const emailStr = parsed.email || found?.email || "";
                     setScheduleForm({
                       ...scheduleForm,
                       candidate_id: selId,
                       candidate_name: nameStr,
+                      candidate_email: emailStr,
                       resume_id: selId,
                     });
                   }}
@@ -1058,21 +1179,30 @@ export default function InterviewManagement() {
                     const parsed = cand.parsed_data || {};
                     const candName = parsed.full_name || parsed.name || cand.original_filename;
                     return (
-                      <option key={cand.id} value={cand.id}>
+                      <option key={cand.id || cand._id} value={cand.id || cand._id}>
                         {candName}
                       </option>
                     );
                   })}
                 </select>
 
-                <input
-                  type="text"
-                  placeholder="Candidate Name"
-                  value={scheduleForm.candidate_name}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  required
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Candidate Name"
+                    value={scheduleForm.candidate_name}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    required
+                  />
+                  <input
+                    type="email"
+                    placeholder="Candidate Email"
+                    value={scheduleForm.candidate_email}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_email: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2926,7 +3056,166 @@ export default function InterviewManagement() {
           fetchAllData();
         }}
       />
+
+      {/* SEND INTERVIEW EMAIL POPUP MODAL */}
+      {isSendMailOpen && selectedInterview && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl text-slate-900">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center bg-slate-50 px-6 py-4 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-600">
+                  <Mail size={18} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Send Interview Notification Email</h2>
+                  <p className="text-xs text-slate-500">
+                    Candidate: <span className="font-semibold text-slate-700">{selectedInterview.candidate_name}</span> | Role: <span className="font-semibold text-slate-700">{selectedInterview.job_title}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSendMailOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body / Form */}
+            <form onSubmit={handleSendMailSubmit} className="p-6 space-y-4 text-xs">
+              {sendMailStatus && (
+                <div
+                  className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${
+                    sendMailStatus.type === "success"
+                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                      : "bg-rose-50 text-rose-800 border border-rose-200"
+                  }`}
+                >
+                  {sendMailStatus.type === "success" ? (
+                    <UserCheck size={16} className="shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertCircle size={16} className="shrink-0 text-rose-600" />
+                  )}
+                  <span>{sendMailStatus.text}</span>
+                </div>
+              )}
+
+              {/* Recipient Indications */}
+              <div className="space-y-3 bg-slate-50/80 p-4 rounded-xl border border-slate-200">
+                <span className="text-xs font-bold text-slate-800 block">Select Email Recipients & Indications:</span>
+
+                {/* Candidate Email Option */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sendMailForm.send_to_candidate}
+                      onChange={(e) => setSendMailForm({ ...sendMailForm, send_to_candidate: e.target.checked })}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-semibold text-slate-700">Candidate Mail Indication</span>
+                  </label>
+                  {sendMailForm.send_to_candidate && (
+                    <input
+                      type="email"
+                      required
+                      placeholder="candidate@example.com"
+                      value={sendMailForm.candidate_email}
+                      onChange={(e) => setSendMailForm({ ...sendMailForm, candidate_email: e.target.value })}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  )}
+                </div>
+
+                {/* Interviewer Email Option */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sendMailForm.send_to_interviewer}
+                      onChange={(e) => setSendMailForm({ ...sendMailForm, send_to_interviewer: e.target.checked })}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-semibold text-slate-700">Interviewer Mail Indication ({selectedInterview.interviewer_name || "Interviewer"})</span>
+                  </label>
+                  {sendMailForm.send_to_interviewer && (
+                    <input
+                      type="email"
+                      required
+                      placeholder="interviewer@company.com"
+                      value={sendMailForm.interviewer_email}
+                      onChange={(e) => setSendMailForm({ ...sendMailForm, interviewer_email: e.target.value })}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Template Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Mail Template</label>
+                <select
+                  value={sendMailForm.template_id}
+                  onChange={(e) => setSendMailForm({ ...sendMailForm, template_id: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer font-medium"
+                >
+                  <option value="">Default (Auto-select Interview Template)</option>
+                  {availableTemplates.map((t: any) => (
+                    <option key={t.id || t._id} value={t.id || t._id}>
+                      {t.name} - {t.subject}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Schedule Notes / Custom Content */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Interview Schedule Notes <span className="text-slate-400 font-normal font-mono">(Replaces {'{{notes}}'} in template)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Enter specific instructions or schedule notes for candidate / interviewer..."
+                  value={sendMailForm.custom_notes}
+                  onChange={(e) => setSendMailForm({ ...sendMailForm, custom_notes: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors font-sans"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsSendMailOpen(false)}
+                  className="px-4 py-2 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-200 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendMailLoading}
+                  className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                >
+                  {sendMailLoading ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Sending Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail size={14} />
+                      <span>OK / Send Email</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 

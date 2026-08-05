@@ -12,6 +12,7 @@ class InterviewCreateRequest(BaseModel):
 
     candidate_id: str
     candidate_name: str
+    candidate_email: Optional[str] = None
     resume_id: Optional[str] = None
 
     job_id: Optional[str] = None
@@ -67,6 +68,7 @@ class CandidateInterviewItem(BaseModel):
 
     candidate_id: str
     candidate_name: str
+    candidate_email: Optional[str] = None
     resume_id: Optional[str] = None
     location: Optional[str] = None
     interview_location: Optional[str] = None
@@ -128,6 +130,7 @@ class InterviewUpdateRequest(BaseModel):
     """Payload for updating existing interview details."""
 
     candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
     job_title: Optional[str] = None
     job_location: Optional[str] = None
     job_type: Optional[str] = None
@@ -247,6 +250,7 @@ class InterviewResponse(BaseModel):
     id: str
     candidate_id: str
     candidate_name: str
+    candidate_email: Optional[str] = None
     resume_id: Optional[str] = None
 
     job_id: Optional[str] = None
@@ -345,3 +349,17 @@ class CandidateFullHistoryResponse(BaseModel):
     rounds: List[InterviewResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SendInterviewEmailRequest(BaseModel):
+    """Payload for sending interview schedule emails to candidate and interviewer."""
+
+    send_to_candidate: bool = True
+    candidate_email: Optional[str] = None
+    send_to_interviewer: bool = True
+    interviewer_email: Optional[str] = None
+    template_id: Optional[str] = None
+    custom_notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
