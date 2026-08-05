@@ -13,6 +13,7 @@ from app.schemas.interview import (
     InterviewFeedbackRequest,
     InterviewRescheduleRequest,
     InterviewUpdateRequest,
+    SendInterviewEmailRequest,
 )
 from app.services.interview_service import InterviewService
 from app.utils.enums import InterviewStatus, InterviewType
@@ -147,3 +148,16 @@ class InterviewController:
             data=res.model_dump(),
             message="Candidate complete interview history retrieved successfully.",
         )
+
+    async def send_interview_email(
+        self,
+        interview_id: str,
+        payload: SendInterviewEmailRequest,
+    ) -> JSONResponse:
+        """Send notification email to candidate and/or interviewer."""
+        res = await self.interview_service.send_interview_email(interview_id, payload)
+        return success_response(
+            data=res,
+            message=res.get("message", "Interview email sent successfully."),
+        )
+

@@ -17,6 +17,7 @@ from app.schemas.interview import (
     InterviewFeedbackRequest,
     InterviewRescheduleRequest,
     InterviewUpdateRequest,
+    SendInterviewEmailRequest,
 )
 from app.services.interview_service import InterviewService
 from app.utils.enums import InterviewStatus, InterviewType
@@ -192,3 +193,19 @@ async def delete_interview(
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.delete_interview(interview_id)
+
+
+@router.post(
+    "/{interview_id}/send-mail",
+    status_code=status.HTTP_200_OK,
+    summary="Send interview schedule notification email",
+    description="Dispatch email notification with template variable interpolation to candidate and/or interviewer.",
+)
+async def send_interview_mail(
+    interview_id: str,
+    payload: SendInterviewEmailRequest,
+    current_user: dict = Depends(get_current_active_user_optional),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.send_interview_email(interview_id, payload)
+

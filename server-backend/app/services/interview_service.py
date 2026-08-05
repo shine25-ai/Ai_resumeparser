@@ -2,7 +2,10 @@
 Interview service handling interview scheduling, rescheduling, feedback, filtering, and status updates.
 """
 
+import smtplib
+from email.message import EmailMessage
 from typing import Any, Dict, List, Optional
+from fastapi import HTTPException
 from loguru import logger
 from app.core.exceptions import NotFoundError
 from app.models.interview import InterviewDocument
@@ -17,7 +20,11 @@ from app.schemas.interview import (
     InterviewRescheduleRequest,
     InterviewResponse,
     InterviewUpdateRequest,
+    SendInterviewEmailRequest,
 )
+from app.services.settings_service import SettingsService
+from app.services.template_service import TemplateService
+from app.utils.encryption import decrypt_password
 from app.utils.enums import InterviewStatus, InterviewType
 from app.utils.helpers import utc_now
 
@@ -33,6 +40,7 @@ class InterviewService:
         interview_doc = InterviewDocument(
             candidate_id=payload.candidate_id,
             candidate_name=payload.candidate_name,
+            candidate_email=payload.candidate_email,
             resume_id=payload.resume_id,
             job_id=payload.job_id,
             job_title=payload.job_title,
@@ -365,3 +373,187 @@ class InterviewService:
             total_rounds=len(rounds),
             rounds=rounds,
         )
+
+    async def send_interview_email(
+        self,
+        interview_id: str,
+        payload: SendInterviewEmailRequest,
+    ) -> Dict[str, Any]:
+        """Send interview schedule notification emails to candidate and/or interviewer using dynamic template values."""
+        existing = await self.interview_repo.get_by_id(interview_id)
+        if not existing:
+            raise NotFoundError("Interview not found.")
+
+        template_service = TemplateService()
+        await template_service.initialize_default_templates()
+
+        # Determine emails
+        candidate_email = payload.candidate_email or existing.get("candidate_email")
+        if not candidate_email and existing.get("resume_id"):
+            try:
+                db = self.interview_repo.collection.database
+                resume_doc = await db.resumes.find_one({"_id": existing.get("resume_id")})
+                if resume_doc:
+                    parsed = resume_doc.get("parsed_data") or {}
+                    candidate_email = parsed.get("email") or resume_doc.get("email")
+            except Exception as err:
+                logger.warning(f"Could not fetch resume email: {err}")
+
+        interviewer_email = payload.interviewer_email or existing.get("interviewer_email")
+
+        # Fetch SMTP config
+        settings_service = SettingsService()
+        config_model = await settings_service.repository.get_email_config()
+        if not config_model:
+            raise HTTPException(status_code=400, detail="Email configuration not set. Please configure SMTP settings in Settings first.")
+
+        # Prepare replacement dictionary
+        notes_content = payload.custom_notes or existing.get("notes") or "N/A"
+        meeting_link = existing.get("meeting_link") or existing.get("location") or "Will be shared shortly"
+
+        replacements = {
+            "candidate_name": existing.get("candidate_name", ""),
+            "candidate_email": candidate_email or "N/A",
+            "interviewer_name": existing.get("interviewer_name", "Interviewer"),
+            "interviewer_email": interviewer_email or "N/A",
+            "job_title": existing.get("job_title", ""),
+            "scheduled_date": existing.get("scheduled_date", ""),
+            "scheduled_time": existing.get("scheduled_time", ""),
+            "timezone": existing.get("timezone", "Asia/Kolkata"),
+            "duration_minutes": str(existing.get("duration_minutes", 60)),
+            "meeting_platform": existing.get("meeting_platform", "Google Meet"),
+            "meeting_link": meeting_link,
+            "location": existing.get("location") or existing.get("interview_location") or "Online",
+            "interview_type": str(existing.get("interview_type", "")).replace("_", " "),
+            "round_number": str(existing.get("round_number", 1)),
+            "notes": notes_content,
+            "company_name": config_model.sender_name or "HR Team",
+        }
+
+        def render_text(text: str) -> str:
+            rendered = text
+            for key, val in replacements.items():
+                rendered = rendered.replace(f"{{{{{key}}}}}", str(val))
+            return rendered
+
+        all_templates = await template_service.get_all_templates()
+        sent_recipients = []
+
+        try:
+            password = decrypt_password(config_model.smtp_password)
+            
+            # 1. SEND TO CANDIDATE
+            if payload.send_to_candidate:
+                if not candidate_email:
+                    raise HTTPException(status_code=400, detail="Candidate email is missing. Please enter candidate email.")
+
+                # Pick candidate template
+                cand_template = None
+                if payload.template_id:
+                    cand_template = await template_service.get_template(payload.template_id)
+                if not cand_template:
+                    cand_template = next((t for t in all_templates if "Invitation" in t.name or "Candidate" in t.name), all_templates[0] if all_templates else None)
+
+                cand_subject = render_text(cand_template.subject if cand_template else f"Interview Invitation: {existing.get('job_title')} - {existing.get('candidate_name')}")
+                cand_body = render_text(cand_template.body if cand_template else f"<p>Dear {existing.get('candidate_name')},</p><p>You are invited for an interview for {existing.get('job_title')}.</p>")
+
+                # If candidate body lacks schedule variables or details, append Schedule Details Box
+                if "scheduled_date" not in (cand_template.body if cand_template else "") and "Date:" not in cand_body:
+                    cand_body += f"""
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-top: 16px;">
+                        <h4 style="margin-top: 0; color: #1e293b;">Interview Schedule Details</h4>
+                        <ul style="padding-left: 20px; color: #334155;">
+                            <li><b>Date:</b> {replacements['scheduled_date']}</li>
+                            <li><b>Time:</b> {replacements['scheduled_time']} ({replacements['timezone']})</li>
+                            <li><b>Duration:</b> {replacements['duration_minutes']} Minutes</li>
+                            <li><b>Interviewer:</b> {replacements['interviewer_name']}</li>
+                            <li><b>Meeting Link / Location:</b> {replacements['meeting_link']}</li>
+                            <li><b>Schedule Notes:</b> {replacements['notes']}</li>
+                        </ul>
+                    </div>
+                    """
+
+                msg_cand = EmailMessage()
+                msg_cand["Subject"] = cand_subject
+                msg_cand["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+                msg_cand["To"] = candidate_email.strip()
+                msg_cand.set_content("Please enable HTML to view this email.")
+                msg_cand.add_alternative(cand_body, subtype='html')
+
+                if config_model.use_ssl:
+                    server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
+                else:
+                    server = smtplib.SMTP(config_model.smtp_server, config_model.smtp_port)
+                    if config_model.use_tls:
+                        server.starttls()
+
+                server.login(config_model.smtp_username, password)
+                server.send_message(msg_cand, to_addrs=[candidate_email.strip()])
+                server.quit()
+                sent_recipients.append(f"Candidate ({candidate_email.strip()})")
+
+            # 2. SEND TO INTERVIEWER
+            if payload.send_to_interviewer:
+                if not interviewer_email:
+                    raise HTTPException(status_code=400, detail="Interviewer email is missing. Please enter interviewer email.")
+
+                # Pick interviewer template
+                interviewer_template = next((t for t in all_templates if "Interviewer" in t.name), None)
+
+                if interviewer_template:
+                    int_subject = render_text(interviewer_template.subject)
+                    int_body = render_text(interviewer_template.body)
+                else:
+                    int_subject = f"Interview Assigned: {existing.get('job_title')} - {existing.get('candidate_name')}"
+                    int_body = f"""
+                    <p>Hello {replacements['interviewer_name']},</p>
+                    <p>You have been assigned to conduct an interview with candidate <b>{replacements['candidate_name']}</b> for the <b>{replacements['job_title']}</b> position.</p>
+                    <h3>Interview Schedule Details:</h3>
+                    <ul>
+                      <li><b>Candidate:</b> {replacements['candidate_name']} ({replacements['candidate_email']})</li>
+                      <li><b>Date:</b> {replacements['scheduled_date']}</li>
+                      <li><b>Time:</b> {replacements['scheduled_time']} ({replacements['timezone']})</li>
+                      <li><b>Duration:</b> {replacements['duration_minutes']} Minutes</li>
+                      <li><b>Meeting Link / Location:</b> {replacements['meeting_link']}</li>
+                    </ul>
+                    <p><b>Schedule Notes:</b><br/>{replacements['notes']}</p>
+                    <p>Please ensure to update candidate rating and feedback post-interview.</p>
+                    <p>Best regards,<br/>{config_model.sender_name or 'HR Team'}</p>
+                    """
+
+                msg_int = EmailMessage()
+                msg_int["Subject"] = int_subject
+                msg_int["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+                msg_int["To"] = interviewer_email.strip()
+                msg_int.set_content("Please enable HTML to view this email.")
+                msg_int.add_alternative(int_body, subtype='html')
+
+                if config_model.use_ssl:
+                    server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
+                else:
+                    server = smtplib.SMTP(config_model.smtp_server, config_model.smtp_port)
+                    if config_model.use_tls:
+                        server.starttls()
+
+                server.login(config_model.smtp_username, password)
+                server.send_message(msg_int, to_addrs=[interviewer_email.strip()])
+                server.quit()
+                sent_recipients.append(f"Interviewer ({interviewer_email.strip()})")
+
+            if not sent_recipients:
+                raise HTTPException(status_code=400, detail="No email recipients selected.")
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to send interview email: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+        logger.info(f"Sent interview email for interview '{interview_id}' to: {sent_recipients}")
+        return {
+            "status": "success",
+            "message": f"Interview email sent successfully to {', '.join(sent_recipients)}",
+            "recipients": sent_recipients,
+        }
+
+

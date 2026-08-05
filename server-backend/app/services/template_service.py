@@ -12,9 +12,51 @@ class TemplateService:
         defaults = [
             {
                 "name": "Interview Invitation",
-                "subject": "Invitation for Interview - {{company_name}}",
-                "body": "<p>Dear {{candidate_name}},</p><p>We are pleased to invite you for an interview for the <b>{{job_title}}</b> position.</p><p>Please let us know your availability.</p><p>Best regards,<br/>HR Team</p>",
-                "variables": ["candidate_name", "company_name", "job_title"]
+                "subject": "Interview Invitation: {{job_title}} - {{candidate_name}}",
+                "body": (
+                    "<p>Dear {{candidate_name}},</p>"
+                    "<p>We are pleased to invite you for an interview for the position of <b>{{job_title}}</b> at {{company_name}}.</p>"
+                    "<h3>Interview Schedule Details:</h3>"
+                    "<ul>"
+                    "<li><b>Date:</b> {{scheduled_date}}</li>"
+                    "<li><b>Time:</b> {{scheduled_time}} ({{timezone}})</li>"
+                    "<li><b>Duration:</b> {{duration_minutes}} Minutes</li>"
+                    "<li><b>Interviewer:</b> {{interviewer_name}}</li>"
+                    "<li><b>Meeting Link / Location:</b> {{meeting_link}}</li>"
+                    "</ul>"
+                    "<p><b>Schedule Notes:</b><br/>{{notes}}</p>"
+                    "<p>Please confirm your availability for this session.</p>"
+                    "<p>Best regards,<br/>Recruitment Team</p>"
+                ),
+                "variables": [
+                    "candidate_name", "job_title", "company_name", "scheduled_date",
+                    "scheduled_time", "timezone", "duration_minutes", "interviewer_name",
+                    "meeting_link", "notes"
+                ]
+            },
+            {
+                "name": "Interviewer Schedule Notification",
+                "subject": "Interview Assigned: {{job_title}} - {{candidate_name}}",
+                "body": (
+                    "<p>Hello {{interviewer_name}},</p>"
+                    "<p>You have been assigned to conduct an interview with candidate <b>{{candidate_name}}</b> for the <b>{{job_title}}</b> position.</p>"
+                    "<h3>Interview Schedule Details:</h3>"
+                    "<ul>"
+                    "<li><b>Candidate:</b> {{candidate_name}} ({{candidate_email}})</li>"
+                    "<li><b>Date:</b> {{scheduled_date}}</li>"
+                    "<li><b>Time:</b> {{scheduled_time}} ({{timezone}})</li>"
+                    "<li><b>Duration:</b> {{duration_minutes}} Minutes</li>"
+                    "<li><b>Meeting Link / Location:</b> {{meeting_link}}</li>"
+                    "</ul>"
+                    "<p><b>Schedule Notes:</b><br/>{{notes}}</p>"
+                    "<p>Please ensure to update candidate rating and feedback post-interview.</p>"
+                    "<p>Best regards,<br/>Recruitment Team</p>"
+                ),
+                "variables": [
+                    "interviewer_name", "candidate_name", "candidate_email", "job_title",
+                    "scheduled_date", "scheduled_time", "timezone", "duration_minutes",
+                    "meeting_link", "notes"
+                ]
             },
             {
                 "name": "Rejection Letter",
@@ -35,6 +77,12 @@ class TemplateService:
             if not existing:
                 model = MailTemplateModel(**temp)
                 await self.repository.create_template(model)
+            elif "{{scheduled_date}}" not in existing.body and temp["name"] in ["Interview Invitation", "Interviewer Schedule Notification"]:
+                existing.subject = temp["subject"]
+                existing.body = temp["body"]
+                existing.variables = temp["variables"]
+                existing.updated_at = datetime.utcnow()
+                await self.repository.update_template(existing.id, existing)
 
     async def get_all_templates(self) -> List[MailTemplateResponse]:
         templates = await self.repository.get_all_templates()
@@ -47,7 +95,7 @@ class TemplateService:
         return None
 
     async def create_template(self, data: MailTemplateCreate) -> MailTemplateResponse:
-        variables = self._extract_variables(data.body)
+        variables = self._extract_variables(data.subject + " " + data.body)
         model = MailTemplateModel(
             name=data.name,
             subject=data.subject,
@@ -62,7 +110,7 @@ class TemplateService:
         if not existing:
             return None
             
-        variables = self._extract_variables(data.body)
+        variables = self._extract_variables(data.subject + " " + data.body)
         
         existing.name = data.name
         existing.subject = data.subject
@@ -89,10 +137,11 @@ class TemplateService:
             updated_at=model.updated_at
         )
 
-    def _extract_variables(self, body: str) -> List[str]:
+    def _extract_variables(self, text: str) -> List[str]:
         import re
         # Find all {{variable_name}} patterns
         pattern = r'\{\{([^}]+)\}\}'
-        matches = re.findall(pattern, body)
-        # Return unique variables
-        return list(set(matches))
+        matches = re.findall(pattern, text)
+        # Return unique stripped variables
+        return list(set(m.strip() for m in matches))
+

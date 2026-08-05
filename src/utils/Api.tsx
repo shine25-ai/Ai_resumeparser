@@ -319,6 +319,7 @@ import type {
   SubmitFeedbackPayload,
   BulkFeedbackItemPayload,
   BulkSubmitFeedbackPayload,
+  SendInterviewEmailPayload,
 } from "../types/interview";
 
 export type {
@@ -333,6 +334,7 @@ export type {
   SubmitFeedbackPayload,
   BulkFeedbackItemPayload,
   BulkSubmitFeedbackPayload,
+  SendInterviewEmailPayload,
 };
 
 
@@ -566,3 +568,25 @@ export const getCandidateInterviewHistory = async (candidateId: string) => {
 
   return resData.data || resData;
 };
+
+export const sendInterviewEmail = async (interviewId: string, payload: SendInterviewEmailPayload) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEWS_URL}/${interviewId}/send-mail`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to send interview email");
+  }
+
+  return resData.data || resData;
+};
+
