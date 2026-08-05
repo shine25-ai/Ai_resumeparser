@@ -442,12 +442,130 @@ class InterviewService:
         try:
             password = decrypt_password(config_model.smtp_password)
             
+            # Helper function for executive HTML layout
+            def build_professional_email_html(
+                header_badge: str,
+                header_title: str,
+                body_content: str,
+                schedule_items: List[Dict[str, str]],
+                meeting_url: str = "",
+                notes_text: Optional[str] = None,
+                sender_company: str = "Recruitment Team"
+            ) -> str:
+                rows_html = ""
+                for item in schedule_items:
+                    label = item.get("label", "")
+                    val = item.get("value", "")
+                    if val and val != "N/A":
+                        rows_html += f"""
+                        <tr>
+                          <td style="padding: 10px 12px; color: #64748b; font-weight: 600; width: 140px; border-bottom: 1px solid #f1f5f9; vertical-align: top;">{label}</td>
+                          <td style="padding: 10px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9; vertical-align: top;">{val}</td>
+                        </tr>
+                        """
+
+                cta_html = ""
+                if meeting_url and meeting_url.startswith("http"):
+                    cta_html = f"""
+                    <tr>
+                      <td align="center" style="padding: 0 36px 28px 36px;">
+                        <a href="{meeting_url}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">
+                          🎥 Join Interview Meeting &rarr;
+                        </a>
+                        <div style="font-size: 11px; color: #94a3b8; margin-top: 10px;">Direct Link: <a href="{meeting_url}" style="color: #4f46e5; text-decoration: underline;">{meeting_url}</a></div>
+                      </td>
+                    </tr>
+                    """
+                elif meeting_url and meeting_url != "N/A" and meeting_url != "Will be shared shortly":
+                    rows_html += f"""
+                    <tr>
+                      <td style="padding: 10px 12px; color: #64748b; font-weight: 600; width: 140px; border-bottom: 1px solid #f1f5f9; vertical-align: top;">Location</td>
+                      <td style="padding: 10px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9; vertical-align: top;">{meeting_url}</td>
+                    </tr>
+                    """
+
+                notes_html = ""
+                if notes_text and notes_text.strip() and notes_text.strip() != "N/A":
+                    notes_html = f"""
+                    <tr>
+                      <td style="padding: 0 36px 28px 36px;">
+                        <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 10px; padding: 16px 20px; font-size: 13px; color: #92400e;">
+                          <div style="font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; color: #b45309;">📌 Schedule Notes</div>
+                          <div style="line-height: 1.5; color: #78350f; font-weight: 500;">{notes_text.strip()}</div>
+                        </div>
+                      </td>
+                    </tr>
+                    """
+
+                return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); padding: 28px 36px; text-align: left;">
+              <span style="display: inline-block; background-color: rgba(255, 255, 255, 0.2); color: #ffffff; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; padding: 4px 12px; border-radius: 20px;">{header_badge}</span>
+              <h1 style="color: #ffffff; font-size: 20px; font-weight: 800; margin: 10px 0 0 0; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">{header_title}</h1>
+            </td>
+          </tr>
+
+          <!-- Main Text Body -->
+          <tr>
+            <td style="padding: 32px 36px 20px 36px; color: #334155; font-size: 14px; line-height: 1.6;">
+              {body_content}
+            </td>
+          </tr>
+
+          <!-- Schedule Table Card -->
+          <tr>
+            <td style="padding: 0 36px 24px 36px;">
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; border-left: 4px solid #4f46e5;">
+                <tr>
+                  <td style="padding: 18px 20px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px;">📅 Interview Details</div>
+                    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="font-size: 13px; border-collapse: collapse;">
+                      {rows_html}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CTA Button -->
+          {cta_html}
+
+          <!-- Schedule Notes -->
+          {notes_html}
+
+          <!-- Footer Signature -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 36px; text-align: center; color: #64748b; font-size: 12px;">
+              <p style="margin: 0; font-weight: 700; color: #334155;">{sender_company}</p>
+              <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 11px;">Automated Interview System • AI Recruiter</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
             # 1. SEND TO CANDIDATE
             if payload.send_to_candidate:
                 if not candidate_email:
                     raise HTTPException(status_code=400, detail="Candidate email is missing. Please enter candidate email.")
 
-                # Pick candidate template
                 cand_template = None
                 if payload.template_id:
                     cand_template = await template_service.get_template(payload.template_id)
@@ -455,30 +573,34 @@ class InterviewService:
                     cand_template = next((t for t in all_templates if "Invitation" in t.name or "Candidate" in t.name), all_templates[0] if all_templates else None)
 
                 cand_subject = render_text(cand_template.subject if cand_template else f"Interview Invitation: {existing.get('job_title')} - {existing.get('candidate_name')}")
-                cand_body = render_text(cand_template.body if cand_template else f"<p>Dear {existing.get('candidate_name')},</p><p>You are invited for an interview for {existing.get('job_title')}.</p>")
+                cand_raw_body = render_text(cand_template.body if cand_template else f"<p>Dear <b>{existing.get('candidate_name')}</b>,</p><p>We are pleased to invite you for an interview for the <b>{existing.get('job_title')}</b> position.</p>")
 
-                # If candidate body lacks schedule variables or details, append Schedule Details Box
-                if "scheduled_date" not in (cand_template.body if cand_template else "") and "Date:" not in cand_body:
-                    cand_body += f"""
-                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-top: 16px;">
-                        <h4 style="margin-top: 0; color: #1e293b;">Interview Schedule Details</h4>
-                        <ul style="padding-left: 20px; color: #334155;">
-                            <li><b>Date:</b> {replacements['scheduled_date']}</li>
-                            <li><b>Time:</b> {replacements['scheduled_time']} ({replacements['timezone']})</li>
-                            <li><b>Duration:</b> {replacements['duration_minutes']} Minutes</li>
-                            <li><b>Interviewer:</b> {replacements['interviewer_name']}</li>
-                            <li><b>Meeting Link / Location:</b> {replacements['meeting_link']}</li>
-                            <li><b>Schedule Notes:</b> {replacements['notes']}</li>
-                        </ul>
-                    </div>
-                    """
+                cand_schedule_items = [
+                    {"label": "Candidate", "value": existing.get("candidate_name", "")},
+                    {"label": "Job Position", "value": existing.get("job_title", "")},
+                    {"label": "Interview Round", "value": f"Round {existing.get('round_number', 1)} ({str(existing.get('interview_type', '')).replace('_', ' ')})"},
+                    {"label": "Scheduled Date", "value": replacements['scheduled_date']},
+                    {"label": "Scheduled Time", "value": f"{replacements['scheduled_time']} ({replacements['timezone']})"},
+                    {"label": "Duration", "value": f"{replacements['duration_minutes']} Minutes"},
+                    {"label": "Interviewer", "value": replacements['interviewer_name']},
+                ]
+
+                cand_final_html = build_professional_email_html(
+                    header_badge="Candidate Invitation",
+                    header_title=f"Interview Invitation - {existing.get('job_title')}",
+                    body_content=cand_raw_body,
+                    schedule_items=cand_schedule_items,
+                    meeting_url=meeting_link,
+                    notes_text=notes_content,
+                    sender_company=config_model.sender_name or "Recruitment Team"
+                )
 
                 msg_cand = EmailMessage()
                 msg_cand["Subject"] = cand_subject
                 msg_cand["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
                 msg_cand["To"] = candidate_email.strip()
                 msg_cand.set_content("Please enable HTML to view this email.")
-                msg_cand.add_alternative(cand_body, subtype='html')
+                msg_cand.add_alternative(cand_final_html, subtype='html')
 
                 if config_model.use_ssl:
                     server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
@@ -497,36 +619,44 @@ class InterviewService:
                 if not interviewer_email:
                     raise HTTPException(status_code=400, detail="Interviewer email is missing. Please enter interviewer email.")
 
-                # Pick interviewer template
                 interviewer_template = next((t for t in all_templates if "Interviewer" in t.name), None)
 
                 if interviewer_template:
                     int_subject = render_text(interviewer_template.subject)
-                    int_body = render_text(interviewer_template.body)
+                    int_raw_body = render_text(interviewer_template.body)
                 else:
                     int_subject = f"Interview Assigned: {existing.get('job_title')} - {existing.get('candidate_name')}"
-                    int_body = f"""
-                    <p>Hello {replacements['interviewer_name']},</p>
+                    int_raw_body = f"""
+                    <p>Hello <b>{replacements['interviewer_name']}</b>,</p>
                     <p>You have been assigned to conduct an interview with candidate <b>{replacements['candidate_name']}</b> for the <b>{replacements['job_title']}</b> position.</p>
-                    <h3>Interview Schedule Details:</h3>
-                    <ul>
-                      <li><b>Candidate:</b> {replacements['candidate_name']} ({replacements['candidate_email']})</li>
-                      <li><b>Date:</b> {replacements['scheduled_date']}</li>
-                      <li><b>Time:</b> {replacements['scheduled_time']} ({replacements['timezone']})</li>
-                      <li><b>Duration:</b> {replacements['duration_minutes']} Minutes</li>
-                      <li><b>Meeting Link / Location:</b> {replacements['meeting_link']}</li>
-                    </ul>
-                    <p><b>Schedule Notes:</b><br/>{replacements['notes']}</p>
                     <p>Please ensure to update candidate rating and feedback post-interview.</p>
-                    <p>Best regards,<br/>{config_model.sender_name or 'HR Team'}</p>
                     """
+
+                int_schedule_items = [
+                    {"label": "Candidate", "value": f"{existing.get('candidate_name', '')} ({candidate_email or 'N/A'})"},
+                    {"label": "Job Position", "value": existing.get("job_title", "")},
+                    {"label": "Interview Round", "value": f"Round {existing.get('round_number', 1)} ({str(existing.get('interview_type', '')).replace('_', ' ')})"},
+                    {"label": "Scheduled Date", "value": replacements['scheduled_date']},
+                    {"label": "Scheduled Time", "value": f"{replacements['scheduled_time']} ({replacements['timezone']})"},
+                    {"label": "Duration", "value": f"{replacements['duration_minutes']} Minutes"},
+                ]
+
+                int_final_html = build_professional_email_html(
+                    header_badge="Interviewer Assignment",
+                    header_title=f"Interview Assigned: {existing.get('candidate_name')}",
+                    body_content=int_raw_body,
+                    schedule_items=int_schedule_items,
+                    meeting_url=meeting_link,
+                    notes_text=notes_content,
+                    sender_company=config_model.sender_name or "Recruitment Team"
+                )
 
                 msg_int = EmailMessage()
                 msg_int["Subject"] = int_subject
                 msg_int["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
                 msg_int["To"] = interviewer_email.strip()
                 msg_int.set_content("Please enable HTML to view this email.")
-                msg_int.add_alternative(int_body, subtype='html')
+                msg_int.add_alternative(int_final_html, subtype='html')
 
                 if config_model.use_ssl:
                     server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)

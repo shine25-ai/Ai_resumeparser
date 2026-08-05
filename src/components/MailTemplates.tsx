@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Plus, Edit2, Trash2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mail, Plus, Edit2, Trash2, Send, X, CheckCircle2, AlertCircle, Calendar, Clock } from 'lucide-react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { MAIL_TEMPLATES_URL } from '../utils/Api';
@@ -34,6 +34,23 @@ export default function MailTemplates() {
       console.error('Failed to fetch templates:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return dateString;
+      return d.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return dateString;
     }
   };
 
@@ -257,6 +274,16 @@ export default function MailTemplates() {
                     {template.variables?.map((v: string) => (
                        <span key={v} className="text-xs px-2 py-1 bg-white text-slate-700 rounded-md border border-slate-200 shadow-xs">{`{{${v}}}`}</span>
                     ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-slate-500 border-t border-slate-200/80 pt-2.5">
+                    <span className="flex items-center gap-1.5 text-slate-600 font-medium">
+                      <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                      <span className="font-semibold text-slate-800">Created:</span> {formatDate(template.created_at)}
+                    </span>
+                    <span className="flex items-center gap-1.5 text-slate-600 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                      <span className="font-semibold text-slate-800">Updated:</span> {formatDate(template.updated_at)}
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 sm:opacity-0 group-hover:opacity-100 transition-opacity">

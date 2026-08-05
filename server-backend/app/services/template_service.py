@@ -77,7 +77,7 @@ class TemplateService:
             if not existing:
                 model = MailTemplateModel(**temp)
                 await self.repository.create_template(model)
-            elif "{{scheduled_date}}" not in existing.body and temp["name"] in ["Interview Invitation", "Interviewer Schedule Notification"]:
+            elif temp["name"] in ["Interview Invitation", "Interviewer Schedule Notification"]:
                 existing.subject = temp["subject"]
                 existing.body = temp["body"]
                 existing.variables = temp["variables"]
