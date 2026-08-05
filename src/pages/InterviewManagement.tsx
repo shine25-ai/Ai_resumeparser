@@ -1137,374 +1137,456 @@ export default function InterviewManagement() {
         )}
       </div>
 
-      {/* SCHEDULE INTERVIEW MODAL */}
+      {/* SCHEDULE INTERVIEW MODAL (EXACT 2x2 COLORFUL CARD UI) */}
       {isScheduleOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl text-slate-900">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Plus size={18} className="text-indigo-600" /> Schedule New Interview
-              </h2>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
+
+            {/* Modal Header */}
+            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-md text-white">
+                  <Calendar size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900 tracking-wide">
+                      Schedule New Interview Session
+                    </h2>
+                    {scheduleForm.candidate_name && (
+                      <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full">
+                        {scheduleForm.candidate_name}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Configure interview setup, dates, interviewer, candidate requests, salary, outcome, and attached documents
+                  </p>
+                </div>
+              </div>
+
               <button
                 onClick={() => setIsScheduleOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleScheduleSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">Select Candidate (or type name)</label>
-                <select
-                  value={scheduleForm.candidate_id}
-                  onChange={(e) => {
-                    const selId = e.target.value;
-                    const found = candidatesList.find((c) => c.id === selId || c._id === selId);
-                    const parsed = found?.parsed_data || {};
-                    const nameStr = parsed.full_name || parsed.name || found?.original_filename || "";
-                    const emailStr = parsed.email || found?.email || "";
-                    setScheduleForm({
-                      ...scheduleForm,
-                      candidate_id: selId,
-                      candidate_name: nameStr,
-                      candidate_email: emailStr,
-                      resume_id: selId,
-                    });
-                  }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 mb-2 cursor-pointer"
-                >
-                  <option value="">-- Choose Candidate from Parsed Resumes --</option>
-                  {candidatesList.map((cand) => {
-                    const parsed = cand.parsed_data || {};
-                    const candName = parsed.full_name || parsed.name || cand.original_filename;
-                    return (
-                      <option key={cand.id || cand._id} value={cand.id || cand._id}>
-                        {candName}
-                      </option>
-                    );
-                  })}
-                </select>
+            <form onSubmit={handleScheduleSubmit} className="space-y-6 text-xs">
+              {/* 2-COLUMN / 2x2 COLORFUL CARD GRID */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    placeholder="Candidate Name"
-                    value={scheduleForm.candidate_name}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    required
-                  />
-                  <input
-                    type="email"
-                    placeholder="Candidate Email"
-                    value={scheduleForm.candidate_email}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_email: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
+                {/* CARD 1 (TOP LEFT): CANDIDATE & JOB ROLE SETUP */}
+                <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-2xl p-5 space-y-4 shadow-xs">
+                  <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs border-b border-indigo-200/70 pb-2.5">
+                    <Briefcase size={16} className="text-indigo-600" />
+                    <span>Candidate & Job Role Setup</span>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Job Title / Role</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Senior Java Developer"
-                    value={scheduleForm.job_title}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, job_title: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Job Location</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Bangalore / Remote"
-                    value={scheduleForm.job_location}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, job_location: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Job Type</label>
-                  <select
-                    value={scheduleForm.job_type}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, job_type: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="Full Time">Full Time</option>
-                    <option value="Part Time">Part Time</option>
-                    <option value="Contract">Contract</option>
-                    <option value="Hybrid">Hybrid</option>
-                    <option value="Remote">Remote</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Interview Type</label>
-                  <select
-                    value={scheduleForm.interview_type}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, interview_type: e.target.value as InterviewTypeEnum })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="TECHNICAL">TECHNICAL</option>
-                    <option value="HR">HR</option>
-                    <option value="MANAGERIAL">MANAGERIAL</option>
-                    <option value="CULTURE_FIT">CULTURE_FIT</option>
-                    <option value="FINAL_ROUND">FINAL_ROUND</option>
-                    <option value="INITIAL_SCREENING">INITIAL_SCREENING</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Round Number</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={scheduleForm.round_number}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, round_number: Number(e.target.value) })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Scheduled Date</label>
-                  <input
-                    type="date"
-                    value={scheduleForm.scheduled_date}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_date: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Scheduled Time</label>
-                  <input
-                    type="time"
-                    value={scheduleForm.scheduled_time}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_time: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Interviewer Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Ravi Shankar"
-                    value={scheduleForm.interviewer_name}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, interviewer_name: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Interviewer Email</label>
-                  <input
-                    type="email"
-                    placeholder="interviewer@company.com"
-                    value={scheduleForm.interviewer_email}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, interviewer_email: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Platform</label>
-                  <select
-                    value={scheduleForm.meeting_platform}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, meeting_platform: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="Google Meet">Google Meet</option>
-                    <option value="Zoom">Zoom</option>
-                    <option value="Microsoft Teams">Microsoft Teams</option>
-                    <option value="In Person">In Person / On Site</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 mb-1 font-semibold">Meeting Link / Address</label>
-                  <input
-                    type="text"
-                    placeholder="https://meet.google.com/..."
-                    value={scheduleForm.meeting_link}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, meeting_link: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Interview Location & HR Call Verification */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-indigo-50 p-3 rounded-xl border border-indigo-200">
-                <div>
-                  <label className="block text-indigo-700 mb-1 font-semibold">Interview Location</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Conference Room A / Bangalore"
-                    value={scheduleForm.interview_location || scheduleForm.location}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, interview_location: e.target.value, location: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-indigo-700 mb-1 font-semibold">HR Call Verification</label>
-                  <select
-                    value={scheduleForm.hr_call_verification}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, hr_call_verification: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="Verified">Verified</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Needs Followup">Needs Followup</option>
-                    <option value="Not Eligible">Not Eligible</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Candidate Requested Schedule, Role, Salary, Fit Salary, Joining Date */}
-              <div className="space-y-3 bg-amber-50 p-3 rounded-xl border border-amber-200">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-amber-800 mb-1 font-semibold">Candidate Requested Date</label>
-                    <input
-                      type="date"
-                      value={scheduleForm.candidate_requested_date}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_date: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    <label className="block text-slate-700 mb-1 font-semibold">Select Candidate from Parsed Resumes</label>
+                    <select
+                      value={scheduleForm.candidate_id}
+                      onChange={(e) => {
+                        const selId = e.target.value;
+                        const found = candidatesList.find((c) => c.id === selId || c._id === selId);
+                        const parsed = found?.parsed_data || {};
+                        const nameStr = parsed.full_name || parsed.name || found?.original_filename || "";
+                        const emailStr = parsed.email || found?.email || "";
+                        setScheduleForm({
+                          ...scheduleForm,
+                          candidate_id: selId,
+                          candidate_name: nameStr,
+                          candidate_email: emailStr,
+                          resume_id: selId,
+                        });
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer font-medium shadow-2xs"
+                    >
+                      <option value="">-- Choose Candidate from Parsed Resumes --</option>
+                      {candidatesList.map((cand) => {
+                        const parsed = cand.parsed_data || {};
+                        const candName = parsed.full_name || parsed.name || cand.original_filename;
+                        return (
+                          <option key={cand.id || cand._id} value={cand.id || cand._id}>
+                            {candName} {parsed.email ? `(${parsed.email})` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">
+                        Candidate Name <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Candidate Name"
+                        value={scheduleForm.candidate_name}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">
+                        Job Title / Role <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Full Stack Developer / Team Lead"
+                        value={scheduleForm.job_title}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, job_title: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <MapPin size={13} className="text-indigo-600" /> Job Location
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Coimbatore / Remote"
+                        value={scheduleForm.job_location}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, job_location: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Briefcase size={13} className="text-indigo-600" /> Job Type
+                      </label>
+                      <select
+                        value={scheduleForm.job_type}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, job_type: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-2xs"
+                      >
+                        <option value="Full Time">💼 Full Time</option>
+                        <option value="Part Time">⏱️ Part Time</option>
+                        <option value="Contract">📄 Contract</option>
+                        <option value="Hybrid">🏢 Hybrid</option>
+                        <option value="Remote">🌐 Remote</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Layers size={13} className="text-indigo-600" /> Interview Type
+                      </label>
+                      <select
+                        value={scheduleForm.interview_type}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, interview_type: e.target.value as InterviewTypeEnum })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-2xs"
+                      >
+                        <option value="TECHNICAL">💻 TECHNICAL</option>
+                        <option value="HR">👥 HR SCREENING</option>
+                        <option value="MANAGERIAL">👔 MANAGERIAL</option>
+                        <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
+                        <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
+                        <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Hash size={13} className="text-indigo-600" /> Round Number
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={scheduleForm.round_number}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, round_number: Number(e.target.value) })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* CARD 2 (TOP RIGHT): CANDIDATE REQUESTS, COMPENSATION & SELECTION OUTCOME */}
+                <div className="bg-amber-50/40 border border-amber-300/70 rounded-2xl p-5 space-y-4 shadow-xs">
+                  <div className="flex items-center gap-2 text-amber-800 font-bold text-xs border-b border-amber-200 pb-2.5">
+                    <DollarSign size={16} className="text-amber-600" />
+                    <span>Candidate Requests, Compensation & Selection Outcome</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Calendar size={13} className="text-amber-600" /> Requested Date
+                      </label>
+                      <input
+                        type="date"
+                        value={scheduleForm.candidate_requested_date}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_date: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Clock size={13} className="text-amber-600" /> Requested Time
+                      </label>
+                      <input
+                        type="time"
+                        value={scheduleForm.candidate_requested_time}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_time: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Briefcase size={13} className="text-amber-600" /> Requested Role
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Team Lead"
+                        value={scheduleForm.candidate_requested_role}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_role: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <DollarSign size={13} className="text-amber-600" /> Salary Requested
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="50000"
+                        value={scheduleForm.salary_requested}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, salary_requested: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <TrendingUp size={13} className="text-emerald-600" /> Final Fit Salary
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="30000"
+                        value={scheduleForm.final_fit_salary}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, final_fit_salary: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-emerald-600 font-extrabold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Calendar size={13} className="text-amber-600" /> Joining Date
+                      </label>
+                      <input
+                        type="date"
+                        value={scheduleForm.joining_date}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, joining_date: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-amber-900 mb-1 font-bold flex items-center gap-1">
+                      🏆 Selection Outcome Status
+                    </label>
+                    <select
+                      value={scheduleForm.recommendation}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, recommendation: e.target.value })}
+                      className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2.5 text-amber-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer shadow-2xs"
+                    >
+                      <option value="Selected">🟢 Selected</option>
+                      <option value="Rejected">🔴 Rejected</option>
+                      <option value="Pending">🟡 Pending Decision</option>
+                      <option value="Hold">🟣 On Hold</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* CARD 3 (BOTTOM LEFT): DATE, TIME & VIDEO MEETING */}
+                <div className="bg-sky-50/40 border border-sky-200/90 rounded-2xl p-5 space-y-4 shadow-xs">
+                  <div className="flex items-center gap-2 text-sky-800 font-bold text-xs border-b border-sky-200 pb-2.5">
+                    <Clock size={16} className="text-sky-600" />
+                    <span>Date, Time & Video Meeting</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Calendar size={13} className="text-sky-600" /> Scheduled Date <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={scheduleForm.scheduled_date}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_date: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Clock size={13} className="text-sky-600" /> Scheduled Time <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="time"
+                        value={scheduleForm.scheduled_time}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_time: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">
+                        Interviewer Name <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Interviewer Name"
+                        value={scheduleForm.interviewer_name}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, interviewer_name: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">Interviewer Email</label>
+                      <input
+                        type="email"
+                        placeholder="interviewer@company.com"
+                        value={scheduleForm.interviewer_email}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, interviewer_email: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Video size={13} className="text-sky-600" /> Meeting Platform
+                      </label>
+                      <select
+                        value={scheduleForm.meeting_platform}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, meeting_platform: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 cursor-pointer shadow-2xs"
+                      >
+                        <option value="Google Meet">📹 Google Meet</option>
+                        <option value="Zoom">🎥 Zoom</option>
+                        <option value="Microsoft Teams">💻 Microsoft Teams</option>
+                        <option value="In Person">🏢 In Person / Office</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
+                      <input
+                        type="text"
+                        placeholder="https://meet.google.com/..."
+                        value={scheduleForm.meeting_link}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, meeting_link: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* CARD 4 (BOTTOM RIGHT): LOCATION, DOCUMENTS & FOCUS NOTES */}
+                <div className="bg-emerald-50/40 border border-emerald-200/90 rounded-2xl p-5 space-y-4 shadow-xs">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs border-b border-emerald-200 pb-2.5">
+                    <Building2 size={16} className="text-emerald-700" />
+                    <span>Interview Location, Documents & Focus Notes</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">Interview Location</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Conference Room A / Coimbatore"
+                        value={scheduleForm.interview_location || scheduleForm.location}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, interview_location: e.target.value, location: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">HR Call Verification</label>
+                      <select
+                        value={scheduleForm.hr_call_verification}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, hr_call_verification: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer shadow-2xs"
+                      >
+                        <option value="Verified">Verified</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Needs Followup">Needs Followup</option>
+                        <option value="Not Eligible">Not Eligible</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-slate-700">Interview Document Files (URLs/filenames)</label>
+                      <label className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[11px] px-2.5 py-0.5 rounded-lg cursor-pointer font-bold transition-all">
+                        Attach Files
+                        <input type="file" multiple onChange={handleScheduleFileUpload} className="hidden" />
+                      </label>
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={scheduleForm.interview_document_files}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, interview_document_files: e.target.value })}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono text-xs shadow-2xs"
+                      placeholder="One per line or click Attach Files..."
                     />
                   </div>
 
                   <div>
-                    <label className="block text-amber-800 mb-1 font-semibold">Candidate Requested Time</label>
-                    <input
-                      type="time"
-                      value={scheduleForm.candidate_requested_time}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_time: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-amber-800 mb-1 font-semibold">Requested Role / Work</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Senior Tech Lead"
-                      value={scheduleForm.candidate_requested_role}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_role: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    <label className="block text-slate-700 mb-1 font-semibold">Agenda / Focus Notes</label>
+                    <textarea
+                      rows={2}
+                      value={scheduleForm.notes}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, notes: e.target.value })}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium shadow-2xs"
+                      placeholder="Focus areas or instructions..."
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-indigo-700 mb-1 font-semibold">Salary Requested (Expected)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 15 LPA / $100,000"
-                      value={scheduleForm.salary_requested}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, salary_requested: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-indigo-700 mb-1 font-semibold">Final Fit Salary (Agreed)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 14 LPA / $95,000"
-                      value={scheduleForm.final_fit_salary}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, final_fit_salary: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-indigo-700 mb-1 font-semibold">Joining Date</label>
-                    <input
-                      type="date"
-                      value={scheduleForm.joining_date}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, joining_date: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-amber-800 mb-1 font-bold">Selection Outcome Status</label>
-                  <select
-                    value={scheduleForm.recommendation}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, recommendation: e.target.value })}
-                    className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-amber-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="Selected">🟢 Selected</option>
-                    <option value="Rejected">🔴 Rejected</option>
-                    <option value="Pending">🟡 Pending</option>
-                    <option value="Hold">🟣 On Hold</option>
-                  </select>
-                </div>
               </div>
 
-              {/* Documents & File Upload */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-slate-600 font-semibold">Interview Document Files (URLs/filenames)</label>
-                  <label className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-2.5 py-1 rounded-lg cursor-pointer font-bold transition-all">
-                    Browse / Attach Files
-                    <input type="file" multiple onChange={handleScheduleFileUpload} className="hidden" />
-                  </label>
-                </div>
-                <textarea
-                  rows={2}
-                  value={scheduleForm.interview_document_files}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, interview_document_files: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono text-xs"
-                  placeholder="One per line or click Browse to select files..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">Notes / Agenda</label>
-                <textarea
-                  rows={2}
-                  value={scheduleForm.notes}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, notes: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  placeholder="Focus areas or instructions..."
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              {/* Bottom Actions Bar */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsScheduleOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 font-semibold cursor-pointer"
+                  className="px-5 py-2.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 font-bold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-sm cursor-pointer disabled:opacity-50"
+                  className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 flex items-center gap-2 cursor-pointer transition-all"
                 >
-                  {actionLoading ? "Scheduling..." : "Schedule Interview"}
+                  <Plus size={16} /> Schedule Interview
                 </button>
               </div>
             </form>
