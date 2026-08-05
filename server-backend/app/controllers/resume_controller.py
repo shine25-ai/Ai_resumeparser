@@ -16,9 +16,9 @@ class ResumeController:
     def __init__(self, resume_service: ResumeService):
         self.resume_service = resume_service
 
-    async def upload_resume(self, user_id: str, file: UploadFile, background_tasks: BackgroundTasks) -> JSONResponse:
+    async def upload_resume(self, user_id: str, file: UploadFile, background_tasks: BackgroundTasks, resume_source: Optional[str] = None) -> JSONResponse:
         """Process resume file upload and text extraction."""
-        resume_response = await self.resume_service.upload_and_process_resume(user_id, file, background_tasks)
+        resume_response = await self.resume_service.upload_and_process_resume(user_id, file, background_tasks, resume_source=resume_source)
         return success_response(
             data=resume_response.model_dump(),
             message="Resume uploaded and processed successfully.",

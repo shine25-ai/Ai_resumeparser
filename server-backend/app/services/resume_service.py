@@ -44,7 +44,7 @@ class ResumeService:
         self.upload_dir = Path(__file__).resolve().parent.parent / settings.UPLOAD_FOLDER
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
-    async def upload_and_process_resume(self, user_id: str, file: UploadFile, background_tasks: BackgroundTasks) -> ResumeResponse:
+    async def upload_and_process_resume(self, user_id: str, file: UploadFile, background_tasks: BackgroundTasks, resume_source: Optional[str] = None) -> ResumeResponse:
         """
         Validate file, save to disk, upload to AWS S3, parse resume using resume-parser-pro, and save document in MongoDB.
         """
@@ -102,6 +102,7 @@ class ResumeService:
             file_hash=file_hash,
             parsed_data=parsed_data,
             ai_evaluation=ai_evaluation,
+            resume_source=resume_source,
             status=ResumeStatus.PENDING,
         )
 
@@ -245,6 +246,7 @@ class ResumeService:
                     "existing_resume_id": None,
                     "is_auto_updated": True,
                     "previous_upload_date": existing_doc.get("upload_date") or existing_doc.get("created_at"),
+                    "resume_source": temp_doc.get("resume_source") or existing_doc.get("resume_source"),
                 }
                 await self.resume_repo.update(existing_doc["id"], updated_existing_fields)
                 logger.info(f"[EXISTING_EMAIL_FLOW] Step 2/3: Updated existing candidate document '{existing_doc['id']}' in 'resumes' collection with new parsed values.")

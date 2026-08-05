@@ -28,6 +28,7 @@ class ResumeDocument(BaseModel):
     redirect_id: Optional[str] = None
     is_auto_updated: bool = False
     previous_upload_date: Optional[str] = None
+    resume_source: Optional[str] = None
     upload_date: str = Field(default_factory=lambda: utc_now().isoformat())
     status: ResumeStatus = ResumeStatus.PENDING
 

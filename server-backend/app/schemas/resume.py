@@ -48,6 +48,7 @@ class ResumeResponse(BaseModel):
     other_documents: Optional[List[Dict[str, Any]]] = None
     is_auto_updated: Optional[bool] = False
     previous_upload_date: Optional[str] = None
+    resume_source: Optional[str] = None
     upload_date: str
     status: ResumeStatus
 

@@ -36,6 +36,7 @@ export default function CandidateDatabase() {
         realId: item.id,
         name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         role: item.parsed_data?.designation || item.parsed_data?.experience?.[0]?.designation || "Software Professional",
+        source: item.resume_source || "N/A",
         experience: item.parsed_data?.total_experience_years
           ? `${item.parsed_data.total_experience_years} Yrs`
           : item.parsed_data?.years_of_experience
@@ -90,7 +91,8 @@ export default function CandidateDatabase() {
     (c) =>
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.id.toLowerCase().includes(searchTerm.toLowerCase())
+      c.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.source.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const toggleSelectAll = () => {
@@ -190,7 +192,14 @@ export default function CandidateDatabase() {
                     </td>
                     <td className="py-3.5 px-3 font-bold text-slate-800">{row.id}</td>
                     <td className="py-3.5 px-3 font-bold text-slate-900">{row.name}</td>
-                    <td className="py-3.5 px-3 text-slate-700 font-medium">{row.role}</td>
+                    <td className="py-3.5 px-3">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-slate-800 font-bold">{row.role}</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
+                          Source: {row.source}
+                        </span>
+                      </div>
+                    </td>
                     <td className="py-3.5 px-3 text-slate-500">{row.experience}</td>
                     <td className="py-3.5 px-3 font-bold text-emerald-600">{row.match}</td>
                     <td className="py-3.5 px-3">

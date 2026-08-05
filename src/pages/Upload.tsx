@@ -12,10 +12,36 @@ export default function Upload() {
   const [activeTab, setActiveTab] = useState<string>("personal");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const [resumeSource, setResumeSource] = useState<string>("");
   const [otherDocFile, setOtherDocFile] = useState<File | null>(null);
   const [otherDocType, setOtherDocType] = useState<string>("Cover Letter");
   const [otherDocTitle, setOtherDocTitle] = useState<string>("");
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  const sourceOptions = [
+    { value: "", label: "-- Select any one --" },
+    { value: "referral", label: "Employee Referral" },
+    { value: "linkedin", label: "LinkedIn" },
+    { value: "naukri", label: "Naukri" },
+    { value: "indeed", label: "Indeed" },
+    { value: "email", label: "Email" },
+    { value: "career_site", label: "Career Website" },
+    { value: "company_website", label: "Company Website" },
+    { value: "walk_in", label: "Walk-in" },
+    { value: "campus_drive", label: "Campus Drive" },
+    { value: "job_fair", label: "Job Fair" },
+    { value: "consultancy", label: "Recruitment Consultancy" },
+    { value: "staffing_agency", label: "Staffing Agency" },
+    { value: "social_media", label: "Social Media" },
+    { value: "whatsapp", label: "WhatsApp" },
+    { value: "telegram", label: "Telegram" },
+    { value: "friends", label: "Friends" },
+    { value: "campaign", label: "Recruitment Campaign" },
+    { value: "internal", label: "Internal Transfer" },
+    { value: "rehire", label: "Rehire / Boomerang Employee" },
+    { value: "freelancer", label: "Freelancer Platform" },
+    { value: "other", label: "Other" },
+  ];
 
   const steps = [
     { number: 1, title: "Upload", active: true },
@@ -23,8 +49,6 @@ export default function Upload() {
     { number: 3, title: "AI Analysis", active: parsedResponse ? true : false },
     { number: 4, title: "Complete", active: parsedResponse ? true : false },
   ];
-
-
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -64,7 +88,8 @@ export default function Upload() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(RESUME_UPLOAD, {
+      const uploadUrl = `${RESUME_UPLOAD}?resume_source=${encodeURIComponent(resumeSource)}`;
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         headers,
         body: formData,
@@ -264,67 +289,105 @@ export default function Upload() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left / Drag & Drop Upload Zone (2 cols) */}
           <div className="lg:col-span-2">
+            {/* Compact & Neat Upload Card */}
             <div
-              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center transition-all duration-300 ${isDragging ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 bg-slate-50 hover:border-indigo-400"
+              className={`border-2 border-dashed rounded-2xl p-6 transition-all duration-300 ${isDragging ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 bg-slate-50/70 hover:border-indigo-400"
                 }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
-              {/* Cloud Icon */}
-              <div className="relative mb-4 flex items-center justify-center">
-                <UploadCloud className="text-slate-400 w-24 h-24 stroke-1" />
-                <span className="absolute text-indigo-600 text-xl font-bold">↑</span>
-              </div>
+              <div className="flex flex-col items-center text-center space-y-4">
+                {/* Icon */}
+                <div className="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
+                  <UploadCloud size={24} />
+                </div>
 
-              <h3 className="text-base font-bold text-slate-900 mb-4">
-                Drag & Drop your resume here (PDF, DOC, DOCX)
-              </h3>
+                {/* Text & Button */}
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Drag & Drop resume file here
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Supports PDF, DOC, DOCX (Max 20MB)
+                  </p>
+                </div>
 
-              <span className="text-xs text-slate-500 mb-4">or</span>
-
-              <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm mb-6">
-                Browse Files
-                <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileInput} />
-              </label>
-
-              <span className="text-xs text-slate-500 mb-8">
-                Supports PDF, DOC, DOCX (Max 20MB)
-              </span>
-
-              {/* Divider */}
-              <div className="w-full flex items-center gap-4 mb-6">
-                <div className="h-px bg-slate-200 flex-1"></div>
-                <span className="text-xs text-slate-500 font-medium">or</span>
-                <div className="h-px bg-slate-200 flex-1"></div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400 font-medium">or</span>
+                  <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1.5">
+                    <FileText size={14} />
+                    Browse File
+                    <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileInput} />
+                  </label>
+                </div>
               </div>
             </div>
 
-            {/* Selected File & Actions */}
+            {/* Selected File Details & Source Selection */}
             {file && (
-              <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="text-indigo-600" size={20} />
-                  <div>
-                    <p className="text-xs font-bold text-slate-900">{file.name}</p>
-                    <p className="text-[11px] text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              <div className="mt-4 p-4 rounded-2xl border border-slate-200 bg-slate-50/90 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100/80 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">{file.name}</p>
+                      <p className="text-[11px] text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setFile(null);
+                      setResumeSource("");
+                    }}
+                    className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg transition-colors cursor-pointer"
+                    title="Remove file"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
 
-                <button
-                  onClick={handleParse}
-                  disabled={isParsing}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 shadow-md cursor-pointer"
-                >
-                  {isParsing ? (
-                    <>
-                      <Loader2 className="animate-spin" size={14} />
-                      Extracting AI Data...
-                    </>
-                  ) : (
-                    <>Start AI Parsing</>
-                  )}
-                </button>
+                {/* Step 2: Resume Source Dropdown (Displayed after file upload) */}
+                <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    Resume Source <span className="text-rose-500">*</span>:
+                  </label>
+                  <select
+                    value={resumeSource}
+                    onChange={(e) => setResumeSource(e.target.value)}
+                    disabled={isParsing}
+                    className="w-full sm:w-64 bg-white border border-slate-300 text-xs font-semibold text-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-pointer shadow-xs"
+                  >
+                    {sourceOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Step 3: Start AI Parsing Button (Displayed ONLY after source value is selected) */}
+                {resumeSource && (
+                  <div className="pt-3 border-t border-slate-200/80 flex justify-end">
+                    <button
+                      onClick={handleParse}
+                      disabled={isParsing}
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md cursor-pointer animate-fadeIn"
+                    >
+                      {isParsing ? (
+                        <>
+                          <Loader2 className="animate-spin" size={14} />
+                          Extracting AI Data...
+                        </>
+                      ) : (
+                        <>Start AI Parsing</>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -463,6 +526,7 @@ export default function Upload() {
                     <FieldBox label="Current Location" value={personal.current_location} />
                     <FieldBox label="LinkedIn URL" value={personal.linkedin_url} isLink />
                     <FieldBox label="Total Experience (Years)" value={personal.total_experience} />
+                    <FieldBox label="Resume Source" value={parsedResponse?.resume_source || resumeSource} />
                   </div>
                 </div>
               )}

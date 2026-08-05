@@ -36,10 +36,11 @@ def get_resume_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -> R
 async def upload_resume(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    resume_source: Optional[str] = Query(None, description="Source of resume upload (e.g. refer, linkdIn, nakuri, indeet, frients, campain)"),
     current_user: dict = Depends(get_current_active_user_optional),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    return await controller.upload_resume(current_user["id"], file, background_tasks)
+    return await controller.upload_resume(current_user["id"], file, background_tasks, resume_source=resume_source)
 
 
 @router.get(
