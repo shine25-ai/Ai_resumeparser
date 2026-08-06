@@ -10,6 +10,7 @@ import fitz  # PyMuPDF
 from fastapi import UploadFile, BackgroundTasks
 from loguru import logger
 from app.core.config import settings
+from app.core.database import get_next_sequence
 from app.core.exceptions import FileUploadError, NotFoundError
 from app.models.resume import ResumeDocument
 from app.models.resume_log import ResumeLogDocument
@@ -91,8 +92,13 @@ class ResumeService:
         parsed_data = {}
         ai_evaluation = {}
         
+        # Generate auto-incrementing candidate ID
+        seq_num = await get_next_sequence(self.resume_repo.db, "candidate_id")
+        candidate_id_str = f"CND{seq_num:04d}"
+        
         resume_doc = ResumeDocument(
             id=resume_id,
+            candidate_id=candidate_id_str,
             user_id=user_id,
             filename=unique_filename,
             original_filename=original_filename,

@@ -12,6 +12,7 @@ class ResumeDocument(BaseModel):
     """MongoDB Resume Document structure representation."""
 
     id: str = Field(default_factory=generate_uuid)
+    candidate_id: Optional[str] = None
     user_id: str
     filename: str
     original_filename: str

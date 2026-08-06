@@ -57,3 +57,13 @@ db_manager = DatabaseManager()
 def get_database() -> AsyncIOMotorDatabase:
     """FastAPI Dependency for obtaining the MongoDB database instance."""
     return db_manager.get_db()
+
+async def get_next_sequence(db: AsyncIOMotorDatabase, name: str) -> int:
+    """Atomically increment and return the next sequence number for a given name."""
+    result = await db["counters"].find_one_and_update(
+        {"_id": name},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True
+    )
+    return result["seq"]
