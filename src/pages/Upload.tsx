@@ -13,6 +13,7 @@ export default function Upload() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [resumeSource, setResumeSource] = useState<string>("");
+  const [resumeSourceInformerName, setResumeSourceInformerName] = useState<string>("");
   const [otherDocFile, setOtherDocFile] = useState<File | null>(null);
   const [otherDocType, setOtherDocType] = useState<string>("Cover Letter");
   const [otherDocTitle, setOtherDocTitle] = useState<string>("");
@@ -88,7 +89,10 @@ export default function Upload() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const uploadUrl = `${RESUME_UPLOAD}?resume_source=${encodeURIComponent(resumeSource)}`;
+      let uploadUrl = `${RESUME_UPLOAD}?resume_source=${encodeURIComponent(resumeSource)}`;
+      if (resumeSourceInformerName.trim()) {
+        uploadUrl += `&resume_source_informer_name=${encodeURIComponent(resumeSourceInformerName.trim())}`;
+      }
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers,
@@ -342,6 +346,7 @@ export default function Upload() {
                     onClick={() => {
                       setFile(null);
                       setResumeSource("");
+                      setResumeSourceInformerName("");
                     }}
                     className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg transition-colors cursor-pointer"
                     title="Remove file"
@@ -368,6 +373,23 @@ export default function Upload() {
                     ))}
                   </select>
                 </div>
+
+                {/* Step 2.5: Resume Source Informer Name Field (Displayed after selecting source) */}
+                {resumeSource && (
+                  <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                      Resume Source Informer Name:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter informer / sourcer name..."
+                      value={resumeSourceInformerName}
+                      onChange={(e) => setResumeSourceInformerName(e.target.value)}
+                      disabled={isParsing}
+                      className="w-full sm:w-64 bg-white border border-slate-300 text-xs font-semibold text-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-text shadow-xs"
+                    />
+                  </div>
+                )}
 
                 {/* Step 3: Start AI Parsing Button (Displayed ONLY after source value is selected) */}
                 {resumeSource && (
@@ -527,6 +549,7 @@ export default function Upload() {
                     <FieldBox label="LinkedIn URL" value={personal.linkedin_url} isLink />
                     <FieldBox label="Total Experience (Years)" value={personal.total_experience} />
                     <FieldBox label="Resume Source" value={parsedResponse?.resume_source || resumeSource} />
+                    <FieldBox label="Resume Source Informer Name" value={parsedResponse?.resume_source_informer_name || resumeSourceInformerName} />
                   </div>
                 </div>
               )}

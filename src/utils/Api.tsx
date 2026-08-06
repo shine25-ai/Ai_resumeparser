@@ -8,6 +8,7 @@ export const RESUME_MERGE = (id: string) => `${BASE_URL}/resumes/${id}/merge`;
 export const RESUME_DOCUMENTS = (id: string) => `${BASE_URL}/resumes/${id}/documents`;
 export const RESUME_LOGS = (id: string) => `${BASE_URL}/resumes/${id}/logs`;
 export const INTERVIEWS_URL = `${BASE_URL}/interviews`;
+export const INTERVIEW_FEEDBACK_QUESTIONS_URL = `${BASE_URL}/interviews/feedback-questions`;
 
 export const AUTH_LOGIN = `${BASE_URL}/auth/login`;
 export const AUTH_REGISTER = `${BASE_URL}/auth/register`;
@@ -585,6 +586,27 @@ export const sendInterviewEmail = async (interviewId: string, payload: SendInter
 
   if (!response.ok) {
     throw new Error(resData.detail || "Failed to send interview email");
+  }
+
+  return resData.data || resData;
+};
+
+export const getFeedbackQuestionsFromBackend = async (interviewType?: string) => {
+  const token = localStorage.getItem("access_token") || "";
+  const query = interviewType ? `?interview_type=${encodeURIComponent(interviewType)}` : "";
+  const response = await fetch(`${INTERVIEW_FEEDBACK_QUESTIONS_URL}${query}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch feedback questions");
   }
 
   return resData.data || resData;

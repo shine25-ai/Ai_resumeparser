@@ -1,0 +1,62 @@
+{
+  "TECHNICAL": [
+    "The candidate technical skill level is low / below expectation",
+    "Problem solving & coding logic needs improvement",
+    "System architecture & design knowledge gap",
+    "Hands-on framework / tool depth insufficient",
+    "Technical concept explanation & communication gap",
+    "Code quality & optimization standards not met"
+  ],
+  "CODING_TEST": [
+    "Problem solving & algorithm logic below requirement",
+    "Data structures knowledge & complexity optimization gap",
+    "Edge cases handling & clean code standards weak",
+    "Time taken to complete coding task exceeded limit"
+  ],
+  "HR": [
+    "Communication / language proficiency below requirement",
+    "Salary expectation mismatch with budget",
+    "Notice period / immediate availability issue",
+    "Culture fit & professional attitude concerns",
+    "Job stability / frequent job hopping risk",
+    "Relocation / work location preference constraint"
+  ],
+  "INITIAL_SCREENING": [
+    "Basic qualification & skill relevance mismatch",
+    "Communication skills below threshold",
+    "Candidate interest / availability unclear",
+    "Salary / Budget alignment gap"
+  ],
+  "MANAGERIAL": [
+    "Leadership & team management experience insufficient",
+    "Conflict resolution & situational response gap",
+    "Ownership & project delivery experience low",
+    "Behavioral alignment & culture fit concerns",
+    "Strategic thinking & decision-making skills weak"
+  ],
+  "CULTURE_FIT": [
+    "Behavioral alignment & core values mismatch",
+    "Team collaboration & adaptiveness concerns",
+    "Work ethic & motivation alignment low"
+  ],
+  "FINAL_ROUND": [
+    "Candidate technical & domain depth low for client requirement",
+    "Client communication & presentation confidence low",
+    "Domain & project experience alignment gap",
+    "Overall interview performance below expectation",
+    "Experience gap for target role seniority"
+  ],
+  "CLIENT_ROUND": [
+    "Client communication & confidence low",
+    "Domain & project requirement alignment gap",
+    "Technical depth for client deliverables insufficient",
+    "Role expectations mismatch"
+  ],
+  "DEFAULT": [
+    "Technical skill level is low / below expectation",
+    "Communication skills below requirement",
+    "Domain knowledge gap",
+    "Experience gap for position",
+    "Overall performance below requirement"
+  ]
+}

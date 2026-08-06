@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Star, Plus, ChevronDown } from "lucide-react";
+import { ArrowLeft, Star, Plus, ChevronDown, HelpCircle } from "lucide-react";
+import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 
 export default function ClientFeedback() {
   const navigate = useNavigate();
@@ -8,16 +9,56 @@ export default function ClientFeedback() {
   const [nextSteps, setNextSteps] = useState("Offer will be released");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const ratings = [
-    { label: "Technical Rating", stars: 5 },
-    { label: "Communication Rating", stars: 5 },
-    { label: "Overall Rating", stars: 5 },
-  ];
+  // Ratings State (1 to 5 stars)
+  const [techRating, setTechRating] = useState<number>(5);
+  const [commRating, setCommRating] = useState<number>(5);
+  const [overallRating, setOverallRating] = useState<number>(5);
+
+  const [comments, setComments] = useState<string>("Good technical knowledge and communication.\nSuitable for our team.");
+  const [selectedQuestionReason, setSelectedQuestionReason] = useState<string>("");
+  const [questionOptions, setQuestionOptions] = useState<string[]>([]);
+
+  const interviewType = "FINAL_ROUND";
+
+  useEffect(() => {
+    getFeedbackQuestionsAsync(interviewType).then((opts) => setQuestionOptions(opts));
+  }, [interviewType]);
+
+  const handleRatingChange = (type: "tech" | "comm" | "overall", val: number) => {
+    let newOverall = overallRating;
+    if (type === "tech") {
+      setTechRating(val);
+      newOverall = Math.round((val + commRating) / 2);
+      setOverallRating(newOverall);
+    } else if (type === "comm") {
+      setCommRating(val);
+      newOverall = Math.round((techRating + val) / 2);
+      setOverallRating(newOverall);
+    } else {
+      setOverallRating(val);
+      newOverall = val;
+    }
+
+    // Auto update decision based on rating
+    const outcome = getAutoRatingOutcome(newOverall);
+    setDecision(outcome.clientDecision);
+  };
+
+  const handleQuestionReasonSelect = (reason: string) => {
+    setSelectedQuestionReason(reason);
+    if (reason && !reason.startsWith("--")) {
+      setComments((prev) => (prev ? `${prev}\nNote: ${reason}` : reason));
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
     }
+  };
+
+  const handleSaveFeedback = () => {
+    alert(`Feedback saved successfully!\nDecision: ${decision}\nOverall Rating: ${overallRating} Stars`);
   };
 
   return (
@@ -37,7 +78,10 @@ export default function ClientFeedback() {
             Back
           </button>
 
-          <button className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer">
+          <button
+            onClick={handleSaveFeedback}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer"
+          >
             <Plus size={14} />
             Add Feedback
           </button>
@@ -90,34 +134,108 @@ export default function ClientFeedback() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Client Feedback Ratings & Comments */}
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-          <h3 className="text-sm font-bold text-slate-900">Client Feedback</h3>
+          <h3 className="text-sm font-bold text-slate-900">Client Feedback & Ratings</h3>
 
           {/* Star Ratings List */}
           <div className="space-y-4 max-w-lg">
-            {ratings.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between gap-4">
-                <span className="text-xs font-medium text-slate-700">{item.label}</span>
-                <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5, 6].map((starIndex) => (
+            {/* Technical Rating */}
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-medium text-slate-700">Technical Rating</span>
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4, 5].map((starIndex) => (
+                  <button
+                    key={starIndex}
+                    type="button"
+                    onClick={() => handleRatingChange("tech", starIndex)}
+                    className="focus:outline-none cursor-pointer"
+                  >
                     <Star
-                      key={starIndex}
-                      size={18}
-                      className={starIndex <= item.stars ? "text-indigo-600 fill-indigo-600" : "text-slate-200"}
+                      size={20}
+                      className={starIndex <= techRating ? "text-amber-500 fill-amber-500" : "text-slate-200"}
                     />
-                  ))}
-                </div>
+                  </button>
+                ))}
+                <span className="text-xs font-bold text-slate-700 ml-2 w-6">{techRating} ★</span>
               </div>
-            ))}
+            </div>
+
+            {/* Communication Rating */}
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-medium text-slate-700">Communication Rating</span>
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4, 5].map((starIndex) => (
+                  <button
+                    key={starIndex}
+                    type="button"
+                    onClick={() => handleRatingChange("comm", starIndex)}
+                    className="focus:outline-none cursor-pointer"
+                  >
+                    <Star
+                      size={20}
+                      className={starIndex <= commRating ? "text-amber-500 fill-amber-500" : "text-slate-200"}
+                    />
+                  </button>
+                ))}
+                <span className="text-xs font-bold text-slate-700 ml-2 w-6">{commRating} ★</span>
+              </div>
+            </div>
+
+            {/* Overall Rating */}
+            <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-100">
+              <span className="text-xs font-bold text-slate-900">Overall Rating</span>
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4, 5].map((starIndex) => (
+                  <button
+                    key={starIndex}
+                    type="button"
+                    onClick={() => handleRatingChange("overall", starIndex)}
+                    className="focus:outline-none cursor-pointer"
+                  >
+                    <Star
+                      size={22}
+                      className={starIndex <= overallRating ? "text-indigo-600 fill-indigo-600" : "text-slate-200"}
+                    />
+                  </button>
+                ))}
+                <span className="text-xs font-extrabold text-indigo-700 ml-2 w-6">{overallRating} ★</span>
+              </div>
+            </div>
           </div>
+
+          {/* Conditional Reason / Question Selection when Rating is 1 to 4.5 Stars */}
+          {overallRating <= 4.5 && (
+            <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2 animate-fadeIn">
+              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <HelpCircle size={15} className="text-amber-600" />
+                Select Reason / Observation (Interview Type: Final Round)
+              </label>
+              <select
+                value={selectedQuestionReason}
+                onChange={(e) => handleQuestionReasonSelect(e.target.value)}
+                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs cursor-pointer"
+              >
+                {questionOptions.map((opt, i) => (
+                  <option key={i} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-amber-700 italic">
+                Selecting a reason will automatically record it under candidate feedback notes.
+              </p>
+            </div>
+          )}
 
           {/* Client Comments Text Area Box */}
           <div className="space-y-3 pt-4 border-t border-slate-200">
-            <h4 className="text-xs font-bold text-slate-900">Client Comments</h4>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 leading-relaxed min-h-[100px]">
-              Good technical knowledge and communication.
-              <br />
-              Suitable for our team.
-            </div>
+            <h4 className="text-xs font-bold text-slate-900">Client Comments & Feedback</h4>
+            <textarea
+              rows={4}
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              placeholder="Enter detailed feedback comments..."
+              className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 leading-relaxed focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none font-sans"
+            />
           </div>
         </div>
 
@@ -126,16 +244,25 @@ export default function ClientFeedback() {
           <div className="space-y-5">
             {/* Interview Decision Dropdown */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-900 block">Interview Decision</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-900 block">Interview Decision</label>
+                <span className="text-[10px] text-slate-500 italic">Auto-updated by rating</span>
+              </div>
               <div className="relative">
                 <select
                   value={decision}
                   onChange={(e) => setDecision(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-emerald-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 appearance-none cursor-pointer"
+                  className={`w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 appearance-none cursor-pointer ${
+                    decision === "Selected"
+                      ? "text-emerald-600"
+                      : decision === "On Hold"
+                      ? "text-amber-600"
+                      : "text-rose-600"
+                  }`}
                 >
                   <option value="Selected" className="bg-white text-emerald-600 font-bold">Selected</option>
-                  <option value="Rejected" className="bg-white text-rose-600 font-bold">Rejected</option>
                   <option value="On Hold" className="bg-white text-amber-600 font-bold">On Hold</option>
+                  <option value="Rejected" className="bg-white text-rose-600 font-bold">Rejected</option>
                 </select>
                 <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
@@ -169,7 +296,10 @@ export default function ClientFeedback() {
           </div>
 
           {/* Submit Feedback Button */}
-          <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-colors shadow-sm mt-4 cursor-pointer">
+          <button
+            onClick={handleSaveFeedback}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-colors shadow-sm mt-4 cursor-pointer"
+          >
             Submit Feedback
           </button>
         </div>

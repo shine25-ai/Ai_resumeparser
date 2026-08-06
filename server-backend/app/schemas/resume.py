@@ -49,6 +49,7 @@ class ResumeResponse(BaseModel):
     is_auto_updated: Optional[bool] = False
     previous_upload_date: Optional[str] = None
     resume_source: Optional[str] = None
+    resume_source_informer_name: Optional[str] = None
     upload_date: str
     status: ResumeStatus
 
