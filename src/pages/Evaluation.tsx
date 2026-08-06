@@ -127,6 +127,8 @@ export default function Evaluation() {
   const location = parsed.location || "N/A";
   const linkedin = parsed.linkedin || "";
   const github = parsed.github || "";
+  const resumeSource = candidate?.resume_source || "N/A";
+  const resumeSourceInformerName = candidate?.resume_source_informer_name || "N/A";
   const aiScore = evalData.ai_technical_score ?? 0;
   const expLevel = evalData.experience_level || "Not Specified";
   const scoreLabel = evalData.recommendation || (aiScore >= 80 ? "Highly Recommended Candidate" : aiScore >= 60 ? "Suitable Candidate" : "Needs Review");
@@ -406,6 +408,22 @@ export default function Evaluation() {
                 )}
               </div>
             )}
+
+            {/* Resume Source & Sourcer Informer Name Details */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-2 text-xs pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 font-medium">Resume Source:</span>
+                <span className="font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-lg capitalize">
+                  {resumeSource}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 font-medium">Source Informer Name:</span>
+                <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg">
+                  {resumeSourceInformerName}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 

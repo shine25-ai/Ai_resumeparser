@@ -37,10 +37,11 @@ async def upload_resume(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     resume_source: Optional[str] = Query(None, description="Source of resume upload (e.g. refer, linkdIn, nakuri, indeet, frients, campain)"),
+    resume_source_informer_name: Optional[str] = Query(None, description="Name of the person who informed, referred, or sourced the candidate"),
     current_user: dict = Depends(get_current_active_user_optional),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    return await controller.upload_resume(current_user["id"], file, background_tasks, resume_source=resume_source)
+    return await controller.upload_resume(current_user["id"], file, background_tasks, resume_source=resume_source, resume_source_informer_name=resume_source_informer_name)
 
 
 @router.get(
