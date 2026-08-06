@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Mic, Square, Loader2, Play, Video, Camera, UploadCloud } from "lucide-react";
+import { useState, useRef } from "react";
+import { Mic, Square, Loader2, Play, Video, UploadCloud } from "lucide-react";
 
 export default function InterviewRecorder() {
   const [isRecording, setIsRecording] = useState(false);

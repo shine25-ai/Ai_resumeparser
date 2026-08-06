@@ -20,7 +20,7 @@ export default function CandidateDatabase() {
       const resData = await getResumes();
       const items = Array.isArray(resData) ? resData : resData.resumes || [];
 
-      const mapped = items.map((item: any, idx: number) => ({
+      const mapped = items.map((item: any) => ({
         id: item.candidate_id || `CND-${item.id.substring(0, 6).toUpperCase()}`,
         realId: item.id,
         name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
