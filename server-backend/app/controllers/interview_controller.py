@@ -161,3 +161,11 @@ class InterviewController:
             message=res.get("message", "Interview email sent successfully."),
         )
 
+    async def get_feedback_questions(self, interview_type: Optional[str] = None) -> JSONResponse:
+        """Get feedback observation questions structured by interview type."""
+        res = await self.interview_service.get_feedback_questions(interview_type=interview_type)
+        return success_response(
+            data=res,
+            message="Feedback questions retrieved successfully.",
+        )
+

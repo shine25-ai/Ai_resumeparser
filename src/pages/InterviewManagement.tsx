@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes,
@@ -10,6 +10,7 @@ import {
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
+import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 
 export default function InterviewManagement() {
   const [activeTab, setActiveTab] = useState<string>("All");
@@ -35,6 +36,9 @@ export default function InterviewManagement() {
 
   const [selectedInterview, setSelectedInterview] = useState<InterviewItem | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+
+  // Dynamic Feedback Question Options loaded from backend JSON API
+  const [feedbackQuestionOptions, setFeedbackQuestionOptions] = useState<string[]>([]);
 
   // Send Mail Popup Modal State
   const [isSendMailOpen, setIsSendMailOpen] = useState<boolean>(false);
@@ -583,6 +587,14 @@ export default function InterviewManagement() {
     });
     setIsFeedbackOpen(true);
   };
+
+  useEffect(() => {
+    if (isEditOpen && editForm.interview_type) {
+      getFeedbackQuestionsAsync(editForm.interview_type).then((opts) => setFeedbackQuestionOptions(opts));
+    } else if (isFeedbackOpen && selectedInterview?.interview_type) {
+      getFeedbackQuestionsAsync(selectedInterview.interview_type).then((opts) => setFeedbackQuestionOptions(opts));
+    }
+  }, [isEditOpen, isFeedbackOpen, editForm.interview_type, selectedInterview?.interview_type]);
 
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1859,7 +1871,16 @@ export default function InterviewManagement() {
                             min="1"
                             max="5"
                             value={editForm.rating}
-                            onChange={(e) => setEditForm({ ...editForm, rating: Number(e.target.value) })}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const outcome = getAutoRatingOutcome(val);
+                              setEditForm({
+                                ...editForm,
+                                rating: val,
+                                recommendation: outcome.recommendation,
+                                status: outcome.status as InterviewStatusEnum,
+                              });
+                            }}
                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                           />
                         </div>
@@ -1878,6 +1899,30 @@ export default function InterviewManagement() {
                           </select>
                         </div>
                       </div>
+
+                      {/* Conditional Reason Selection for Edit Interviewer Rating (1 to 4.5 Stars) */}
+                      {editForm.rating <= 4.5 && (
+                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
+                          <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                            <HelpCircle size={14} className="text-amber-600" />
+                            Select Reason / Observation (Interview Type: {editForm.interview_type || "Technical"})
+                          </label>
+                          <select
+                            onChange={(e) => {
+                              const reason = e.target.value;
+                              if (reason && !reason.startsWith("--")) {
+                                const newFb = editForm.feedback ? `${editForm.feedback}\nNote: ${reason}` : reason;
+                                setEditForm((prev) => ({ ...prev, feedback: newFb }));
+                              }
+                            }}
+                            className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
+                          >
+                            {feedbackQuestionOptions.map((opt, i) => (
+                              <option key={i} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-slate-700 mb-1 font-semibold">Interviewer Feedback Comments</label>
@@ -2099,7 +2144,15 @@ export default function InterviewManagement() {
                           min="1"
                           max="5"
                           value={editForm.client_rating}
-                          onChange={(e) => setEditForm({ ...editForm, client_rating: Number(e.target.value) })}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const outcome = getAutoRatingOutcome(val);
+                            setEditForm({
+                              ...editForm,
+                              client_rating: val,
+                              client_recommendation: outcome.clientRecommendation,
+                            });
+                          }}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                         />
                       </div>
@@ -2118,6 +2171,30 @@ export default function InterviewManagement() {
                         </select>
                       </div>
                     </div>
+
+                    {/* Conditional Reason Selection for Edit Client Rating (1 to 4.5 Stars) */}
+                    {editForm.client_rating <= 4.5 && (
+                      <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
+                        <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                          <HelpCircle size={14} className="text-amber-600" />
+                          Select Client Observation Reason (Interview Type: {editForm.interview_type || "Technical"})
+                        </label>
+                        <select
+                          onChange={(e) => {
+                            const reason = e.target.value;
+                            if (reason && !reason.startsWith("--")) {
+                              const newFb = editForm.client_feedback ? `${editForm.client_feedback}\nNote: ${reason}` : reason;
+                              setEditForm((prev) => ({ ...prev, client_feedback: newFb }));
+                            }
+                          }}
+                          className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
+                        >
+                          {feedbackQuestionOptions.map((opt, i) => (
+                            <option key={i} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-slate-700 mb-1 font-semibold">Client Detailed Feedback</label>
@@ -2412,7 +2489,15 @@ export default function InterviewManagement() {
                             min="1"
                             max="5"
                             value={feedbackForm.rating}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, rating: Number(e.target.value) })}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const outcome = getAutoRatingOutcome(val);
+                              setFeedbackForm({
+                                ...feedbackForm,
+                                rating: val,
+                                recommendation: outcome.recommendation,
+                              });
+                            }}
                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
                           />
                         </div>
@@ -2433,6 +2518,30 @@ export default function InterviewManagement() {
                           </select>
                         </div>
                       </div>
+
+                      {/* Conditional Reason Selection for Feedback Modal Rating (1 to 4.5 Stars) */}
+                      {feedbackForm.rating <= 4.5 && (
+                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
+                          <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                            <HelpCircle size={14} className="text-amber-600" />
+                            Select Reason / Observation (Interview Type: {selectedInterview?.interview_type || "Technical"})
+                          </label>
+                          <select
+                            onChange={(e) => {
+                              const reason = e.target.value;
+                              if (reason && !reason.startsWith("--")) {
+                                const newFb = feedbackForm.feedback ? `${feedbackForm.feedback}\nNote: ${reason}` : reason;
+                                setFeedbackForm((prev) => ({ ...prev, feedback: newFb }));
+                              }
+                            }}
+                            className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
+                          >
+                            {feedbackQuestionOptions.map((opt, i) => (
+                              <option key={i} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-slate-700 mb-1 font-semibold">Interviewer Round Feedback</label>
@@ -2515,7 +2624,15 @@ export default function InterviewManagement() {
                             min="1"
                             max="5"
                             value={feedbackForm.client_rating}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, client_rating: Number(e.target.value) })}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const outcome = getAutoRatingOutcome(val);
+                              setFeedbackForm({
+                                ...feedbackForm,
+                                client_rating: val,
+                                client_recommendation: outcome.clientRecommendation,
+                              });
+                            }}
                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                           />
                         </div>
@@ -2534,6 +2651,30 @@ export default function InterviewManagement() {
                           </select>
                         </div>
                       </div>
+
+                      {/* Conditional Reason Selection for Feedback Modal Client Rating (1 to 4.5 Stars) */}
+                      {feedbackForm.client_rating <= 4.5 && (
+                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
+                          <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                            <HelpCircle size={14} className="text-amber-600" />
+                            Select Client Observation Reason (Interview Type: {selectedInterview?.interview_type || "Technical"})
+                          </label>
+                          <select
+                            onChange={(e) => {
+                              const reason = e.target.value;
+                              if (reason && !reason.startsWith("--")) {
+                                const newFb = feedbackForm.client_feedback ? `${feedbackForm.client_feedback}\nNote: ${reason}` : reason;
+                                setFeedbackForm((prev) => ({ ...prev, client_feedback: newFb }));
+                              }
+                            }}
+                            className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
+                          >
+                            {feedbackQuestionOptions.map((opt, i) => (
+                              <option key={i} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-slate-700 mb-1 font-semibold">Client Detailed Feedback</label>

@@ -686,4 +686,38 @@ class InterviewService:
             "recipients": sent_recipients,
         }
 
+    async def get_feedback_questions(self, interview_type: Optional[str] = None) -> Dict[str, Any]:
+        """Load and return feedback questions structured by interview type from JSON file."""
+        import json
+        from pathlib import Path
+        json_path = Path(__file__).resolve().parent.parent / "data" / "feedback_questions.json"
+        
+        questions_dict = {}
+        if json_path.exists():
+            with open(json_path, "r", encoding="utf-8") as f:
+                questions_dict = json.load(f)
+
+        if not interview_type:
+            return questions_dict
+
+        norm_type = interview_type.upper().strip()
+        
+        if norm_type in questions_dict:
+            questions = questions_dict[norm_type]
+        elif "TECH" in norm_type or "CODING" in norm_type:
+            questions = questions_dict.get("TECHNICAL", questions_dict.get("DEFAULT", []))
+        elif "HR" in norm_type or "SCREENING" in norm_type:
+            questions = questions_dict.get("HR", questions_dict.get("DEFAULT", []))
+        elif "MANAGERIAL" in norm_type or "CULTURE" in norm_type:
+            questions = questions_dict.get("MANAGERIAL", questions_dict.get("DEFAULT", []))
+        elif "FINAL" in norm_type or "CLIENT" in norm_type:
+            questions = questions_dict.get("FINAL_ROUND", questions_dict.get("DEFAULT", []))
+        else:
+            questions = questions_dict.get("DEFAULT", [])
+
+        return {
+            "interview_type": norm_type,
+            "questions": questions
+        }
+
 

@@ -61,6 +61,19 @@ async def batch_create_interviews(
 
 
 @router.get(
+    "/feedback-questions",
+    status_code=status.HTTP_200_OK,
+    summary="Get interview feedback observation questions by type",
+    description="Retrieve pre-configured observation questions loaded from JSON file based on interview type.",
+)
+async def get_feedback_questions(
+    interview_type: Optional[str] = Query(None, description="Interview type filter (e.g. TECHNICAL, HR, MANAGERIAL, FINAL_ROUND)"),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.get_feedback_questions(interview_type=interview_type)
+
+
+@router.get(
     "/candidate/{candidate_id}/history",
     status_code=status.HTTP_200_OK,
     summary="Get complete candidate interview history",

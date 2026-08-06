@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import {
   X, Star, Save, ChevronLeft, ChevronRight, UserCheck,
-  Building2, DollarSign, Upload, Sparkles
+  Building2, DollarSign, Upload, Sparkles, HelpCircle
 } from "lucide-react";
 import {
   bulkSubmitInterviewFeedback,
   type InterviewItem,
   type BulkFeedbackItemPayload,
 } from "../utils/Api";
+import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 
 interface BulkFeedbackModalProps {
   isOpen: boolean;
@@ -101,6 +102,15 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
     }
   }, [selectedInterviews, isOpen]);
 
+  const [questionOptions, setQuestionOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (selectedInterviews && selectedInterviews[activeCandidateIndex]) {
+      const type = selectedInterviews[activeCandidateIndex].interview_type;
+      getFeedbackQuestionsAsync(type).then((opts) => setQuestionOptions(opts));
+    }
+  }, [activeCandidateIndex, selectedInterviews]);
+
   if (!isOpen || selectedInterviews.length === 0) return null;
 
   const currentForm = formsData[activeCandidateIndex] || formsData[0];
@@ -109,10 +119,22 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
     setFormsData((prev) => {
       const updated = [...prev];
       if (updated[activeCandidateIndex]) {
-        updated[activeCandidateIndex] = {
+        const item = {
           ...updated[activeCandidateIndex],
           [field]: value,
         };
+
+        if (field === "rating") {
+          const outcome = getAutoRatingOutcome(Number(value));
+          item.recommendation = outcome.recommendation;
+        }
+
+        if (field === "client_rating") {
+          const outcome = getAutoRatingOutcome(Number(value));
+          item.client_recommendation = outcome.clientRecommendation;
+        }
+
+        updated[activeCandidateIndex] = item;
       }
       return updated;
     });
@@ -343,6 +365,30 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                 </div>
               </div>
 
+              {/* Conditional Reason Selection for Interviewer Rating (1 to 4.5 Stars) */}
+              {currentForm.rating <= 4.5 && (
+                <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1.5 animate-fadeIn">
+                  <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <HelpCircle size={15} className="text-amber-600" />
+                    Select Reason / Observation (Interview Type: {selectedInterviews[activeCandidateIndex]?.interview_type || "Technical"})
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const reason = e.target.value;
+                      if (reason && !reason.startsWith("--")) {
+                        const newFeedback = currentForm.feedback ? `${currentForm.feedback}\nNote: ${reason}` : reason;
+                        handleCurrentFormChange("feedback", newFeedback);
+                      }
+                    }}
+                    className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs cursor-pointer"
+                  >
+                    {questionOptions.map((opt, i) => (
+                      <option key={i} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Feedback Text */}
               <div>
                 <label className="text-xs font-semibold text-slate-700 mb-2 block">
@@ -446,6 +492,30 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              {/* Conditional Reason Selection for Client Rating (1 to 4.5 Stars) */}
+              {currentForm.client_rating <= 4.5 && (
+                <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1.5 animate-fadeIn">
+                  <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <HelpCircle size={15} className="text-amber-600" />
+                    Select Client Observation Reason (Interview Type: {selectedInterviews[activeCandidateIndex]?.interview_type || "Technical"})
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const reason = e.target.value;
+                      if (reason && !reason.startsWith("--")) {
+                        const newClientFeedback = currentForm.client_feedback ? `${currentForm.client_feedback}\nNote: ${reason}` : reason;
+                        handleCurrentFormChange("client_feedback", newClientFeedback);
+                      }
+                    }}
+                    className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs cursor-pointer"
+                  >
+                    {questionOptions.map((opt, i) => (
+                      <option key={i} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 mb-2 block">
