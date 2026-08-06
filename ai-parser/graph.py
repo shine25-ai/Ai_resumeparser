@@ -35,9 +35,17 @@ class GraphState(TypedDict):
 
 # Node 1: Extract Text
 def extract_text_node(state: GraphState):
-    """Extracts raw text from the provided PDF file."""
+    """Extracts raw text from the provided PDF or DOCX file."""
     try:
-        loader = PyPDFLoader(state["file_path"])
+        file_path = state["file_path"]
+        ext = file_path.rsplit(".", 1)[-1].lower()
+        
+        if ext in ["docx", "doc"]:
+            from langchain_community.document_loaders import Docx2txtLoader
+            loader = Docx2txtLoader(file_path)
+        else:
+            loader = PyPDFLoader(file_path)
+            
         pages = loader.load()
         text = "\n".join([page.page_content for page in pages])
         return {"raw_text": text, "status": "text_extracted"}

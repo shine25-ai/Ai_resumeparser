@@ -11,3 +11,4 @@ python-dotenv
 langchain-groq
 langchain-ollama
 langchain-community
+docx2txt
