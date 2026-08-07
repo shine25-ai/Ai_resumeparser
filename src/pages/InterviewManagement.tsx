@@ -5,8 +5,8 @@ import {
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes,
-  sendInterviewEmail, MAIL_TEMPLATES_URL,
-  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum
+  sendInterviewEmail, getNextRoundNumber, MAIL_TEMPLATES_URL,
+  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
@@ -212,6 +212,92 @@ export default function InterviewManagement() {
     interview_document_files: "",
     notes: "",
   });
+
+  const [feedbackInterviewersList, setFeedbackInterviewersList] = useState<InterviewerItem[]>([]);
+  const [feedbackClientsList, setFeedbackClientsList] = useState<ClientFeedbackItem[]>([]);
+
+  const handleAddFeedbackInterviewer = () => {
+    setFeedbackInterviewersList((prev) => [
+      ...prev,
+      {
+        interviewer_name: `Interviewer ${prev.length + 1}`,
+        rating: 4,
+        feedback: "",
+        recommendation: "Selected",
+      },
+    ]);
+  };
+
+  const handleRemoveFeedbackInterviewer = (index: number) => {
+    if (feedbackInterviewersList.length <= 1) return;
+    setFeedbackInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleFeedbackInterviewerItemChange = (index: number, field: keyof InterviewerItem, val: any) => {
+    setFeedbackInterviewersList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        const item = { ...updated[index], [field]: val };
+        if (field === "rating") {
+          const outcome = getAutoRatingOutcome(Number(val));
+          item.recommendation = outcome.recommendation;
+        }
+        updated[index] = item;
+
+        if (index === 0) {
+          setFeedbackForm((f) => ({
+            ...f,
+            rating: Number(item.rating || 4),
+            recommendation: item.recommendation || "Selected",
+            feedback: item.feedback || f.feedback,
+          }));
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleAddFeedbackClient = () => {
+    setFeedbackClientsList((prev) => [
+      ...prev,
+      {
+        client_name: `Client ${prev.length + 1}`,
+        client_rating: 4,
+        client_feedback: "",
+        client_recommendation: "Selected",
+      },
+    ]);
+  };
+
+  const handleRemoveFeedbackClient = (index: number) => {
+    if (feedbackClientsList.length <= 1) return;
+    setFeedbackClientsList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleFeedbackClientItemChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
+    setFeedbackClientsList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        const item = { ...updated[index], [field]: val };
+        if (field === "client_rating") {
+          const outcome = getAutoRatingOutcome(Number(val));
+          item.client_recommendation = outcome.clientDecision;
+        }
+        updated[index] = item;
+
+        if (index === 0) {
+          setFeedbackForm((f) => ({
+            ...f,
+            client_rating: Number(item.client_rating || 4),
+            client_name: item.client_name || f.client_name,
+            client_recommendation: item.client_recommendation || "Selected",
+            client_feedback: item.client_feedback || f.client_feedback,
+          }));
+        }
+      }
+      return updated;
+    });
+  };
 
   const navTabs = ["All", "Technical", "HR", "Managerial", "Culture Fit", "Final Round", "Initial Screening"];
 
@@ -562,6 +648,32 @@ export default function InterviewManagement() {
   const handleOpenFeedback = (item: InterviewItem) => {
     setSelectedInterview(item);
     setFeedbackTab("INTERVIEWER");
+
+    const initInts: InterviewerItem[] = item.interviewers && item.interviewers.length > 0
+      ? item.interviewers
+      : [{
+          interviewer_name: item.interviewer_name || "Interviewer 1",
+          interviewer_email: item.interviewer_email || "",
+          rating: item.rating || 4,
+          feedback: item.feedback || "",
+          recommendation: item.recommendation || "Selected",
+          strengths: item.strengths || [],
+          weaknesses: item.weaknesses || [],
+        }];
+
+    const initClients: ClientFeedbackItem[] = item.clients && item.clients.length > 0
+      ? item.clients
+      : [{
+          client_name: item.client_name || "Client Evaluator 1",
+          client_rating: item.client_rating || 4,
+          client_feedback: item.client_feedback || "",
+          client_recommendation: item.client_recommendation || "Selected",
+          client_notes: item.client_notes || "",
+        }];
+
+    setFeedbackInterviewersList(initInts);
+    setFeedbackClientsList(initClients);
+
     setFeedbackForm({
       rating: item.rating || 4,
       feedback: item.feedback || "",
@@ -611,6 +723,7 @@ export default function InterviewManagement() {
         strengths: feedbackForm.strengths ? feedbackForm.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
         weaknesses: feedbackForm.weaknesses ? feedbackForm.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
         recommendation: feedbackForm.recommendation || undefined,
+        interviewers: feedbackInterviewersList,
         client_name: feedbackForm.client_name || undefined,
         client_rating: feedbackForm.client_rating ? Number(feedbackForm.client_rating) : undefined,
         client_feedback: feedbackForm.client_feedback || undefined,
@@ -619,6 +732,7 @@ export default function InterviewManagement() {
         client_recommendation: feedbackForm.client_recommendation || undefined,
         client_notes: feedbackForm.client_notes || undefined,
         client_feedback_date: feedbackForm.client_feedback_date || undefined,
+        clients: feedbackClientsList,
         candidate_requested_date: feedbackForm.candidate_requested_date || undefined,
         candidate_requested_time: feedbackForm.candidate_requested_time || undefined,
         candidate_requested_role: feedbackForm.candidate_requested_role || undefined,
@@ -751,11 +865,22 @@ export default function InterviewManagement() {
   };
 
   // Schedule Next Round Handlers
-  const handleOpenNextRound = (item: InterviewItem) => {
+  const handleOpenNextRound = async (item: InterviewItem) => {
     setSelectedInterview(item);
     const docsJoined = item.interview_document_files && Array.isArray(item.interview_document_files)
       ? item.interview_document_files.join("\n")
       : "";
+
+    const defaultType = "TECHNICAL" as InterviewTypeEnum;
+    let nextRoundNum = (item.round_number || 1) + 1;
+    try {
+      const res = await getNextRoundNumber(item.candidate_id, defaultType);
+      if (res && res.next_round_number) {
+        nextRoundNum = res.next_round_number;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch next round number:", e);
+    }
 
     setNextRoundForm({
       candidate_id: item.candidate_id || "",
@@ -766,8 +891,8 @@ export default function InterviewManagement() {
       job_title: item.job_title || "",
       job_location: item.job_location || "",
       job_type: item.job_type || "Full Time",
-      interview_type: "CODING_TEST" as InterviewTypeEnum,
-      round_number: (item.round_number || 1) + 1,
+      interview_type: defaultType,
+      round_number: nextRoundNum,
       scheduled_date: new Date().toISOString().split("T")[0],
       scheduled_time: "10:00",
       timezone: item.timezone || "Asia/Kolkata",
@@ -794,9 +919,23 @@ export default function InterviewManagement() {
       client_recommendation: item.client_recommendation || "",
       client_notes: item.client_notes || "",
       client_feedback_date: item.client_feedback_date || "",
-      notes: `Next Round (R${(item.round_number || 1) + 1}) follow-up for ${item.candidate_name}`,
+      notes: `Next Round (R${nextRoundNum}) follow-up for ${item.candidate_name}`,
     });
     setIsNextRoundOpen(true);
+  };
+
+  const handleNextRoundTypeChange = async (newType: InterviewTypeEnum) => {
+    setNextRoundForm((prev) => ({ ...prev, interview_type: newType }));
+    if (selectedInterview?.candidate_id) {
+      try {
+        const res = await getNextRoundNumber(selectedInterview.candidate_id, newType);
+        if (res && res.next_round_number) {
+          setNextRoundForm((prev) => ({ ...prev, round_number: res.next_round_number, notes: `Next Round (${newType} R${res.next_round_number}) follow-up for ${prev.candidate_name}` }));
+        }
+      } catch (e) {
+        console.warn("Failed to fetch next round number:", e);
+      }
+    }
   };
 
   const handleNextRoundSubmit = async (e: React.FormEvent) => {
@@ -2472,255 +2611,269 @@ export default function InterviewManagement() {
                 <div>
                   {/* TAB 1: INTERVIEWER / ROUND EVALUATION CARD */}
                   {feedbackTab === "INTERVIEWER" && (
-                    <div className="bg-emerald-50/40 border border-emerald-200 rounded-2xl p-5 space-y-4 shadow-xs h-full">
-                      <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
-                        <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs">
-                          <Sparkles size={15} />
-                          <span>{selectedInterview.interview_type.replace("_", " ")} - Round {selectedInterview.round_number} Performance Evaluation</span>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 p-3 rounded-2xl">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                          <UserCheck size={16} />
+                          <span>Panel Interviewers ({feedbackInterviewersList.length})</span>
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleAddFeedbackInterviewer}
+                          className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                        >
+                          <Plus size={14} /> Add Interviewer Feedback
+                        </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Interviewer Rating (1.0 to 5.0)</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="1"
-                            max="5"
-                            value={feedbackForm.rating}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              const outcome = getAutoRatingOutcome(val);
-                              setFeedbackForm({
-                                ...feedbackForm,
-                                rating: val,
-                                recommendation: outcome.recommendation,
-                              });
-                            }}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                          />
-                        </div>
+                      {feedbackInterviewersList.map((interviewer, idx) => (
+                        <div key={idx} className="bg-emerald-50/40 border border-emerald-200 rounded-2xl p-5 space-y-4 shadow-xs relative">
+                          <div className="flex justify-between items-center border-b border-emerald-200 pb-2">
+                            <input
+                              type="text"
+                              value={interviewer.interviewer_name}
+                              onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_name", e.target.value)}
+                              placeholder="Interviewer Name"
+                              className="text-xs font-bold text-slate-900 border-b border-dashed border-slate-300 focus:border-emerald-500 focus:outline-none bg-transparent"
+                            />
+                            {feedbackInterviewersList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFeedbackInterviewer(idx)}
+                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} /> Remove
+                              </button>
+                            )}
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                            🏆 Round Outcome Status
-                          </label>
-                          <select
-                            value={feedbackForm.recommendation}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, recommendation: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer"
-                          >
-                            <option value="Selected">🟢 Selected (Passed Round)</option>
-                            <option value="Rejected">🔴 Rejected (Not Suitable)</option>
-                            <option value="Pending">🟡 Pending Decision</option>
-                            <option value="Hold">🟣 On Hold</option>
-                          </select>
-                        </div>
-                      </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Interviewer Rating (1-5)</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="1"
+                                max="5"
+                                value={interviewer.rating || 4}
+                                onChange={(e) => handleFeedbackInterviewerItemChange(idx, "rating", Number(e.target.value))}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none"
+                              />
+                            </div>
 
-                      {/* Conditional Reason Selection for Feedback Modal Rating (1 to 4.5 Stars) */}
-                      {feedbackForm.rating <= 4.5 && (
-                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
-                          <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                            <HelpCircle size={14} className="text-amber-600" />
-                            Select Reason / Observation (Interview Type: {selectedInterview?.interview_type || "Technical"})
-                          </label>
-                          <select
-                            onChange={(e) => {
-                              const reason = e.target.value;
-                              if (reason && !reason.startsWith("--")) {
-                                const newFb = feedbackForm.feedback ? `${feedbackForm.feedback}\nNote: ${reason}` : reason;
-                                setFeedbackForm((prev) => ({ ...prev, feedback: newFb }));
-                              }
-                            }}
-                            className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
-                          >
-                            {feedbackQuestionOptions.map((opt, i) => (
-                              <option key={i} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Round Outcome Recommendation</label>
+                              <select
+                                value={interviewer.recommendation || "Selected"}
+                                onChange={(e) => handleFeedbackInterviewerItemChange(idx, "recommendation", e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 font-bold focus:outline-none cursor-pointer"
+                              >
+                                <option value="Selected">🟢 Selected</option>
+                                <option value="Rejected">🔴 Rejected</option>
+                                <option value="Pending">🟡 Pending</option>
+                                <option value="Hold">🟣 On Hold</option>
+                              </select>
+                            </div>
+                          </div>
 
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Interviewer Round Feedback</label>
-                        <textarea
-                          rows={4}
-                          value={feedbackForm.feedback}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, feedback: e.target.value })}
-                          placeholder="Provide technical round evaluation, coding skills, domain questions, communication..."
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                        />
-                      </div>
+                          {(interviewer.rating || 4) <= 4.5 && (
+                            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 animate-fadeIn">
+                              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                <HelpCircle size={14} className="text-amber-600" />
+                                Select Observation Reason
+                              </label>
+                              <select
+                                onChange={(e) => {
+                                  const reason = e.target.value;
+                                  if (reason && !reason.startsWith("--")) {
+                                    const newFb = interviewer.feedback ? `${interviewer.feedback}\nNote: ${reason}` : reason;
+                                    handleFeedbackInterviewerItemChange(idx, "feedback", newFb);
+                                  }
+                                }}
+                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
+                              >
+                                {feedbackQuestionOptions.map((opt, qIdx) => (
+                                  <option key={qIdx} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Candidate Strengths (Comma-separated)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Problem Solving, React"
-                            value={feedbackForm.strengths}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, strengths: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                          />
-                        </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Strengths (Comma-separated)</label>
+                              <input
+                                type="text"
+                                value={interviewer.strengths ? (Array.isArray(interviewer.strengths) ? interviewer.strengths.join(", ") : interviewer.strengths) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleFeedbackInterviewerItemChange(idx, "strengths", list);
+                                }}
+                                placeholder="e.g. Problem Solving, React"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Weaknesses / Areas for Improvement</label>
+                              <input
+                                type="text"
+                                value={interviewer.weaknesses ? (Array.isArray(interviewer.weaknesses) ? interviewer.weaknesses.join(", ") : interviewer.weaknesses) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleFeedbackInterviewerItemChange(idx, "weaknesses", list);
+                                }}
+                                placeholder="e.g. System Design edge cases"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
+                              />
+                            </div>
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Areas for Improvement (Comma-separated)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. System Design edge cases"
-                            value={feedbackForm.weaknesses}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, weaknesses: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                          />
+                          <div>
+                            <label className="block text-slate-700 mb-1 font-semibold">Interviewer Round Feedback</label>
+                            <textarea
+                              rows={3}
+                              value={interviewer.feedback || ""}
+                              onChange={(e) => handleFeedbackInterviewerItemChange(idx, "feedback", e.target.value)}
+                              placeholder="Provide technical evaluation feedback..."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:outline-none"
+                            />
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
                   )}
 
                   {/* TAB 2: CLIENT FEEDBACK CARD */}
                   {feedbackTab === "CLIENT" && (
-                    <div className="bg-teal-50/40 border border-teal-200 rounded-2xl p-5 space-y-4 shadow-xs h-full">
-                      <div className="flex items-center justify-between border-b border-teal-200 pb-2">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center bg-teal-50 border border-teal-200 p-3 rounded-2xl">
                         <div className="flex items-center gap-2 text-teal-800 font-bold text-xs">
-                          <Building2 size={15} />
-                          <span>Client Evaluation & Feedback Details</span>
+                          <Building2 size={16} />
+                          <span>Client Evaluators ({feedbackClientsList.length})</span>
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleAddFeedbackClient}
+                          className="flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                        >
+                          <Plus size={14} /> Add Client Feedback
+                        </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Client Company / Evaluator Name</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Acme Corp / John Manager"
-                            value={feedbackForm.client_name}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, client_name: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                          />
+                      {feedbackClientsList.map((client, idx) => (
+                        <div key={idx} className="bg-teal-50/40 border border-teal-200 rounded-2xl p-5 space-y-4 shadow-xs relative">
+                          <div className="flex justify-between items-center border-b border-teal-200 pb-2">
+                            <input
+                              type="text"
+                              value={client.client_name}
+                              onChange={(e) => handleFeedbackClientItemChange(idx, "client_name", e.target.value)}
+                              placeholder="Client Evaluator Name"
+                              className="text-xs font-bold text-slate-900 border-b border-dashed border-teal-300 focus:border-teal-500 focus:outline-none bg-transparent"
+                            />
+                            {feedbackClientsList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFeedbackClient(idx)}
+                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} /> Remove
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Client Rating (1-5)</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="1"
+                                max="5"
+                                value={client.client_rating || 4}
+                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_rating", Number(e.target.value))}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Client Recommendation</label>
+                              <select
+                                value={client.client_recommendation || "Selected"}
+                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_recommendation", e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-teal-700 font-bold focus:outline-none cursor-pointer"
+                              >
+                                <option value="Selected">🟢 Selected</option>
+                                <option value="Rejected">🔴 Rejected</option>
+                                <option value="Next Round">🔄 Next Round</option>
+                                <option value="Hold">🟣 On Hold</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {(client.client_rating || 4) <= 4.5 && (
+                            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 animate-fadeIn">
+                              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                <HelpCircle size={14} className="text-amber-600" />
+                                Select Client Observation Reason
+                              </label>
+                              <select
+                                onChange={(e) => {
+                                  const reason = e.target.value;
+                                  if (reason && !reason.startsWith("--")) {
+                                    const newFb = client.client_feedback ? `${client.client_feedback}\nNote: ${reason}` : reason;
+                                    handleFeedbackClientItemChange(idx, "client_feedback", newFb);
+                                  }
+                                }}
+                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
+                              >
+                                {feedbackQuestionOptions.map((opt, qIdx) => (
+                                  <option key={qIdx} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Client Strengths (Comma-separated)</label>
+                              <input
+                                type="text"
+                                value={client.client_strengths ? (Array.isArray(client.client_strengths) ? client.client_strengths.join(", ") : client.client_strengths) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleFeedbackClientItemChange(idx, "client_strengths", list);
+                                }}
+                                placeholder="e.g. Domain depth, Communication"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-700 mb-1 font-semibold">Client Weaknesses / Areas for Improvement</label>
+                              <input
+                                type="text"
+                                value={client.client_weaknesses ? (Array.isArray(client.client_weaknesses) ? client.client_weaknesses.join(", ") : client.client_weaknesses) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleFeedbackClientItemChange(idx, "client_weaknesses", list);
+                                }}
+                                placeholder="e.g. English fluency"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-700 mb-1 font-semibold">Client Detailed Feedback</label>
+                            <textarea
+                              rows={3}
+                              value={client.client_feedback || ""}
+                              onChange={(e) => handleFeedbackClientItemChange(idx, "client_feedback", e.target.value)}
+                              placeholder="Enter client review comments..."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:outline-none"
+                            />
+                          </div>
                         </div>
-
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                            <Calendar size={13} className="text-teal-600" /> Client Feedback Date
-                          </label>
-                          <input
-                            type="date"
-                            value={feedbackForm.client_feedback_date}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, client_feedback_date: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Client Rating Score (1.0 to 5.0)</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="1"
-                            max="5"
-                            value={feedbackForm.client_rating}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              const outcome = getAutoRatingOutcome(val);
-                              setFeedbackForm({
-                                ...feedbackForm,
-                                client_rating: val,
-                                client_recommendation: outcome.clientRecommendation,
-                              });
-                            }}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Client Recommendation Outcome</label>
-                          <select
-                            value={feedbackForm.client_recommendation}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, client_recommendation: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-teal-700 font-bold focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
-                          >
-                            <option value="Selected">🟢 Client Approved / Selected</option>
-                            <option value="Rejected">🔴 Client Rejected</option>
-                            <option value="Next Round">🔄 Recommended Next Round</option>
-                            <option value="Hold">🟣 Client On Hold</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Conditional Reason Selection for Feedback Modal Client Rating (1 to 4.5 Stars) */}
-                      {feedbackForm.client_rating <= 4.5 && (
-                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
-                          <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                            <HelpCircle size={14} className="text-amber-600" />
-                            Select Client Observation Reason (Interview Type: {selectedInterview?.interview_type || "Technical"})
-                          </label>
-                          <select
-                            onChange={(e) => {
-                              const reason = e.target.value;
-                              if (reason && !reason.startsWith("--")) {
-                                const newFb = feedbackForm.client_feedback ? `${feedbackForm.client_feedback}\nNote: ${reason}` : reason;
-                                setFeedbackForm((prev) => ({ ...prev, client_feedback: newFb }));
-                              }
-                            }}
-                            className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
-                          >
-                            {feedbackQuestionOptions.map((opt, i) => (
-                              <option key={i} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Detailed Feedback</label>
-                        <textarea
-                          rows={3}
-                          value={feedbackForm.client_feedback}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, client_feedback: e.target.value })}
-                          placeholder="Enter client review comments, project fit, client rating details..."
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Client Strengths (Comma-separated)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Domain knowledge, Team fit"
-                            value={feedbackForm.client_strengths}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, client_strengths: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Client Weaknesses (Comma-separated)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Notice period too long"
-                            value={feedbackForm.client_weaknesses}
-                            onChange={(e) => setFeedbackForm({ ...feedbackForm, client_weaknesses: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Specific Notes</label>
-                        <textarea
-                          rows={2}
-                          value={feedbackForm.client_notes}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, client_notes: e.target.value })}
-                          placeholder="Special client notes, rate negotiations, internal client comments..."
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                        />
-                      </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -3013,7 +3166,7 @@ export default function InterviewManagement() {
                     <label className="block text-slate-700 mb-1 font-semibold">Next Interview Type / Format</label>
                     <select
                       value={nextRoundForm.interview_type}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, interview_type: e.target.value as InterviewTypeEnum })}
+                      onChange={(e) => handleNextRoundTypeChange(e.target.value as InterviewTypeEnum)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
                     >
                       <option value="TECHNICAL">💻 TECHNICAL ROUND</option>

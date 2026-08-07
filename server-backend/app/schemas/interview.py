@@ -7,6 +7,40 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.utils.enums import InterviewStatus, InterviewType
 
 
+class InterviewerFeedbackItem(BaseModel):
+    """Interviewer item detail representation for panel/multi-interviewer rounds."""
+
+    interviewer_id: Optional[str] = None
+    interviewer_name: str
+    interviewer_email: Optional[str] = None
+    rating: Optional[float] = Field(None, ge=1.0, le=5.0, description="Rating score out of 5")
+    feedback: Optional[str] = None
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    recommendation: Optional[str] = None
+    reason_note: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ClientFeedbackItem(BaseModel):
+    """Client evaluator item detail representation for panel/multi-client feedback."""
+
+    client_id: Optional[str] = None
+    client_name: str
+    client_email: Optional[str] = None
+    client_rating: Optional[float] = Field(None, ge=1.0, le=5.0, description="Client Rating score out of 5")
+    client_feedback: Optional[str] = None
+    client_strengths: List[str] = Field(default_factory=list)
+    client_weaknesses: List[str] = Field(default_factory=list)
+    client_recommendation: Optional[str] = None
+    client_notes: Optional[str] = None
+    client_feedback_date: Optional[str] = None
+    reason_note: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InterviewCreateRequest(BaseModel):
     """Payload for scheduling a new interview."""
 
@@ -57,6 +91,10 @@ class InterviewCreateRequest(BaseModel):
     client_notes: Optional[str] = None
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
+
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: Optional[List[InterviewerFeedbackItem]] = Field(default_factory=list)
+    clients: Optional[List[ClientFeedbackItem]] = Field(default_factory=list)
 
     notes: Optional[str] = None
 
@@ -123,6 +161,10 @@ class InterviewBatchCreateRequest(BaseModel):
 
     notes: Optional[str] = None
 
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: Optional[List[InterviewerFeedbackItem]] = Field(default_factory=list)
+    clients: Optional[List[ClientFeedbackItem]] = Field(default_factory=list)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -178,6 +220,10 @@ class InterviewUpdateRequest(BaseModel):
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: Optional[List[InterviewerFeedbackItem]] = None
+    clients: Optional[List[ClientFeedbackItem]] = None
+
     status: Optional[InterviewStatus] = None
     notes: Optional[str] = None
 
@@ -216,6 +262,10 @@ class InterviewFeedbackRequest(BaseModel):
     client_notes: Optional[str] = None
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
+
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: Optional[List[InterviewerFeedbackItem]] = Field(default_factory=list)
+    clients: Optional[List[ClientFeedbackItem]] = Field(default_factory=list)
 
     # Extensible fields updated during feedback/outcome phase
     candidate_requested_date: Optional[str] = None
@@ -302,6 +352,10 @@ class InterviewResponse(BaseModel):
     client_notes: Optional[str] = None
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
+
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: List[InterviewerFeedbackItem] = Field(default_factory=list)
+    clients: List[ClientFeedbackItem] = Field(default_factory=list)
 
     recommendation: Optional[str] = None
     notes: Optional[str] = None

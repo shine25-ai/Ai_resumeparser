@@ -81,6 +81,10 @@ class InterviewDocument(BaseModel):
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: List[Dict[str, Any]] = Field(default_factory=list)
+    clients: List[Dict[str, Any]] = Field(default_factory=list)
+
     # Recommendation
     recommendation: Optional[str] = None  # Selected / Rejected / Next Round / Hold
 

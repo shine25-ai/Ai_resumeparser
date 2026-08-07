@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import {
   X, UserCheck, Calendar, MapPin, ShieldCheck, DollarSign,
-  TrendingUp, FileText, Building2, Layers, RefreshCw, AlertCircle, Video
+  TrendingUp, FileText, Building2, Layers, RefreshCw, AlertCircle, Video, Users
 } from "lucide-react";
-import { getCandidateInterviewHistory, type InterviewItem } from "../utils/Api";
+import { getCandidateInterviewHistory, type InterviewItem, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
 
 interface CandidateDetailsModalProps {
   isOpen: boolean;
@@ -81,7 +81,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-slate-900 tracking-wide">
-                  Candidate Full Interview & Evaluation Record
+                  Candidate Full Interview & Panel Evaluation Record
                 </h2>
                 {historyData?.total_rounds && (
                   <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-full">
@@ -90,7 +90,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Complete profile background, compensation requests, document files, and all round evaluations
+                Complete candidate profile details, panel interviewer ratings, and client evaluator reviews
               </p>
             </div>
           </div>
@@ -221,150 +221,225 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
               </div>
 
               {historyData.rounds && historyData.rounds.length > 0 ? (
-                historyData.rounds.map((round: InterviewItem, index: number) => (
-                  <div
-                    key={round.id || index}
-                    className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-xs relative"
-                  >
-                    {/* Round Banner Header */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 rounded-xl shadow-xs">
-                          Round {round.round_number} ({round.interview_type})
+                historyData.rounds.map((round: InterviewItem, index: number) => {
+                  // Determine Panel Interviewers list (fallback to single interviewer_name if empty)
+                  const interviewerList: InterviewerItem[] =
+                    round.interviewers && round.interviewers.length > 0
+                      ? round.interviewers
+                      : [
+                          {
+                            interviewer_name: round.interviewer_name || "Interviewer",
+                            interviewer_email: round.interviewer_email,
+                            rating: round.rating,
+                            feedback: round.feedback,
+                            recommendation: round.recommendation,
+                            strengths: round.strengths,
+                            weaknesses: round.weaknesses,
+                          },
+                        ];
+
+                  // Determine Panel Client Evaluators list (fallback to single client_name if empty)
+                  const clientList: ClientFeedbackItem[] =
+                    round.clients && round.clients.length > 0
+                      ? round.clients
+                      : [
+                          {
+                            client_name: round.client_name || "Client Evaluator",
+                            client_rating: round.client_rating,
+                            client_feedback: round.client_feedback,
+                            client_recommendation: round.client_recommendation,
+                            client_notes: round.client_notes,
+                            client_feedback_date: round.client_feedback_date,
+                            client_strengths: round.client_strengths,
+                            client_weaknesses: round.client_weaknesses,
+                          },
+                        ];
+
+                  return (
+                    <div
+                      key={round.id || index}
+                      className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-xs relative"
+                    >
+                      {/* Round Banner Header */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 rounded-xl shadow-xs">
+                            Round {round.round_number} ({round.interview_type})
+                          </div>
+                          <div className="text-slate-700 font-semibold flex items-center gap-1">
+                            <Calendar size={13} className="text-indigo-600" /> {round.scheduled_date} at {round.scheduled_time} ({round.timezone})
+                          </div>
                         </div>
-                        <div className="text-slate-700 font-semibold flex items-center gap-1">
-                          <Calendar size={13} className="text-indigo-600" /> {round.scheduled_date} at {round.scheduled_time} ({round.timezone})
+
+                        <div className="flex items-center gap-3">
+                          {round.meeting_link && (
+                            <a
+                              href={round.meeting_link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded-xl font-bold transition-all"
+                            >
+                              <Video size={13} />
+                              <span>Join Meeting</span>
+                            </a>
+                          )}
+
+                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
+                            round.status === "COMPLETED"
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                              : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                          }`}>
+                            {round.status}
+                          </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        {round.meeting_link && (
-                          <a
-                            href={round.meeting_link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded-xl font-bold transition-all"
-                          >
-                            <Video size={13} />
-                            <span>Join Meeting</span>
-                          </a>
-                        )}
+                      {/* 2-COLUMN GRID: MULTIPLE INTERVIEWERS (LEFT) & MULTIPLE CLIENTS (RIGHT) */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* LEFT COLUMN: INTERVIEWER PANEL CARDS */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                            <span className="font-bold text-purple-700 flex items-center gap-1 text-xs">
+                              <Users size={14} /> Panel Interviewers ({interviewerList.length})
+                            </span>
+                          </div>
 
-                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
-                          round.status === "COMPLETED"
-                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                            : "bg-indigo-50 border-indigo-200 text-indigo-700"
-                        }`}>
-                          {round.status}
-                        </span>
+                          {interviewerList.map((intItem, intIdx) => (
+                            <div key={intIdx} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5 shadow-xs">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <span className="font-bold text-slate-900 text-xs">
+                                  {intItem.interviewer_name || `Interviewer ${intIdx + 1}`}
+                                </span>
+                                <span className="text-amber-600 font-bold text-xs bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  ⭐ {intItem.rating ? `${intItem.rating} / 5` : "No Rating"}
+                                </span>
+                              </div>
+
+                              {intItem.interviewer_email && (
+                                <div className="text-slate-500 text-[11px]">
+                                  Email: <span className="text-slate-800 font-medium">{intItem.interviewer_email}</span>
+                                </div>
+                              )}
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 font-semibold">Outcome Recommendation:</span>
+                                <span className={`font-bold text-xs ${
+                                  intItem.recommendation === "Selected"
+                                    ? "text-emerald-600"
+                                    : intItem.recommendation === "Rejected"
+                                    ? "text-rose-600"
+                                    : "text-amber-600"
+                                }`}>
+                                  {intItem.recommendation || "Pending"}
+                                </span>
+                              </div>
+
+                              {intItem.feedback && (
+                                <div>
+                                  <span className="text-[10px] text-slate-500 font-semibold block">Feedback Comments:</span>
+                                  <p className="text-slate-800 bg-slate-50 p-2 rounded-lg border border-slate-200 mt-1 leading-relaxed text-[11px]">
+                                    {intItem.feedback}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                                {intItem.strengths && intItem.strengths.length > 0 && (
+                                  <div className="bg-emerald-50 border border-emerald-200 p-2 rounded-lg">
+                                    <span className="text-emerald-700 font-bold block mb-0.5">Strengths:</span>
+                                    <span className="text-slate-800">{Array.isArray(intItem.strengths) ? intItem.strengths.join(", ") : intItem.strengths}</span>
+                                  </div>
+                                )}
+
+                                {intItem.weaknesses && intItem.weaknesses.length > 0 && (
+                                  <div className="bg-rose-50 border border-rose-200 p-2 rounded-lg">
+                                    <span className="text-rose-700 font-bold block mb-0.5">Areas for Improvement:</span>
+                                    <span className="text-slate-800">{Array.isArray(intItem.weaknesses) ? intItem.weaknesses.join(", ") : intItem.weaknesses}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* RIGHT COLUMN: CLIENT EVALUATORS PANEL CARDS */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                            <span className="font-bold text-teal-700 flex items-center gap-1 text-xs">
+                              <Building2 size={14} /> Client Evaluators Panel ({clientList.length})
+                            </span>
+                          </div>
+
+                          {clientList.map((clientItem, clientIdx) => (
+                            <div key={clientIdx} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5 shadow-xs">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <span className="font-bold text-slate-900 text-xs">
+                                  {clientItem.client_name || `Client Evaluator ${clientIdx + 1}`}
+                                </span>
+                                <span className="text-teal-700 font-bold text-xs bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                                  ⭐ {clientItem.client_rating ? `${clientItem.client_rating} / 5` : "No Rating"}
+                                </span>
+                              </div>
+
+                              {clientItem.client_feedback_date && (
+                                <div className="text-slate-500 text-[11px]">
+                                  Date: <span className="text-teal-700 font-medium">{clientItem.client_feedback_date}</span>
+                                </div>
+                              )}
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 font-semibold">Client Outcome:</span>
+                                <span className={`font-bold text-xs ${
+                                  clientItem.client_recommendation === "Selected"
+                                    ? "text-emerald-600"
+                                    : clientItem.client_recommendation === "Rejected"
+                                    ? "text-rose-600"
+                                    : "text-amber-600"
+                                }`}>
+                                  {clientItem.client_recommendation || "Pending"}
+                                </span>
+                              </div>
+
+                              {clientItem.client_feedback && (
+                                <div>
+                                  <span className="text-[10px] text-slate-500 font-semibold block">Client Feedback Comments:</span>
+                                  <p className="text-slate-800 bg-slate-50 p-2 rounded-lg border border-slate-200 mt-1 leading-relaxed text-[11px]">
+                                    {clientItem.client_feedback}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                                {clientItem.client_strengths && clientItem.client_strengths.length > 0 && (
+                                  <div className="bg-teal-50 border border-teal-200 p-2 rounded-lg">
+                                    <span className="text-teal-700 font-bold block mb-0.5">Client Strengths:</span>
+                                    <span className="text-slate-800">{Array.isArray(clientItem.client_strengths) ? clientItem.client_strengths.join(", ") : clientItem.client_strengths}</span>
+                                  </div>
+                                )}
+
+                                {clientItem.client_weaknesses && clientItem.client_weaknesses.length > 0 && (
+                                  <div className="bg-rose-50 border border-rose-200 p-2 rounded-lg">
+                                    <span className="text-rose-700 font-bold block mb-0.5">Client Weaknesses:</span>
+                                    <span className="text-slate-800">{Array.isArray(clientItem.client_weaknesses) ? clientItem.client_weaknesses.join(", ") : clientItem.client_weaknesses}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {clientItem.client_notes && (
+                                <div>
+                                  <span className="text-[10px] text-slate-500 font-semibold block">Client Specific Notes:</span>
+                                  <p className="text-slate-800 bg-slate-50 p-2 rounded-lg border border-slate-200 mt-0.5 font-medium text-[11px]">
+                                    {clientItem.client_notes}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-
-                    {/* Interviewer Details & Round Feedback */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {/* Left Sub-Card: Interviewer Evaluation */}
-                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                          <span className="font-bold text-purple-700 flex items-center gap-1 text-xs">
-                            <UserCheck size={14} /> Interviewer Evaluation ({round.interviewer_name})
-                          </span>
-                          <span className="text-amber-600 font-bold text-xs">
-                            ⭐ {round.rating ? `${round.rating} / 5` : "No Rating"}
-                          </span>
-                        </div>
-
-                        {round.interviewer_email && (
-                          <div className="text-slate-500 text-[11px]">Email: <span className="text-slate-800">{round.interviewer_email}</span></div>
-                        )}
-
-                        <div>
-                          <span className="text-[10px] text-slate-500 font-semibold">Round Recommendation:</span>
-                          <span className="ml-2 font-bold text-amber-700">{round.recommendation || "Pending"}</span>
-                        </div>
-
-                        {round.feedback && (
-                          <div>
-                            <span className="text-[10px] text-slate-500 font-semibold block">Round Feedback:</span>
-                            <p className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200 mt-1 leading-relaxed">
-                              {round.feedback}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                          {round.strengths && round.strengths.length > 0 && (
-                            <div className="bg-emerald-50 border border-emerald-200 p-2 rounded-lg">
-                              <span className="text-emerald-700 font-bold block mb-0.5">Strengths:</span>
-                              <span className="text-slate-800">{Array.isArray(round.strengths) ? round.strengths.join(", ") : round.strengths}</span>
-                            </div>
-                          )}
-
-                          {round.weaknesses && round.weaknesses.length > 0 && (
-                            <div className="bg-rose-50 border border-rose-200 p-2 rounded-lg">
-                              <span className="text-rose-700 font-bold block mb-0.5">Areas for Improvement:</span>
-                              <span className="text-slate-800">{Array.isArray(round.weaknesses) ? round.weaknesses.join(", ") : round.weaknesses}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right Sub-Card: Client Feedback */}
-                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                          <span className="font-bold text-teal-700 flex items-center gap-1 text-xs">
-                            <Building2 size={14} /> Client Feedback Option ({round.client_name || "Client"})
-                          </span>
-                          <span className="text-teal-700 font-bold text-xs">
-                            ⭐ {round.client_rating ? `${round.client_rating} / 5` : "No Rating"}
-                          </span>
-                        </div>
-
-                        {round.client_feedback_date && (
-                          <div className="text-slate-500 text-[11px]">Date: <span className="text-teal-700">{round.client_feedback_date}</span></div>
-                        )}
-
-                        <div>
-                          <span className="text-[10px] text-slate-500 font-semibold">Client Recommendation:</span>
-                          <span className="ml-2 font-bold text-teal-700">{round.client_recommendation || "Pending"}</span>
-                        </div>
-
-                        {round.client_feedback && (
-                          <div>
-                            <span className="text-[10px] text-slate-500 font-semibold block">Client Feedback:</span>
-                            <p className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200 mt-1 leading-relaxed">
-                              {round.client_feedback}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                          {round.client_strengths && round.client_strengths.length > 0 && (
-                            <div className="bg-teal-50 border border-teal-200 p-2 rounded-lg">
-                              <span className="text-teal-700 font-bold block mb-0.5">Client Strengths:</span>
-                              <span className="text-slate-800">{Array.isArray(round.client_strengths) ? round.client_strengths.join(", ") : round.client_strengths}</span>
-                            </div>
-                          )}
-
-                          {round.client_weaknesses && round.client_weaknesses.length > 0 && (
-                            <div className="bg-rose-50 border border-rose-200 p-2 rounded-lg">
-                              <span className="text-rose-700 font-bold block mb-0.5">Client Weaknesses:</span>
-                              <span className="text-slate-800">{Array.isArray(round.client_weaknesses) ? round.client_weaknesses.join(", ") : round.client_weaknesses}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {round.client_notes && (
-                          <div>
-                            <span className="text-[10px] text-slate-500 font-semibold block">Client Specific Notes:</span>
-                            <p className="text-slate-800 bg-slate-50 p-2 rounded-lg border border-slate-200 mt-0.5 font-medium">
-                              {round.client_notes}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-slate-500 text-xs italic py-4 text-center">No interview rounds recorded yet.</div>
               )}

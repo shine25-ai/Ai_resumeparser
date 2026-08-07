@@ -169,3 +169,11 @@ class InterviewController:
             message="Feedback questions retrieved successfully.",
         )
 
+    async def get_next_round_number(self, candidate_id: str, interview_type: Optional[str] = None) -> JSONResponse:
+        """Get calculated next round number for a candidate."""
+        res = await self.interview_service.get_next_round_number(candidate_id, interview_type=interview_type)
+        return success_response(
+            data=res,
+            message="Next round number calculated successfully.",
+        )
+

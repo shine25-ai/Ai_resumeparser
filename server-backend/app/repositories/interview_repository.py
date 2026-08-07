@@ -149,6 +149,8 @@ class InterviewRepository(BaseRepository):
         final_fit_salary: Optional[str] = None,
         joining_date: Optional[str] = None,
         interview_document_files: Optional[List[str]] = None,
+        interviewers: Optional[List[Dict[str, Any]]] = None,
+        clients: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update feedback (interviewer round and/or client feedback) for an interview document."""
         update_data: Dict[str, Any] = {
@@ -156,6 +158,11 @@ class InterviewRepository(BaseRepository):
             "updated_by": updated_by,
             "updated_at": utc_now().isoformat(),
         }
+
+        if interviewers is not None:
+            update_data["interviewers"] = interviewers
+        if clients is not None:
+            update_data["clients"] = clients
 
         if rating is not None:
             update_data["rating"] = rating

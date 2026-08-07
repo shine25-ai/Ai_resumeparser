@@ -78,6 +78,8 @@ class InterviewService:
             client_notes=payload.client_notes,
             client_name=payload.client_name,
             client_feedback_date=payload.client_feedback_date,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else [],
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else [],
             notes=payload.notes,
             created_by=created_by,
             updated_by=created_by,
@@ -278,10 +280,40 @@ class InterviewService:
             final_fit_salary=payload.final_fit_salary,
             joining_date=payload.joining_date,
             interview_document_files=payload.interview_document_files,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
         )
 
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
         return InterviewResponse.model_validate(updated_doc)
+
+    async def get_next_round_number(self, candidate_id: str, interview_type: Optional[str] = None) -> Dict[str, Any]:
+        """Calculate the next round number for a candidate, specifically per interview_type if provided."""
+        raw_interviews = await self.interview_repo.get_by_candidate_id(candidate_id, skip=0, limit=200)
+        
+        if not raw_interviews:
+            return {"candidate_id": candidate_id, "interview_type": interview_type, "next_round_number": 1}
+
+        matching_rounds = []
+        if interview_type:
+            norm_type = interview_type.upper().strip()
+            for doc in raw_interviews:
+                doc_type = str(doc.get("interview_type", "")).upper().strip()
+                if doc_type == norm_type:
+                    matching_rounds.append(doc.get("round_number", 1))
+        
+        if matching_rounds:
+            next_round = max(matching_rounds) + 1
+        else:
+            # If no rounds of this specific type exist, default to 1 for this type, or max total rounds + 1
+            next_round = max((doc.get("round_number", 1) for doc in raw_interviews), default=0) + 1 if not interview_type else 1
+
+        return {
+            "candidate_id": candidate_id,
+            "interview_type": interview_type,
+            "next_round_number": next_round,
+            "total_existing_rounds": len(raw_interviews)
+        }
 
     async def bulk_submit_feedback(
         self,

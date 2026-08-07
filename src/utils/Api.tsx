@@ -311,6 +311,8 @@ export const updateResume = async (resumeId: string, updateData: any) => {
 import type {
   InterviewTypeEnum,
   InterviewStatusEnum,
+  InterviewerItem,
+  ClientFeedbackItem,
   InterviewItem,
   CreateInterviewPayload,
   CandidateInterviewItem,
@@ -326,6 +328,8 @@ import type {
 export type {
   InterviewTypeEnum,
   InterviewStatusEnum,
+  InterviewerItem,
+  ClientFeedbackItem,
   InterviewItem,
   CreateInterviewPayload,
   CandidateInterviewItem,
@@ -607,6 +611,27 @@ export const getFeedbackQuestionsFromBackend = async (interviewType?: string) =>
 
   if (!response.ok) {
     throw new Error(resData.detail || "Failed to fetch feedback questions");
+  }
+
+  return resData.data || resData;
+};
+
+export const getNextRoundNumber = async (candidateId: string, interviewType?: string) => {
+  const token = localStorage.getItem("access_token") || "";
+  const query = interviewType ? `?interview_type=${encodeURIComponent(interviewType)}` : "";
+  const response = await fetch(`${INTERVIEWS_URL}/candidate/${candidateId}/next-round-number${query}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch next round number");
   }
 
   return resData.data || resData;

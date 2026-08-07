@@ -18,6 +18,32 @@ export type InterviewStatusEnum =
   | "RESCHEDULED"
   | "NO_SHOW";
 
+export interface InterviewerItem {
+  interviewer_id?: string;
+  interviewer_name: string;
+  interviewer_email?: string;
+  rating?: number;
+  feedback?: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  recommendation?: string;
+  reason_note?: string;
+}
+
+export interface ClientFeedbackItem {
+  client_id?: string;
+  client_name: string;
+  client_email?: string;
+  client_rating?: number;
+  client_feedback?: string;
+  client_strengths?: string[];
+  client_weaknesses?: string[];
+  client_recommendation?: string;
+  client_notes?: string;
+  client_feedback_date?: string;
+  reason_note?: string;
+}
+
 export interface InterviewItem {
   id: string;
   candidate_id: string;
@@ -66,6 +92,11 @@ export interface InterviewItem {
   client_notes?: string;
   client_name?: string;
   client_feedback_date?: string;
+
+  // Multiple Interviewers & Clients Panel Support
+  interviewers?: InterviewerItem[];
+  clients?: ClientFeedbackItem[];
+
   notes?: string;
   reschedule_history?: any[];
   created_by?: string;
@@ -114,6 +145,10 @@ export interface CreateInterviewPayload {
   client_notes?: string;
   client_name?: string;
   client_feedback_date?: string;
+
+  interviewers?: InterviewerItem[];
+  clients?: ClientFeedbackItem[];
+
   notes?: string;
 }
 
@@ -162,6 +197,10 @@ export interface BatchCreateInterviewPayload {
   client_notes?: string;
   client_name?: string;
   client_feedback_date?: string;
+
+  interviewers?: InterviewerItem[];
+  clients?: ClientFeedbackItem[];
+
   notes?: string;
 }
 
@@ -205,6 +244,10 @@ export interface UpdateInterviewPayload {
   client_notes?: string;
   client_name?: string;
   client_feedback_date?: string;
+
+  interviewers?: InterviewerItem[];
+  clients?: ClientFeedbackItem[];
+
   status?: InterviewStatusEnum;
   notes?: string;
 }
@@ -239,6 +282,9 @@ export interface SubmitFeedbackPayload {
   final_fit_salary?: string;
   joining_date?: string;
   interview_document_files?: string[];
+
+  interviewers?: InterviewerItem[];
+  clients?: ClientFeedbackItem[];
 }
 
 export interface BulkFeedbackItemPayload extends SubmitFeedbackPayload {
@@ -257,5 +303,3 @@ export interface SendInterviewEmailPayload {
   template_id?: string;
   custom_notes?: string;
 }
-
-

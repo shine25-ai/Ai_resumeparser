@@ -74,6 +74,21 @@ async def get_feedback_questions(
 
 
 @router.get(
+    "/candidate/{candidate_id}/next-round-number",
+    status_code=status.HTTP_200_OK,
+    summary="Get next round number for candidate by interview type",
+    description="Calculate next round number for candidate, filtered per interview_type if provided.",
+)
+async def get_next_round_number(
+    candidate_id: str,
+    interview_type: Optional[str] = Query(None, description="Interview type filter"),
+    current_user: dict = Depends(get_current_active_user_optional),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.get_next_round_number(candidate_id, interview_type=interview_type)
+
+
+@router.get(
     "/candidate/{candidate_id}/history",
     status_code=status.HTTP_200_OK,
     summary="Get complete candidate interview history",
