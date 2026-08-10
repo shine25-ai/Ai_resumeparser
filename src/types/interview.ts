@@ -18,6 +18,20 @@ export type InterviewStatusEnum =
   | "RESCHEDULED"
   | "NO_SHOW";
 
+export interface SkillRatingItem {
+  skill_name: string;
+  rating: number; // 1 to 5 stars
+  category?: string;
+}
+
+export interface CategoryScoreItem {
+  category: string;
+  weightage: number; // e.g. 20 (for 20%)
+  rating: number; // 1 to 5
+  score: number; // calculated score out of weightage, e.g. 16/20
+  feedback?: string;
+}
+
 export interface InterviewerItem {
   interviewer_id?: string;
   interviewer_name: string;
@@ -26,6 +40,10 @@ export interface InterviewerItem {
   feedback?: string;
   strengths?: string[];
   weaknesses?: string[];
+  skill_ratings?: SkillRatingItem[];
+  category_scores?: CategoryScoreItem[];
+  ai_score?: number;
+  ai_recommendation?: string;
   recommendation?: string;
   reason_note?: string;
 }
@@ -83,6 +101,13 @@ export interface InterviewItem {
   strengths?: string[];
   weaknesses?: string[];
   recommendation?: string; // Selected / Rejected / Pending / Hold
+
+  // Dynamic Skill Ratings & Weighted Category Scores & AI Calculation
+  skill_ratings?: SkillRatingItem[];
+  category_scores?: CategoryScoreItem[];
+  ai_score?: number;
+  ai_recommendation?: string;
+
   // Client Feedback
   client_rating?: number;
   client_feedback?: string;
@@ -148,6 +173,10 @@ export interface CreateInterviewPayload {
 
   interviewers?: InterviewerItem[];
   clients?: ClientFeedbackItem[];
+  skill_ratings?: SkillRatingItem[];
+  category_scores?: CategoryScoreItem[];
+  ai_score?: number;
+  ai_recommendation?: string;
 
   notes?: string;
 }
@@ -200,6 +229,10 @@ export interface BatchCreateInterviewPayload {
 
   interviewers?: InterviewerItem[];
   clients?: ClientFeedbackItem[];
+  skill_ratings?: SkillRatingItem[];
+  category_scores?: CategoryScoreItem[];
+  ai_score?: number;
+  ai_recommendation?: string;
 
   notes?: string;
 }
@@ -247,6 +280,10 @@ export interface UpdateInterviewPayload {
 
   interviewers?: InterviewerItem[];
   clients?: ClientFeedbackItem[];
+  skill_ratings?: SkillRatingItem[];
+  category_scores?: CategoryScoreItem[];
+  ai_score?: number;
+  ai_recommendation?: string;
 
   status?: InterviewStatusEnum;
   notes?: string;
@@ -285,6 +322,10 @@ export interface SubmitFeedbackPayload {
 
   interviewers?: InterviewerItem[];
   clients?: ClientFeedbackItem[];
+  skill_ratings?: SkillRatingItem[];
+  category_scores?: CategoryScoreItem[];
+  ai_score?: number;
+  ai_recommendation?: string;
 }
 
 export interface BulkFeedbackItemPayload extends SubmitFeedbackPayload {

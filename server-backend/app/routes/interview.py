@@ -74,6 +74,21 @@ async def get_feedback_questions(
 
 
 @router.get(
+    "/candidate/{candidate_id}/active-status",
+    status_code=status.HTTP_200_OK,
+    summary="Check candidate active incomplete interview status from database",
+    description="Query MongoDB database to check if candidate has any ongoing/incomplete interview session.",
+)
+async def check_candidate_active_status(
+    candidate_id: str,
+    candidate_name: Optional[str] = Query(None, description="Candidate name to check"),
+    current_user: dict = Depends(get_current_active_user_optional),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.check_candidate_active_status(candidate_id, candidate_name=candidate_name)
+
+
+@router.get(
     "/candidate/{candidate_id}/next-round-number",
     status_code=status.HTTP_200_OK,
     summary="Get next round number for candidate by interview type",

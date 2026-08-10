@@ -7,16 +7,42 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.utils.enums import InterviewStatus, InterviewType
 
 
+class SkillRatingItem(BaseModel):
+    """Dynamic skill rating representation (e.g. Java: 4.0, SQL: 5.0, Data Bricks: 2.0)."""
+
+    skill_name: str
+    rating: float = Field(0.0, ge=0.0, le=10.0, description="Skill rating out of 5 or 10 stars")
+    category: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CategoryScoreItem(BaseModel):
+    """Category-wise weighted evaluation item."""
+
+    category: str
+    weightage: float = Field(10.0, ge=0.0, le=100.0)
+    rating: float = Field(4.0, ge=0.0, le=10.0)
+    score: float = Field(80.0, ge=0.0, le=100.0)
+    feedback: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InterviewerFeedbackItem(BaseModel):
     """Interviewer item detail representation for panel/multi-interviewer rounds."""
 
     interviewer_id: Optional[str] = None
     interviewer_name: str
     interviewer_email: Optional[str] = None
-    rating: Optional[float] = Field(None, ge=1.0, le=5.0, description="Rating score out of 5")
+    rating: Optional[float] = Field(None, ge=0.0, le=10.0, description="Rating score out of 5 or 10")
     feedback: Optional[str] = None
     strengths: List[str] = Field(default_factory=list)
     weaknesses: List[str] = Field(default_factory=list)
+    skill_ratings: List[SkillRatingItem] = Field(default_factory=list)
+    category_scores: List[CategoryScoreItem] = Field(default_factory=list)
+    ai_score: Optional[float] = None
+    ai_recommendation: Optional[str] = None
     recommendation: Optional[str] = None
     reason_note: Optional[str] = None
 
@@ -29,7 +55,7 @@ class ClientFeedbackItem(BaseModel):
     client_id: Optional[str] = None
     client_name: str
     client_email: Optional[str] = None
-    client_rating: Optional[float] = Field(None, ge=1.0, le=5.0, description="Client Rating score out of 5")
+    client_rating: Optional[float] = Field(None, ge=0.0, le=10.0, description="Client Rating score out of 5 or 10")
     client_feedback: Optional[str] = None
     client_strengths: List[str] = Field(default_factory=list)
     client_weaknesses: List[str] = Field(default_factory=list)
@@ -246,7 +272,7 @@ class InterviewFeedbackRequest(BaseModel):
     """Payload for submitting interview rating and feedback (Round Interviewer and/or Client)."""
 
     # Interviewer / Round Feedback
-    rating: Optional[float] = Field(None, ge=1.0, le=5.0, description="Rating score out of 5")
+    rating: Optional[float] = Field(None, ge=0.0, le=10.0, description="Rating score out of 5 or 10")
     feedback: Optional[str] = None
     strengths: List[str] = Field(default_factory=list)
     weaknesses: List[str] = Field(default_factory=list)
@@ -254,7 +280,7 @@ class InterviewFeedbackRequest(BaseModel):
     notes: Optional[str] = None
 
     # Client Feedback
-    client_rating: Optional[float] = Field(None, ge=1.0, le=5.0, description="Client Rating score out of 5")
+    client_rating: Optional[float] = Field(None, ge=0.0, le=10.0, description="Client Rating score out of 5 or 10")
     client_feedback: Optional[str] = None
     client_strengths: List[str] = Field(default_factory=list)
     client_weaknesses: List[str] = Field(default_factory=list)
@@ -263,11 +289,18 @@ class InterviewFeedbackRequest(BaseModel):
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
+    # Dynamic Skills Ratings & Weighted Category Evaluations & AI Scores
+    skill_ratings: List[SkillRatingItem] = Field(default_factory=list)
+    category_scores: List[CategoryScoreItem] = Field(default_factory=list)
+    ai_score: Optional[float] = None
+    ai_recommendation: Optional[str] = None
+
     # Multiple Interviewers & Clients Panel Support
     interviewers: Optional[List[InterviewerFeedbackItem]] = Field(default_factory=list)
     clients: Optional[List[ClientFeedbackItem]] = Field(default_factory=list)
 
     # Extensible fields updated during feedback/outcome phase
+    candidate_requested_date_time: Optional[str] = None
     candidate_requested_date: Optional[str] = None
     candidate_requested_time: Optional[str] = None
     candidate_requested_role: Optional[str] = None
@@ -275,6 +308,11 @@ class InterviewFeedbackRequest(BaseModel):
     final_fit_salary: Optional[str] = None
     joining_date: Optional[str] = None
     interview_document_files: List[str] = Field(default_factory=list)
+    hr_call_verification: Optional[str] = None
+    location: Optional[str] = None
+    interview_location: Optional[str] = None
+    meeting_link: Optional[str] = None
+    meeting_platform: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -342,6 +380,12 @@ class InterviewResponse(BaseModel):
     feedback: Optional[str] = None
     strengths: List[str] = Field(default_factory=list)
     weaknesses: List[str] = Field(default_factory=list)
+
+    # Dynamic Skills & Weighted Category Ratings & AI Score
+    skill_ratings: List[SkillRatingItem] = Field(default_factory=list)
+    category_scores: List[CategoryScoreItem] = Field(default_factory=list)
+    ai_score: Optional[float] = None
+    ai_recommendation: Optional[str] = None
 
     # Client Feedback
     client_rating: Optional[float] = None

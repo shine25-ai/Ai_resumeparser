@@ -637,3 +637,42 @@ export const getNextRoundNumber = async (candidateId: string, interviewType?: st
   return resData.data || resData;
 };
 
+export const checkCandidateActiveInterviewStatus = async (candidateId: string, candidateName?: string) => {
+  const token = localStorage.getItem("access_token") || "";
+  const query = candidateName ? `?candidate_name=${encodeURIComponent(candidateName)}` : "";
+  const response = await fetch(`${INTERVIEWS_URL}/candidate/${candidateId}/active-status${query}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to check candidate active interview status");
+  }
+
+  return resData.data || resData;
+};
+
+export type {
+  InterviewItem,
+  CreateInterviewPayload,
+  BatchCreateInterviewPayload,
+  CandidateInterviewItem,
+  UpdateInterviewPayload,
+  SubmitFeedbackPayload,
+  BulkFeedbackItemPayload,
+  BulkSubmitFeedbackPayload,
+  RescheduleInterviewPayload,
+  InterviewTypeEnum,
+  InterviewStatusEnum,
+  InterviewerItem,
+  ClientFeedbackItem,
+  SkillRatingItem,
+  CategoryScoreItem,
+} from "../types/interview";
+

@@ -358,6 +358,23 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                                   </div>
                                 )}
                               </div>
+
+                              {/* Dynamic Tech Skill Ratings Badge List */}
+                              {((intItem.skill_ratings && intItem.skill_ratings.length > 0) || (round.skill_ratings && round.skill_ratings.length > 0)) && (
+                                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                                  <span className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider block">
+                                    Dynamic Skill Ratings
+                                  </span>
+                                  <div className="flex flex-wrap gap-2 text-[11px]">
+                                    {(intItem.skill_ratings || round.skill_ratings || []).map((sk: any, sIdx: number) => (
+                                      <span key={sIdx} className="bg-white border border-slate-200 px-2 py-0.5 rounded font-bold text-slate-800 flex items-center gap-1">
+                                        <span>{sk.skill_name} -</span>
+                                        <span className="text-amber-500 font-extrabold">{sk.rating} ★</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

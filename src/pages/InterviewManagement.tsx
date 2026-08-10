@@ -5,11 +5,12 @@ import {
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes,
-  sendInterviewEmail, getNextRoundNumber, MAIL_TEMPLATES_URL,
+  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, MAIL_TEMPLATES_URL,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
+import { SkillRatingsEvaluation } from "../components/SkillRatingsEvaluation";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 
 export default function InterviewManagement() {
@@ -36,6 +37,7 @@ export default function InterviewManagement() {
 
   const [selectedInterview, setSelectedInterview] = useState<InterviewItem | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [candidateActiveCheckResult, setCandidateActiveCheckResult] = useState<any | null>(null);
 
   // Dynamic Feedback Question Options loaded from backend JSON API
   const [feedbackQuestionOptions, setFeedbackQuestionOptions] = useState<string[]>([]);
@@ -188,14 +190,14 @@ export default function InterviewManagement() {
 
   const [feedbackForm, setFeedbackForm] = useState({
     // Interviewer Round Feedback
-    rating: 4,
+    rating: 1,
     feedback: "",
     strengths: "",
     weaknesses: "",
     recommendation: "Selected",
     // Client Feedback
     client_name: "",
-    client_rating: 4,
+    client_rating: 1,
     client_feedback: "",
     client_strengths: "",
     client_weaknesses: "",
@@ -215,13 +217,21 @@ export default function InterviewManagement() {
 
   const [feedbackInterviewersList, setFeedbackInterviewersList] = useState<InterviewerItem[]>([]);
   const [feedbackClientsList, setFeedbackClientsList] = useState<ClientFeedbackItem[]>([]);
+  const [feedbackSkillRatings, setFeedbackSkillRatings] = useState<any[]>([
+    { skill_name: "Java", rating: 1 },
+    { skill_name: "SQL", rating: 1 },
+    { skill_name: "DATA BRICKS", rating: 1 },
+  ]);
+  const [feedbackCategoryScores, setFeedbackCategoryScores] = useState<any[]>([]);
+  const [feedbackAiScore, setFeedbackAiScore] = useState<number>(20);
+  const [feedbackAiRecommendation, setFeedbackAiRecommendation] = useState<string>("Hold");
 
   const handleAddFeedbackInterviewer = () => {
     setFeedbackInterviewersList((prev) => [
       ...prev,
       {
         interviewer_name: `Interviewer ${prev.length + 1}`,
-        rating: 4,
+        rating: 1,
         feedback: "",
         recommendation: "Selected",
       },
@@ -247,7 +257,7 @@ export default function InterviewManagement() {
         if (index === 0) {
           setFeedbackForm((f) => ({
             ...f,
-            rating: Number(item.rating || 4),
+            rating: Number(item.rating || 1),
             recommendation: item.recommendation || "Selected",
             feedback: item.feedback || f.feedback,
           }));
@@ -262,7 +272,7 @@ export default function InterviewManagement() {
       ...prev,
       {
         client_name: `Client ${prev.length + 1}`,
-        client_rating: 4,
+        client_rating: 1,
         client_feedback: "",
         client_recommendation: "Selected",
       },
@@ -288,7 +298,7 @@ export default function InterviewManagement() {
         if (index === 0) {
           setFeedbackForm((f) => ({
             ...f,
-            client_rating: Number(item.client_rating || 4),
+            client_rating: Number(item.client_rating || 1),
             client_name: item.client_name || f.client_name,
             client_recommendation: item.client_recommendation || "Selected",
             client_feedback: item.client_feedback || f.client_feedback,
@@ -450,6 +460,22 @@ export default function InterviewManagement() {
       alert("Please provide candidate name and job title.");
       return;
     }
+
+    // Validation: Query backend API to check if candidate already has an assigned interview in database
+    try {
+      if (scheduleForm.candidate_id || scheduleForm.candidate_name) {
+        const statusRes = await checkCandidateActiveInterviewStatus(
+          scheduleForm.candidate_id || "temp",
+          scheduleForm.candidate_name
+        );
+        if (statusRes && statusRes.has_active_interview) {
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to check active interview status from backend:", err);
+    }
+
     try {
       setActionLoading(true);
       const docFilesArray = scheduleForm.interview_document_files
@@ -654,7 +680,7 @@ export default function InterviewManagement() {
       : [{
           interviewer_name: item.interviewer_name || "Interviewer 1",
           interviewer_email: item.interviewer_email || "",
-          rating: item.rating || 4,
+          rating: item.rating || 1,
           feedback: item.feedback || "",
           recommendation: item.recommendation || "Selected",
           strengths: item.strengths || [],
@@ -665,7 +691,7 @@ export default function InterviewManagement() {
       ? item.clients
       : [{
           client_name: item.client_name || "Client Evaluator 1",
-          client_rating: item.client_rating || 4,
+          client_rating: item.client_rating || 1,
           client_feedback: item.client_feedback || "",
           client_recommendation: item.client_recommendation || "Selected",
           client_notes: item.client_notes || "",
@@ -673,15 +699,27 @@ export default function InterviewManagement() {
 
     setFeedbackInterviewersList(initInts);
     setFeedbackClientsList(initClients);
+    setFeedbackSkillRatings(
+      item.skill_ratings && item.skill_ratings.length > 0
+        ? item.skill_ratings
+        : [
+            { skill_name: "Java", rating: 1 },
+            { skill_name: "SQL", rating: 1 },
+            { skill_name: "DATA BRICKS", rating: 1 },
+          ]
+    );
+    setFeedbackCategoryScores(item.category_scores || []);
+    setFeedbackAiScore(item.ai_score || 20);
+    setFeedbackAiRecommendation(item.ai_recommendation || "Hold");
 
     setFeedbackForm({
-      rating: item.rating || 4,
+      rating: item.rating || 1,
       feedback: item.feedback || "",
       strengths: item.strengths ? item.strengths.join(", ") : "",
       weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
       recommendation: item.recommendation || "Selected",
       client_name: item.client_name || "",
-      client_rating: item.client_rating || 4,
+      client_rating: item.client_rating || 1,
       client_feedback: item.client_feedback || "",
       client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
       client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
@@ -724,6 +762,10 @@ export default function InterviewManagement() {
         weaknesses: feedbackForm.weaknesses ? feedbackForm.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
         recommendation: feedbackForm.recommendation || undefined,
         interviewers: feedbackInterviewersList,
+        skill_ratings: feedbackSkillRatings,
+        category_scores: feedbackCategoryScores,
+        ai_score: feedbackAiScore,
+        ai_recommendation: feedbackAiRecommendation,
         client_name: feedbackForm.client_name || undefined,
         client_rating: feedbackForm.client_rating ? Number(feedbackForm.client_rating) : undefined,
         client_feedback: feedbackForm.client_feedback || undefined,
@@ -866,6 +908,16 @@ export default function InterviewManagement() {
 
   // Schedule Next Round Handlers
   const handleOpenNextRound = async (item: InterviewItem) => {
+    // Validation: Query backend API to check if candidate already has an assigned interview in database
+    try {
+      const statusRes = await checkCandidateActiveInterviewStatus(item.candidate_id, item.candidate_name);
+      if (statusRes && statusRes.has_active_interview) {
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to check active interview status from backend:", err);
+    }
+
     setSelectedInterview(item);
     const docsJoined = item.interview_document_files && Array.isArray(item.interview_document_files)
       ? item.interview_document_files.join("\n")
@@ -943,6 +995,16 @@ export default function InterviewManagement() {
     if (!nextRoundForm.candidate_name || !nextRoundForm.job_title || !nextRoundForm.interviewer_name) {
       alert("Please fill candidate name, job title, and interviewer name for the next round.");
       return;
+    }
+
+    // Validation: Query backend API to check if candidate already has an assigned interview in database
+    try {
+      const statusRes = await checkCandidateActiveInterviewStatus(nextRoundForm.candidate_id, nextRoundForm.candidate_name);
+      if (statusRes && statusRes.has_active_interview) {
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to check active interview status from backend:", err);
     }
 
     try {
@@ -1339,8 +1401,19 @@ export default function InterviewManagement() {
                     <label className="block text-slate-700 mb-1 font-semibold">Select Candidate from Parsed Resumes</label>
                     <select
                       value={scheduleForm.candidate_id}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const selId = e.target.value;
+                        setCandidateActiveCheckResult(null);
+                        if (!selId) {
+                          setScheduleForm({
+                            ...scheduleForm,
+                            candidate_id: "",
+                            candidate_name: "",
+                            candidate_email: "",
+                            resume_id: "",
+                          });
+                          return;
+                        }
                         const found = candidatesList.find((c) => c.id === selId || c._id === selId);
                         const parsed = found?.parsed_data || {};
                         const nameStr = parsed.full_name || parsed.name || found?.original_filename || "";
@@ -1352,6 +1425,14 @@ export default function InterviewManagement() {
                           candidate_email: emailStr,
                           resume_id: selId,
                         });
+
+                        // Query backend API to check active incomplete interview session from MongoDB
+                        try {
+                          const statusRes = await checkCandidateActiveInterviewStatus(selId, nameStr);
+                          setCandidateActiveCheckResult(statusRes);
+                        } catch (err) {
+                          console.warn("Failed to check candidate active status from backend:", err);
+                        }
                       }}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer font-medium shadow-2xs"
                     >
@@ -1367,6 +1448,29 @@ export default function InterviewManagement() {
                       })}
                     </select>
                   </div>
+
+                  {/* Warning Banner if selected candidate has an active incomplete interview loaded from DB */}
+                  {(() => {
+                    const activeIncomplete = candidateActiveCheckResult?.has_active_interview ? candidateActiveCheckResult : interviews.find(
+                      (inv) =>
+                        ((scheduleForm.candidate_id && inv.candidate_id === scheduleForm.candidate_id) ||
+                          (scheduleForm.candidate_name && inv.candidate_name.toLowerCase().trim() === scheduleForm.candidate_name.toLowerCase().trim())) &&
+                        inv.status !== "COMPLETED" &&
+                        inv.status !== "CANCELLED"
+                    );
+                    if (!activeIncomplete) return null;
+                    const stVal = activeIncomplete.status || "SCHEDULED";
+                    const candName = activeIncomplete.candidate_name || scheduleForm.candidate_name;
+                    return (
+                      <div className="bg-amber-50 border border-amber-300 text-amber-900 p-3.5 rounded-xl flex items-start gap-2.5 text-xs font-semibold shadow-xs">
+                        <AlertCircle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-extrabold text-amber-950 block text-xs">Active Interview Session Pending Feedback (Database Verified)</span>
+                          Candidate <span className="font-extrabold text-indigo-700">'{candName}'</span> already has an assigned interview session (Status: <span className="font-black text-amber-800 uppercase">{stVal}</span>) that is not yet completed. Complete feedback for the previous round first before assigning a new session.
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -1725,21 +1829,45 @@ export default function InterviewManagement() {
               </div>
 
               {/* Bottom Actions Bar */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsScheduleOpen(false)}
-                  className="px-5 py-2.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 font-bold transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 flex items-center gap-2 cursor-pointer transition-all"
-                >
-                  <Plus size={16} /> Schedule Interview
-                </button>
-              </div>
+              {(() => {
+                const hasActiveIncomplete = !!(
+                  candidateActiveCheckResult?.has_active_interview ||
+                  interviews.find(
+                    (inv) =>
+                      ((scheduleForm.candidate_id && inv.candidate_id === scheduleForm.candidate_id) ||
+                        (scheduleForm.candidate_name && inv.candidate_name.toLowerCase().trim() === scheduleForm.candidate_name.toLowerCase().trim())) &&
+                      inv.status !== "COMPLETED" &&
+                      inv.status !== "CANCELLED"
+                  )
+                );
+                return (
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsScheduleOpen(false)}
+                      className="px-5 py-2.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 font-bold transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={hasActiveIncomplete || actionLoading}
+                      title={
+                        hasActiveIncomplete
+                          ? `Cannot schedule interview: Candidate '${scheduleForm.candidate_name}' already has an active interview session pending feedback.`
+                          : "Schedule Interview"
+                      }
+                      className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                        hasActiveIncomplete
+                          ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none opacity-60"
+                          : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 cursor-pointer"
+                      }`}
+                    >
+                      <Plus size={16} /> Schedule Interview
+                    </button>
+                  </div>
+                );
+              })()}
             </form>
           </div>
         </div>
@@ -2542,448 +2670,524 @@ export default function InterviewManagement() {
         </div>
       )}
 
-      {/* RATING & FEEDBACK MODAL (WIDE 2-COLUMN DUAL OPTION: INTERVIEWER ROUND FEEDBACK & CLIENT FEEDBACK) */}
+      {/* RATING & FEEDBACK MODAL (PREMIUM ENTERPRISE SAAS DASHBOARD) */}
       {isFeedbackOpen && selectedInterview && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
-
-            {/* Header */}
-            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-600 rounded-2xl shadow-sm text-white">
-                  <Star size={22} />
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 md:p-4 font-sans animate-in fade-in duration-300">
+          <div className="bg-slate-50 border border-slate-200/80 rounded-3xl w-full max-w-[98vw] h-[95vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-900">
+            
+            {/* 1. TOP WORKSPACE STICKY HEADER (SINGLE HORIZONTAL ROW) */}
+            <header className="flex flex-nowrap items-center justify-between gap-3 px-5 py-2.5 bg-white/90 backdrop-blur-md border-b border-slate-200/80 flex-shrink-0 sticky top-0 z-20">
+              {/* Left Profile Details (Single Row) */}
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 text-white font-black text-sm flex items-center justify-center shadow-xs flex-shrink-0">
+                  {selectedInterview.candidate_name ? selectedInterview.candidate_name.charAt(0).toUpperCase() : "C"}
                 </div>
-                <div>
+
+                <div className="flex flex-col justify-center min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900 tracking-wide">
-                      Submit Round & Client Feedback
+                    <h2 className="text-sm font-extrabold text-slate-900 tracking-tight whitespace-nowrap leading-tight">
+                      {selectedInterview.candidate_name}
                     </h2>
-                    <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                      {selectedInterview.candidate_name} ({selectedInterview.interview_type} - Round {selectedInterview.round_number})
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                      feedbackAiRecommendation === "Strong Hire" || feedbackAiRecommendation === "Selected"
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : feedbackAiRecommendation === "Hire"
+                        ? "bg-teal-50 border-teal-200 text-teal-700"
+                        : "bg-amber-50 border-amber-200 text-amber-700"
+                    }`}>
+                      {feedbackAiRecommendation} ({feedbackAiScore}/100)
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Evaluate candidate per interview round & type, or submit detailed client feedback
-                  </p>
+
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full whitespace-nowrap">
+                      {selectedInterview.job_title} ({selectedInterview.interview_type} - R{selectedInterview.round_number})
+                    </span>
+                    <span className="bg-slate-100 border border-slate-200/80 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1">
+                      <Calendar size={11} className="text-slate-500" />
+                      {selectedInterview.scheduled_date} at {selectedInterview.scheduled_time}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={() => setIsFeedbackOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {/* TAB SELECTOR: INTERVIEWER ROUND FEEDBACK vs CLIENT FEEDBACK */}
-            <div className="flex items-center gap-3 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setFeedbackTab("INTERVIEWER")}
-                className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${feedbackTab === "INTERVIEWER"
-                  ? "bg-white text-emerald-700 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-                  }`}
-              >
-                <UserCheck size={16} />
-                Interviewer Round Feedback ({selectedInterview.interview_type} R{selectedInterview.round_number})
-              </button>
+              {/* Right Tab Switcher & Actions (Single Row) */}
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackTab("INTERVIEWER")}
+                    className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      feedbackTab === "INTERVIEWER"
+                        ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <UserCheck size={14} />
+                    Panel Interviewers
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setFeedbackTab("CLIENT")}
-                className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${feedbackTab === "CLIENT"
-                  ? "bg-white text-teal-700 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-                  }`}
-              >
-                <Building2 size={16} />
-                Client Feedback Option
-              </button>
-            </div>
-
-            <form onSubmit={handleFeedbackSubmit} className="space-y-6 text-xs">
-
-              {/* 2-COLUMN GRID WRAPPER FOR WIDE FEEDBACK MODAL */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                {/* LEFT COLUMN: EVALUATION CARD (INTERVIEWER OR CLIENT) */}
-                <div>
-                  {/* TAB 1: INTERVIEWER / ROUND EVALUATION CARD */}
-                  {feedbackTab === "INTERVIEWER" && (
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 p-3 rounded-2xl">
-                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                          <UserCheck size={16} />
-                          <span>Panel Interviewers ({feedbackInterviewersList.length})</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleAddFeedbackInterviewer}
-                          className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-                        >
-                          <Plus size={14} /> Add Interviewer Feedback
-                        </button>
-                      </div>
-
-                      {feedbackInterviewersList.map((interviewer, idx) => (
-                        <div key={idx} className="bg-emerald-50/40 border border-emerald-200 rounded-2xl p-5 space-y-4 shadow-xs relative">
-                          <div className="flex justify-between items-center border-b border-emerald-200 pb-2">
-                            <input
-                              type="text"
-                              value={interviewer.interviewer_name}
-                              onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_name", e.target.value)}
-                              placeholder="Interviewer Name"
-                              className="text-xs font-bold text-slate-900 border-b border-dashed border-slate-300 focus:border-emerald-500 focus:outline-none bg-transparent"
-                            />
-                            {feedbackInterviewersList.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFeedbackInterviewer(idx)}
-                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              >
-                                <Trash2 size={13} /> Remove
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Interviewer Rating (1-5)</label>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="1"
-                                max="5"
-                                value={interviewer.rating || 4}
-                                onChange={(e) => handleFeedbackInterviewerItemChange(idx, "rating", Number(e.target.value))}
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Round Outcome Recommendation</label>
-                              <select
-                                value={interviewer.recommendation || "Selected"}
-                                onChange={(e) => handleFeedbackInterviewerItemChange(idx, "recommendation", e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 font-bold focus:outline-none cursor-pointer"
-                              >
-                                <option value="Selected">🟢 Selected</option>
-                                <option value="Rejected">🔴 Rejected</option>
-                                <option value="Pending">🟡 Pending</option>
-                                <option value="Hold">🟣 On Hold</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {(interviewer.rating || 4) <= 4.5 && (
-                            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 animate-fadeIn">
-                              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                                <HelpCircle size={14} className="text-amber-600" />
-                                Select Observation Reason
-                              </label>
-                              <select
-                                onChange={(e) => {
-                                  const reason = e.target.value;
-                                  if (reason && !reason.startsWith("--")) {
-                                    const newFb = interviewer.feedback ? `${interviewer.feedback}\nNote: ${reason}` : reason;
-                                    handleFeedbackInterviewerItemChange(idx, "feedback", newFb);
-                                  }
-                                }}
-                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
-                              >
-                                {feedbackQuestionOptions.map((opt, qIdx) => (
-                                  <option key={qIdx} value={opt}>{opt}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Strengths (Comma-separated)</label>
-                              <input
-                                type="text"
-                                value={interviewer.strengths ? (Array.isArray(interviewer.strengths) ? interviewer.strengths.join(", ") : interviewer.strengths) : ""}
-                                onChange={(e) => {
-                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                  handleFeedbackInterviewerItemChange(idx, "strengths", list);
-                                }}
-                                placeholder="e.g. Problem Solving, React"
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Weaknesses / Areas for Improvement</label>
-                              <input
-                                type="text"
-                                value={interviewer.weaknesses ? (Array.isArray(interviewer.weaknesses) ? interviewer.weaknesses.join(", ") : interviewer.weaknesses) : ""}
-                                onChange={(e) => {
-                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                  handleFeedbackInterviewerItemChange(idx, "weaknesses", list);
-                                }}
-                                placeholder="e.g. System Design edge cases"
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-slate-700 mb-1 font-semibold">Interviewer Round Feedback</label>
-                            <textarea
-                              rows={3}
-                              value={interviewer.feedback || ""}
-                              onChange={(e) => handleFeedbackInterviewerItemChange(idx, "feedback", e.target.value)}
-                              placeholder="Provide technical evaluation feedback..."
-                              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* TAB 2: CLIENT FEEDBACK CARD */}
-                  {feedbackTab === "CLIENT" && (
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center bg-teal-50 border border-teal-200 p-3 rounded-2xl">
-                        <div className="flex items-center gap-2 text-teal-800 font-bold text-xs">
-                          <Building2 size={16} />
-                          <span>Client Evaluators ({feedbackClientsList.length})</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleAddFeedbackClient}
-                          className="flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-                        >
-                          <Plus size={14} /> Add Client Feedback
-                        </button>
-                      </div>
-
-                      {feedbackClientsList.map((client, idx) => (
-                        <div key={idx} className="bg-teal-50/40 border border-teal-200 rounded-2xl p-5 space-y-4 shadow-xs relative">
-                          <div className="flex justify-between items-center border-b border-teal-200 pb-2">
-                            <input
-                              type="text"
-                              value={client.client_name}
-                              onChange={(e) => handleFeedbackClientItemChange(idx, "client_name", e.target.value)}
-                              placeholder="Client Evaluator Name"
-                              className="text-xs font-bold text-slate-900 border-b border-dashed border-teal-300 focus:border-teal-500 focus:outline-none bg-transparent"
-                            />
-                            {feedbackClientsList.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFeedbackClient(idx)}
-                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              >
-                                <Trash2 size={13} /> Remove
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Client Rating (1-5)</label>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="1"
-                                max="5"
-                                value={client.client_rating || 4}
-                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_rating", Number(e.target.value))}
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Client Recommendation</label>
-                              <select
-                                value={client.client_recommendation || "Selected"}
-                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_recommendation", e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-teal-700 font-bold focus:outline-none cursor-pointer"
-                              >
-                                <option value="Selected">🟢 Selected</option>
-                                <option value="Rejected">🔴 Rejected</option>
-                                <option value="Next Round">🔄 Next Round</option>
-                                <option value="Hold">🟣 On Hold</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {(client.client_rating || 4) <= 4.5 && (
-                            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 animate-fadeIn">
-                              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                                <HelpCircle size={14} className="text-amber-600" />
-                                Select Client Observation Reason
-                              </label>
-                              <select
-                                onChange={(e) => {
-                                  const reason = e.target.value;
-                                  if (reason && !reason.startsWith("--")) {
-                                    const newFb = client.client_feedback ? `${client.client_feedback}\nNote: ${reason}` : reason;
-                                    handleFeedbackClientItemChange(idx, "client_feedback", newFb);
-                                  }
-                                }}
-                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
-                              >
-                                {feedbackQuestionOptions.map((opt, qIdx) => (
-                                  <option key={qIdx} value={opt}>{opt}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Client Strengths (Comma-separated)</label>
-                              <input
-                                type="text"
-                                value={client.client_strengths ? (Array.isArray(client.client_strengths) ? client.client_strengths.join(", ") : client.client_strengths) : ""}
-                                onChange={(e) => {
-                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                  handleFeedbackClientItemChange(idx, "client_strengths", list);
-                                }}
-                                placeholder="e.g. Domain depth, Communication"
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-slate-700 mb-1 font-semibold">Client Weaknesses / Areas for Improvement</label>
-                              <input
-                                type="text"
-                                value={client.client_weaknesses ? (Array.isArray(client.client_weaknesses) ? client.client_weaknesses.join(", ") : client.client_weaknesses) : ""}
-                                onChange={(e) => {
-                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                  handleFeedbackClientItemChange(idx, "client_weaknesses", list);
-                                }}
-                                placeholder="e.g. English fluency"
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-slate-700 mb-1 font-semibold">Client Detailed Feedback</label>
-                            <textarea
-                              rows={3}
-                              value={client.client_feedback || ""}
-                              onChange={(e) => handleFeedbackClientItemChange(idx, "client_feedback", e.target.value)}
-                              placeholder="Enter client review comments..."
-                              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackTab("CLIENT")}
+                    className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      feedbackTab === "CLIENT"
+                        ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Building2 size={14} />
+                    Client Evaluators
+                  </button>
                 </div>
 
-                {/* RIGHT COLUMN: CANDIDATE SCHEDULE/SALARY & DOCUMENTS/NOTES */}
-                <div className="space-y-5">
-                  {/* CANDIDATE REQUESTED SCHEDULE, WORK ROLE & COMPENSATION */}
-                  <div className="bg-amber-50/40 border border-amber-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center gap-2 text-amber-800 font-bold text-xs border-b border-amber-200 pb-2">
-                      <DollarSign size={15} />
-                      <span>Candidate Requested Schedule, Work Role & Compensation</span>
+                <div className="flex items-center gap-2 border-l border-slate-200 pl-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsFeedbackOpen(false)}
+                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 rounded-lg font-extrabold transition-all cursor-pointer text-xs"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => alert("Draft saved locally!")}
+                    className="px-3 py-1 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg font-extrabold transition-all cursor-pointer text-xs shadow-xs"
+                  >
+                    Save Draft
+                  </button>
+
+                  <button
+                    type="submit"
+                    form="interview-feedback-form"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleFeedbackSubmit(e as any);
+                    }}
+                    disabled={actionLoading}
+                    className="flex items-center gap-1.5 px-3.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white rounded-lg font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95 text-xs"
+                  >
+                    {actionLoading ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={13} />
+                        <span>Save & Submit Feedback</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFeedbackOpen(false)}
+                  className="text-slate-400 hover:text-slate-800 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer shadow-xs"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </header>
+
+            {/* 2. MAIN DASHBOARD CONTENT AREA */}
+            <form id="interview-feedback-form" onSubmit={handleFeedbackSubmit} className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col justify-between space-y-6">
+              
+              {/* 3-COLUMN WORKSPACE GRID */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                {/* LEFT SIDEBAR NAVIGATION (2 COLS) */}
+                <div className="lg:col-span-2 hidden lg:block space-y-1.5 sticky top-0 self-start">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 block mb-2">
+                    Evaluation Workspace
+                  </span>
+                  
+                  <a
+                    href="#sec-interviewer"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <UserCheck size={15} className="text-indigo-600" />
+                    <span>Panel Feedback</span>
+                  </a>
+
+                  <a
+                    href="#sec-skills"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <Star size={15} className="text-amber-500" />
+                    <span>Skill Assessment</span>
+                  </a>
+
+                  <a
+                    href="#sec-compensation"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <DollarSign size={15} className="text-emerald-600" />
+                    <span>Compensation & Role</span>
+                  </a>
+
+                  <a
+                    href="#sec-documents"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <FileText size={15} className="text-rose-600" />
+                    <span>Documents & Notes</span>
+                  </a>
+                </div>
+
+                {/* MAIN CONTENT AREA (7 COLS) */}
+                <div className="lg:col-span-7 space-y-6">
+                  
+                  {/* PANEL INTERVIEWER / CLIENT CARDS SECTION */}
+                  <div id="sec-interviewer" className="space-y-4">
+                    {feedbackTab === "INTERVIEWER" && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                              <UserCheck size={18} />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-extrabold text-slate-900">Panel Interviewers Evaluation</h3>
+                              <p className="text-[11px] text-slate-500 font-medium">Record individual ratings & observations</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddFeedbackInterviewer}
+                            className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                          >
+                            <Plus size={14} /> Add Interviewer
+                          </button>
+                        </div>
+
+                        {feedbackInterviewersList.map((interviewer, idx) => (
+                          <div key={idx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-indigo-200 transition-all">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                                  {interviewer.interviewer_name ? interviewer.interviewer_name.charAt(0).toUpperCase() : "I"}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={interviewer.interviewer_name}
+                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_name", e.target.value)}
+                                  placeholder="Interviewer Name"
+                                  className="text-sm font-extrabold text-slate-900 border-b border-dashed border-slate-300 focus:border-indigo-600 focus:outline-none bg-transparent"
+                                />
+                              </div>
+                              {feedbackInterviewersList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFeedbackInterviewer(idx)}
+                                  className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 size={13} /> Remove
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Rating (1-5)</label>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="1"
+                                  max="5"
+                                  value={interviewer.rating || 1}
+                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "rating", Number(e.target.value))}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Outcome Recommendation</label>
+                                <select
+                                  value={interviewer.recommendation || "Selected"}
+                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "recommendation", e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-emerald-700 focus:bg-white focus:outline-none cursor-pointer"
+                                >
+                                  <option value="Selected">🟢 Selected</option>
+                                  <option value="Rejected">🔴 Rejected</option>
+                                  <option value="Pending">🟡 Pending</option>
+                                  <option value="Hold">Hold</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* SELECTABLE OBSERVATION CHIPS */}
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] font-bold text-slate-600 block">Quick Observation Reasons (Click to append)</label>
+                              <div className="flex flex-wrap gap-1.5">
+                                {["Technical Skills", "Communication", "System Design", "Problem Solving", "Architecture", "Culture Fit", "Behavior"].map((chip, cIdx) => (
+                                  <button
+                                    key={cIdx}
+                                    type="button"
+                                    onClick={() => {
+                                      const newFb = interviewer.feedback ? `${interviewer.feedback}\nObservation: ${chip}` : chip;
+                                      handleFeedbackInterviewerItemChange(idx, "feedback", newFb);
+                                    }}
+                                    className="bg-slate-100 hover:bg-indigo-50 hover:border-indigo-300 border border-slate-200 text-slate-700 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all cursor-pointer"
+                                  >
+                                    + {chip}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Strengths (Comma-separated)</label>
+                                <input
+                                  type="text"
+                                  value={interviewer.strengths ? (Array.isArray(interviewer.strengths) ? interviewer.strengths.join(", ") : interviewer.strengths) : ""}
+                                  onChange={(e) => {
+                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                    handleFeedbackInterviewerItemChange(idx, "strengths", list);
+                                  }}
+                                  placeholder="e.g. Problem Solving, React"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Weaknesses / Areas for Improvement</label>
+                                <input
+                                  type="text"
+                                  value={interviewer.weaknesses ? (Array.isArray(interviewer.weaknesses) ? interviewer.weaknesses.join(", ") : interviewer.weaknesses) : ""}
+                                  onChange={(e) => {
+                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                    handleFeedbackInterviewerItemChange(idx, "weaknesses", list);
+                                  }}
+                                  placeholder="e.g. System Design edge cases"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Round Feedback Comments</label>
+                              <textarea
+                                rows={2}
+                                value={interviewer.feedback || ""}
+                                onChange={(e) => handleFeedbackInterviewerItemChange(idx, "feedback", e.target.value)}
+                                placeholder="Provide technical evaluation feedback..."
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none resize-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {feedbackTab === "CLIENT" && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-teal-50 text-teal-600 rounded-xl">
+                              <Building2 size={18} />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-extrabold text-slate-900">Client Panel Evaluators</h3>
+                              <p className="text-[11px] text-slate-500 font-medium">Manage client team feedback</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddFeedbackClient}
+                            className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                          >
+                            <Plus size={14} /> Add Client Evaluator
+                          </button>
+                        </div>
+
+                        {feedbackClientsList.map((client, idx) => (
+                          <div key={idx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-teal-200 transition-all">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                              <input
+                                type="text"
+                                value={client.client_name}
+                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_name", e.target.value)}
+                                placeholder="Client Evaluator Name"
+                                className="text-sm font-extrabold text-slate-900 border-b border-dashed border-teal-400 focus:border-teal-500 focus:outline-none bg-transparent"
+                              />
+                              {feedbackClientsList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFeedbackClient(idx)}
+                                  className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 size={13} /> Remove
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Rating (1-5)</label>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="1"
+                                  max="5"
+                                  value={client.client_rating || 1}
+                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_rating", Number(e.target.value))}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Recommendation</label>
+                                <select
+                                  value={client.client_recommendation || "Selected"}
+                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_recommendation", e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-teal-700 focus:bg-white focus:outline-none cursor-pointer"
+                                >
+                                  <option value="Selected">🟢 Selected</option>
+                                  <option value="Rejected">🔴 Rejected</option>
+                                  <option value="Next Round">🔄 Next Round</option>
+                                  <option value="Hold">Hold</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Strengths (Comma-separated)</label>
+                                <input
+                                  type="text"
+                                  value={client.client_strengths ? (Array.isArray(client.client_strengths) ? client.client_strengths.join(", ") : client.client_strengths) : ""}
+                                  onChange={(e) => {
+                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                    handleFeedbackClientItemChange(idx, "client_strengths", list);
+                                  }}
+                                  placeholder="e.g. Domain depth, Communication"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Weaknesses / Areas for Improvement</label>
+                                <input
+                                  type="text"
+                                  value={client.client_weaknesses ? (Array.isArray(client.client_weaknesses) ? client.client_weaknesses.join(", ") : client.client_weaknesses) : ""}
+                                  onChange={(e) => {
+                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                    handleFeedbackClientItemChange(idx, "client_weaknesses", list);
+                                  }}
+                                  placeholder="e.g. English fluency"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Client Detailed Feedback</label>
+                              <textarea
+                                rows={2}
+                                value={client.client_feedback || ""}
+                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_feedback", e.target.value)}
+                                placeholder="Enter client review comments..."
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none resize-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SKILL ASSESSMENT DASHBOARD SECTION */}
+                  <div id="sec-skills">
+                    <SkillRatingsEvaluation
+                      skillRatings={feedbackSkillRatings}
+                      onChangeSkills={setFeedbackSkillRatings}
+                      categoryScores={feedbackCategoryScores}
+                      onChangeCategoryScores={setFeedbackCategoryScores}
+                      onAiScoreCalculated={(score, rec) => {
+                        setFeedbackAiScore(score);
+                        setFeedbackAiRecommendation(rec);
+                      }}
+                    />
+                  </div>
+
+                  {/* COMPENSATION & ROLE KPI CARDS SECTION */}
+                  <div id="sec-compensation" className="space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+                      <DollarSign size={18} className="text-emerald-600" />
+                      <h3 className="text-sm font-extrabold text-slate-900">Compensation & Role Details</h3>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Calendar size={12} className="text-amber-700" /> Requested Date
-                        </label>
-                        <input
-                          type="date"
-                          value={feedbackForm.candidate_requested_date}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, candidate_requested_date: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Clock size={12} className="text-amber-700" /> Requested Time
-                        </label>
-                        <input
-                          type="time"
-                          value={feedbackForm.candidate_requested_time}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, candidate_requested_time: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Briefcase size={12} className="text-amber-700" /> Requested Role
-                        </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* KPI Card 1: Requested Salary */}
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                        <span className="text-[11px] font-bold text-amber-800 flex items-center gap-1.5">
+                          <DollarSign size={14} className="text-amber-600" /> Requested Salary
+                        </span>
                         <input
                           type="text"
-                          placeholder="e.g. Lead Backend"
-                          value={feedbackForm.candidate_requested_role}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, candidate_requested_role: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <DollarSign size={12} className="text-amber-700" /> Salary Requested
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 15 LPA"
                           value={feedbackForm.salary_requested}
                           onChange={(e) => setFeedbackForm({ ...feedbackForm, salary_requested: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                          placeholder="e.g. 50000"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-amber-700 focus:bg-white focus:outline-none"
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <TrendingUp size={12} className="text-emerald-600" /> Final Fit Salary
-                        </label>
+                      {/* KPI Card 2: Final Fit Salary */}
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                        <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
+                          <TrendingUp size={14} className="text-emerald-600" /> Final Fit Salary
+                        </span>
                         <input
                           type="text"
-                          placeholder="e.g. 14 LPA"
                           value={feedbackForm.final_fit_salary}
                           onChange={(e) => setFeedbackForm({ ...feedbackForm, final_fit_salary: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-emerald-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold"
+                          placeholder="e.g. 45000"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-emerald-600 focus:bg-white focus:outline-none"
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Calendar size={12} className="text-amber-700" /> Joining Date
-                        </label>
+                      {/* KPI Card 3: Requested Work Role */}
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                        <span className="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
+                          <Briefcase size={14} className="text-indigo-600" /> Requested Work Role
+                        </span>
+                        <input
+                          type="text"
+                          value={feedbackForm.candidate_requested_role}
+                          onChange={(e) => setFeedbackForm({ ...feedbackForm, candidate_requested_role: e.target.value })}
+                          placeholder="e.g. Senior Tech Lead"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
+                        />
+                      </div>
+
+                      {/* KPI Card 4: Expected Joining Date */}
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                        <span className="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
+                          <Calendar size={14} className="text-indigo-600" /> Expected Joining Date
+                        </span>
                         <input
                           type="date"
                           value={feedbackForm.joining_date}
                           onChange={(e) => setFeedbackForm({ ...feedbackForm, joining_date: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
                         />
                       </div>
                     </div>
                   </div>
 
-                  {/* DOCUMENTS & UPLOAD & NOTES */}
-                  <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-rose-200 pb-2">
-                      <div className="flex items-center gap-2 text-rose-700 font-bold text-xs">
-                        <FileText size={15} />
-                        <span>Interview Documents & Notes</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-slate-700 font-semibold flex items-center gap-1">
-                          <FileText size={12} className="text-rose-600" /> Attached Document Files
-                        </label>
-                        <label className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
+                  {/* DOCUMENTS & NOTES SECTION */}
+                  <div id="sec-documents" className="space-y-4">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <FileText size={18} className="text-rose-600" />
+                          <h3 className="text-sm font-extrabold text-slate-900">Attached Documents & Media</h3>
+                        </div>
+                        <label className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
                           <Upload size={13} />
-                          <span>Browse / Attach</span>
+                          <span>Browse / Attach File</span>
                           <input
                             type="file"
                             multiple
@@ -2997,54 +3201,89 @@ export default function InterviewManagement() {
                         rows={2}
                         value={feedbackForm.interview_document_files}
                         onChange={(e) => setFeedbackForm({ ...feedbackForm, interview_document_files: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono text-[11px]"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono text-xs"
                         placeholder="Document names or URLs (one per line)..."
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <AlignLeft size={12} className="text-rose-600" /> Notes / Special Instructions
-                      </label>
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <AlignLeft size={16} className="text-indigo-600" /> Special Prep Notes & Instructions
+                      </span>
                       <textarea
-                        rows={2}
+                        rows={3}
                         value={feedbackForm.notes}
                         onChange={(e) => setFeedbackForm({ ...feedbackForm, notes: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        placeholder="Key assessment areas, candidate prep notes..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                        placeholder="Enter candidate prep notes or internal evaluator instructions..."
                       />
                     </div>
                   </div>
+
                 </div>
 
-              </div>
+                {/* RIGHT FLOATING STICKY AI SUMMARY PANEL (3 COLS) */}
+                <div className="lg:col-span-3 space-y-5 sticky top-0 self-start">
+                  
+                  {/* STICKY AI DASHBOARD SCORE GAUGE CARD */}
+                  <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 shadow-xl space-y-4 border border-indigo-700/50">
+                    <div className="flex items-center justify-between border-b border-indigo-700/50 pb-3">
+                      <span className="text-xs font-extrabold text-indigo-200 flex items-center gap-1.5 uppercase tracking-wider">
+                        <Sparkles size={16} className="text-cyan-400" /> AI Evaluation Index
+                      </span>
+                      <span className="bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black px-2.5 py-0.5 rounded-full">
+                        {feedbackAiRecommendation}
+                      </span>
+                    </div>
 
-              {/* Action Buttons Footer */}
-              <div className="flex justify-end items-center gap-4 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsFeedbackOpen(false)}
-                  className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-200 font-bold transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95"
-                >
-                  {actionLoading ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      <span>Submitting Feedback...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={16} />
-                      <span>Save & Submit Feedback</span>
-                    </>
-                  )}
-                </button>
+                    <div className="text-center py-2 space-y-1">
+                      <div className="text-4xl font-black tracking-tight text-white">
+                        {feedbackAiScore} <span className="text-sm font-bold text-indigo-300">/ 100</span>
+                      </div>
+                      <span className="text-[11px] text-indigo-200 font-semibold uppercase tracking-widest block">
+                        Live Weighted Score
+                      </span>
+                    </div>
+
+                    {/* LIVE METRICS SUMMARY LIST */}
+                    <div className="space-y-2 pt-2 border-t border-indigo-700/50 text-xs">
+                      <div className="flex justify-between items-center text-indigo-200">
+                        <span>Panel Interviewers:</span>
+                        <span className="font-bold text-white">{feedbackInterviewersList.length} Member(s)</span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-indigo-200">
+                        <span>Client Evaluators:</span>
+                        <span className="font-bold text-white">{feedbackClientsList.length} Member(s)</span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-indigo-200">
+                        <span>AI Hiring Readiness:</span>
+                        <span className="font-bold text-emerald-400">{feedbackAiRecommendation}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* HIRING WORKFLOW STAGE PROGRESS CARD */}
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
+                    <span className="text-xs font-extrabold text-slate-900 block uppercase tracking-wider">
+                      Hiring Stage Tracker
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center gap-2 p-2 bg-emerald-50 text-emerald-700 rounded-xl font-bold border border-emerald-200">
+                        <ShieldCheck size={14} /> HR Screening (Verified)
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold border border-indigo-200">
+                        <UserCheck size={14} /> Technical Round 1 (In Progress)
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 text-slate-400 rounded-xl font-medium border border-slate-200">
+                        Managerial Round (Upcoming)
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
               </div>
             </form>
           </div>

@@ -71,6 +71,12 @@ class InterviewDocument(BaseModel):
     strengths: List[str] = Field(default_factory=list)
     weaknesses: List[str] = Field(default_factory=list)
 
+    # Dynamic Skills Ratings & Weighted Category Evaluations & AI Score Calculation
+    skill_ratings: List[Dict[str, Any]] = Field(default_factory=list)
+    category_scores: List[Dict[str, Any]] = Field(default_factory=list)
+    ai_score: Optional[float] = None
+    ai_recommendation: Optional[str] = None
+
     # Client Feedback
     client_rating: Optional[float] = None
     client_feedback: Optional[str] = None

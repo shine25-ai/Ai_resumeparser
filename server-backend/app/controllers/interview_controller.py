@@ -177,3 +177,11 @@ class InterviewController:
             message="Next round number calculated successfully.",
         )
 
+    async def check_candidate_active_status(self, candidate_id: str, candidate_name: Optional[str] = None) -> JSONResponse:
+        """Check candidate active incomplete interview status from database."""
+        res = await self.interview_service.check_candidate_active_status(candidate_id, candidate_name=candidate_name)
+        return success_response(
+            data=res,
+            message="Candidate active status checked successfully.",
+        )
+
