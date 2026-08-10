@@ -2918,6 +2918,47 @@ export default function InterviewManagement() {
                               </div>
                             </div>
 
+                            {/* Conditional Multiple-Selection Observation Reasons Dropdown for Interviewer Rating < 5 */}
+                            {interviewer.rating < 5 && (
+                              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
+                                <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                  <HelpCircle size={14} className="text-amber-600" />
+                                  Select Observations for Rating below 5/5 (Interview Type: {selectedInterview.interview_type})
+                                </label>
+                                <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                  {feedbackQuestionOptions
+                                    .filter(opt => opt && !opt.startsWith("--"))
+                                    .map((opt, optIdx) => {
+                                      const isChecked = interviewer.feedback?.includes(opt);
+                                      return (
+                                        <label key={optIdx} className="flex items-start gap-2.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(e) => {
+                                              let currentFeedback = interviewer.feedback || "";
+                                              if (e.target.checked) {
+                                                if (!currentFeedback.includes(opt)) {
+                                                  currentFeedback = currentFeedback ? `${currentFeedback}\n- ${opt}` : `- ${opt}`;
+                                                }
+                                              } else {
+                                                currentFeedback = currentFeedback
+                                                  .replace(new RegExp(`\\n?- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g'), "")
+                                                  .replace(new RegExp(`- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\n?`, 'g'), "")
+                                                  .trim();
+                                              }
+                                              handleFeedbackInterviewerItemChange(idx, "feedback", currentFeedback);
+                                            }}
+                                            className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                          />
+                                          <span>{opt}</span>
+                                        </label>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            )}
+
                             {/* SELECTABLE OBSERVATION CHIPS */}
                             <div className="space-y-1.5">
                               <label className="text-[11px] font-bold text-slate-600 block">Quick Observation Reasons (Click to append)</label>
@@ -3052,6 +3093,47 @@ export default function InterviewManagement() {
                                 </select>
                               </div>
                             </div>
+
+                            {/* Conditional Multiple-Selection Observation Reasons Dropdown for Client Rating < 5 */}
+                            {client.client_rating < 5 && (
+                              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
+                                <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                  <HelpCircle size={14} className="text-amber-600" />
+                                  Select Observations for Client Rating below 5/5 (Interview Type: {selectedInterview.interview_type})
+                                </label>
+                                <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                  {feedbackQuestionOptions
+                                    .filter(opt => opt && !opt.startsWith("--"))
+                                    .map((opt, optIdx) => {
+                                      const isChecked = client.client_feedback?.includes(opt);
+                                      return (
+                                        <label key={optIdx} className="flex items-start gap-2.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(e) => {
+                                              let currentFeedback = client.client_feedback || "";
+                                              if (e.target.checked) {
+                                                if (!currentFeedback.includes(opt)) {
+                                                  currentFeedback = currentFeedback ? `${currentFeedback}\n- ${opt}` : `- ${opt}`;
+                                                }
+                                              } else {
+                                                currentFeedback = currentFeedback
+                                                  .replace(new RegExp(`\\n?- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g'), "")
+                                                  .replace(new RegExp(`- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\n?`, 'g'), "")
+                                                  .trim();
+                                              }
+                                              handleFeedbackClientItemChange(idx, "client_feedback", currentFeedback);
+                                            }}
+                                            className="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                                          />
+                                          <span>{opt}</span>
+                                        </label>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            )}
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
