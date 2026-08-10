@@ -5,13 +5,23 @@
     "System architecture & design knowledge gap",
     "Hands-on framework / tool depth insufficient",
     "Technical concept explanation & communication gap",
-    "Code quality & optimization standards not met"
+    "Code quality & optimization standards not met",
+    "Debugging & troubleshooting skills need improvement",
+    "Database, API & integration knowledge insufficient",
+    "Understanding of development best practices is limited",
+    "Technical experience does not align with the role requirements"
   ],
   "CODING_TEST": [
     "Problem solving & algorithm logic below requirement",
     "Data structures knowledge & complexity optimization gap",
     "Edge cases handling & clean code standards weak",
-    "Time taken to complete coding task exceeded limit"
+    "Time taken to complete coding task exceeded limit",
+    "Solution approach was inefficient or unnecessarily complex",
+    "Code contains logical errors or incomplete implementation",
+    "Unable to identify or resolve issues during the coding exercise",
+    "Test cases were not handled comprehensively",
+    "Code readability, structure & maintainability need improvement",
+    "Coding solution does not meet the expected technical requirements"
   ],
   "HR": [
     "Communication / language proficiency below requirement",
@@ -19,44 +29,82 @@
     "Notice period / immediate availability issue",
     "Culture fit & professional attitude concerns",
     "Job stability / frequent job hopping risk",
-    "Relocation / work location preference constraint"
+    "Relocation / work location preference constraint",
+    "Career goals and role expectations are not aligned",
+    "Motivation and interest in the position are insufficient",
+    "Employment history or background does not meet role expectations",
+    "Overall HR assessment does not meet the position requirements"
   ],
   "INITIAL_SCREENING": [
     "Basic qualification & skill relevance mismatch",
     "Communication skills below threshold",
     "Candidate interest / availability unclear",
-    "Salary / Budget alignment gap"
+    "Salary / Budget alignment gap",
+    "Relevant work experience is insufficient",
+    "Required technical skills are missing or limited",
+    "Candidate profile does not match the job description",
+    "Required education or certification criteria not met",
+    "Notice period or joining timeline does not meet the requirement",
+    "Overall profile does not meet the initial screening criteria"
   ],
   "MANAGERIAL": [
     "Leadership & team management experience insufficient",
     "Conflict resolution & situational response gap",
     "Ownership & project delivery experience low",
     "Behavioral alignment & culture fit concerns",
-    "Strategic thinking & decision-making skills weak"
+    "Strategic thinking & decision-making skills weak",
+    "Delegation & team development experience needs improvement",
+    "Stakeholder management & cross-functional collaboration skills insufficient",
+    "Performance management & accountability experience limited",
+    "Ability to handle pressure and complex situations needs improvement",
+    "Managerial experience does not meet the expectations of the role"
   ],
   "CULTURE_FIT": [
     "Behavioral alignment & core values mismatch",
     "Team collaboration & adaptiveness concerns",
-    "Work ethic & motivation alignment low"
+    "Work ethic & motivation alignment low",
+    "Professional attitude does not meet organizational expectations",
+    "Openness to feedback and continuous improvement is limited",
+    "Communication and interpersonal approach may impact team collaboration",
+    "Adaptability to organizational changes appears insufficient",
+    "Respect for workplace processes and team norms is a concern",
+    "Motivation and long-term commitment to the organization are unclear",
+    "Overall cultural alignment does not meet organizational expectations"
   ],
   "FINAL_ROUND": [
     "Candidate technical & domain depth low for client requirement",
     "Client communication & presentation confidence low",
     "Domain & project experience alignment gap",
     "Overall interview performance below expectation",
-    "Experience gap for target role seniority"
+    "Experience gap for target role seniority",
+    "Problem solving & decision-making approach does not meet expectations",
+    "Project ownership and delivery experience insufficient",
+    "Candidate responses lacked sufficient depth or relevant examples",
+    "Role responsibilities and candidate expectations are not aligned",
+    "Overall suitability for the target position is below the required standard"
   ],
   "CLIENT_ROUND": [
     "Client communication & confidence low",
     "Domain & project requirement alignment gap",
     "Technical depth for client deliverables insufficient",
-    "Role expectations mismatch"
+    "Role expectations mismatch",
+    "Client-facing communication and stakeholder handling need improvement",
+    "Understanding of client requirements is insufficient",
+    "Ability to explain technical solutions to clients is limited",
+    "Relevant project and industry experience does not meet client expectations",
+    "Problem solving and response to client scenarios were below expectation",
+    "Overall client assessment does not meet the required standard"
   ],
   "DEFAULT": [
     "Technical skill level is low / below expectation",
     "Communication skills below requirement",
     "Domain knowledge gap",
     "Experience gap for position",
-    "Overall performance below requirement"
+    "Overall performance below requirement",
+    "Problem solving & analytical skills need improvement",
+    "Required role-specific skills are insufficient",
+    "Candidate expectations are not aligned with the position",
+    "Relevant project experience does not meet role requirements",
+    "Overall candidate profile is not suitable for the current requirement"
   ]
 }
