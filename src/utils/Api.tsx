@@ -323,6 +323,8 @@ import type {
   BulkFeedbackItemPayload,
   BulkSubmitFeedbackPayload,
   SendInterviewEmailPayload,
+  SkillRatingItem,
+  CategoryScoreItem,
 } from "../types/interview";
 
 export type {
@@ -340,6 +342,8 @@ export type {
   BulkFeedbackItemPayload,
   BulkSubmitFeedbackPayload,
   SendInterviewEmailPayload,
+  SkillRatingItem,
+  CategoryScoreItem,
 };
 
 
@@ -657,22 +661,4 @@ export const checkCandidateActiveInterviewStatus = async (candidateId: string, c
 
   return resData.data || resData;
 };
-
-export type {
-  InterviewItem,
-  CreateInterviewPayload,
-  BatchCreateInterviewPayload,
-  CandidateInterviewItem,
-  UpdateInterviewPayload,
-  SubmitFeedbackPayload,
-  BulkFeedbackItemPayload,
-  BulkSubmitFeedbackPayload,
-  RescheduleInterviewPayload,
-  InterviewTypeEnum,
-  InterviewStatusEnum,
-  InterviewerItem,
-  ClientFeedbackItem,
-  SkillRatingItem,
-  CategoryScoreItem,
-} from "../types/interview";
 
