@@ -1,11 +1,15 @@
-import { useState } from "react";
-import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip } from "lucide-react";
+import { useState, useEffect } from "react";
+import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip, Clock, Sparkles, Cpu, Send, Brain } from "lucide-react";
 import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS } from "../utils/Api";
 
 export default function Upload() {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [parsingStep, setParsingStep] = useState<number>(1);
+  const [parsingStatusText, setParsingStatusText] = useState<string>("Uploading document & initializing parser...");
+  const [parsingProgress, setParsingProgress] = useState<number>(10);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [pollingError, setPollingError] = useState<string | null>(null);
   const [parsedResponse, setParsedResponse] = useState<any>(null);
   const [showModal, setShowModal] = useState(false);
@@ -18,6 +22,49 @@ export default function Upload() {
   const [otherDocType, setOtherDocType] = useState<string>("Cover Letter");
   const [otherDocTitle, setOtherDocTitle] = useState<string>("");
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  // Timer effect for tracking elapsed time during parsing
+  useEffect(() => {
+    let interval: any = null;
+    if (isParsing) {
+      setElapsedSeconds(0);
+      interval = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setElapsedSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isParsing]);
+
+  // Update progress bar and text dynamically based on elapsed time
+  useEffect(() => {
+    if (!isParsing) return;
+
+    if (elapsedSeconds < 5) {
+      setParsingStep(1);
+      setParsingStatusText("Uploading resume document & validating file format...");
+      setParsingProgress(15);
+    } else if (elapsedSeconds < 15) {
+      setParsingStep(2);
+      setParsingStatusText("Extracting text and document structure...");
+      setParsingProgress(35);
+    } else if (elapsedSeconds < 45) {
+      setParsingStep(3);
+      setParsingStatusText("AI Model analyzing candidate experience, skills & education...");
+      setParsingProgress(65);
+    } else if (elapsedSeconds < 90) {
+      setParsingStep(3);
+      setParsingStatusText("Processing detailed history for large resume... Please hold on!");
+      setParsingProgress(85);
+    } else {
+      setParsingStep(4);
+      setParsingStatusText("Finalizing candidate profile extraction...");
+      setParsingProgress(95);
+    }
+  }, [elapsedSeconds, isParsing]);
 
   const sourceOptions = [
     { value: "", label: "-- Select any one --" },
@@ -46,8 +93,8 @@ export default function Upload() {
 
   const steps = [
     { number: 1, title: "Upload", active: true },
-    { number: 2, title: "Parse & Extract", active: parsedResponse ? true : false },
-    { number: 3, title: "AI Analysis", active: parsedResponse ? true : false },
+    { number: 2, title: "Parse & Extract", active: isParsing || parsedResponse ? true : false },
+    { number: 3, title: "AI Analysis", active: (isParsing && elapsedSeconds > 15) || parsedResponse ? true : false },
     { number: 4, title: "Complete", active: parsedResponse ? true : false },
   ];
 
@@ -65,19 +112,39 @@ export default function Upload() {
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setFile(e.dataTransfer.files[0]);
+      setParsedResponse(null);
+      setToastMessage(null);
+      setPollingError(null);
+      setShowModal(false);
+      setResumeSource("");
+      setResumeSourceInformerName("");
     }
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
+      setParsedResponse(null);
+      setToastMessage(null);
+      setPollingError(null);
+      setShowModal(false);
+      setResumeSource("");
+      setResumeSourceInformerName("");
     }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins > 0 ? `${mins}m ` : ''}${secs}s`;
   };
 
   const handleParse = async () => {
     if (!file) return;
     setIsParsing(true);
     setPollingError(null);
+    setParsingStep(1);
+    setParsingProgress(10);
 
     try {
       const formData = new FormData();
@@ -121,35 +188,54 @@ export default function Upload() {
       let finalResult = initialResult;
       let currentStatus = (initialResult.status || "").toLowerCase();
       let attempts = 0;
+      let consecutiveErrors = 0;
 
-      while (currentStatus === "pending" && attempts < 60) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
+      // Poll every 4 seconds, allowing up to 120 attempts (8 minutes max for very large resumes)
+      while (currentStatus === "pending" && attempts < 120) {
+        await new Promise(resolve => setTimeout(resolve, 4000));
         attempts++;
         console.log(`[FRONTEND_UPLOAD_POLL] Checking status for Resume ID '${resumeId}' (Attempt ${attempts})...`);
 
-        const statusRes = await fetch(`${RESUME_LIST}/${resumeId}`, {
-          method: 'GET',
-          headers
-        });
+        try {
+          const statusRes = await fetch(`${RESUME_LIST}/${resumeId}`, {
+            method: 'GET',
+            headers
+          });
 
-        const statusData = await statusRes.json();
-        if (!statusRes.ok) {
-          throw new Error(statusData.detail || "Failed to check status.");
-        }
+          if (!statusRes.ok) {
+            consecutiveErrors++;
+            console.warn(`[FRONTEND_UPLOAD_POLL] Status request non-200. Consecutive errors: ${consecutiveErrors}`);
+            if (consecutiveErrors >= 5) {
+              const statusData = await statusRes.json().catch(() => ({}));
+              throw new Error(statusData.detail || "Failed to check parsing status from server.");
+            }
+            continue;
+          }
 
-        finalResult = statusData.data || statusData;
-        currentStatus = (finalResult.status || "").toLowerCase();
-        console.log(`[FRONTEND_UPLOAD_POLL] Status response received:`, finalResult);
+          const statusData = await statusRes.json();
+          consecutiveErrors = 0; // Reset error counter on successful response
 
-        if (currentStatus === "failed" || currentStatus === "error") {
-          throw new Error("AI Parsing failed on the backend.");
+          finalResult = statusData.data || statusData;
+          currentStatus = (finalResult.status || "").toLowerCase();
+          console.log(`[FRONTEND_UPLOAD_POLL] Status response received:`, finalResult);
+
+          if (currentStatus === "failed" || currentStatus === "error") {
+            throw new Error("AI Parsing failed on the backend.");
+          }
+        } catch (pollErr: any) {
+          consecutiveErrors++;
+          console.warn(`[FRONTEND_UPLOAD_POLL] Poll fetch glitch (attempt ${attempts}):`, pollErr);
+          if (consecutiveErrors >= 5) {
+            throw pollErr;
+          }
         }
       }
 
       if (currentStatus === "pending") {
-        throw new Error("Parsing timed out after 5 minutes.");
+        throw new Error("Parsing timed out after 8 minutes. Please try again.");
       }
 
+      setParsingProgress(100);
       console.log(`[FRONTEND_UPLOAD_SUCCESS] Resume parsing completed! Final Candidate ID: '${finalResult.id}', Email: '${finalResult.parsed_data?.email}'`);
       setIsParsing(false);
       setParsedResponse(finalResult);
@@ -291,45 +377,47 @@ export default function Upload() {
 
         {/* Content Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left / Drag & Drop Upload Zone (2 cols) */}
-          <div className="lg:col-span-2">
-            {/* Compact & Neat Upload Card */}
-            <div
-              className={`border-2 border-dashed rounded-2xl p-6 transition-all duration-300 ${isDragging ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 bg-slate-50/70 hover:border-indigo-400"
-                }`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <div className="flex flex-col items-center text-center space-y-4">
-                {/* Icon */}
-                <div className="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
-                  <UploadCloud size={24} />
-                </div>
+          {/* Main Column (Spans full width when parsing, 2 cols when normal) */}
+          <div className={isParsing ? "lg:col-span-3" : "lg:col-span-2"}>
+            {/* Compact & Neat Upload Card (Hidden when parsing) */}
+            {!isParsing && (
+              <div
+                className={`border-2 border-dashed rounded-2xl p-6 transition-all duration-300 ${isDragging ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 bg-slate-50/70 hover:border-indigo-400"
+                  }`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                <div className="flex flex-col items-center text-center space-y-4">
+                  {/* Icon */}
+                  <div className="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
+                    <UploadCloud size={24} />
+                  </div>
 
-                {/* Text & Button */}
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Drag & Drop resume file here
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Supports PDF, DOC, DOCX (Max 20MB)
-                  </p>
-                </div>
+                  {/* Text & Button */}
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Drag & Drop resume file here
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Supports PDF, DOC, DOCX (Max 20MB)
+                    </p>
+                  </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-400 font-medium">or</span>
-                  <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1.5">
-                    <FileText size={14} />
-                    Browse File
-                    <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileInput} />
-                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400 font-medium">or</span>
+                    <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1.5">
+                      <FileText size={14} />
+                      Browse File
+                      <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileInput} />
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Selected File Details & Source Selection */}
-            {file && (
+            {/* Selected File Details & Source Selection (Hidden when parsing) */}
+            {!isParsing && file && (
               <div className="mt-4 p-4 rounded-2xl border border-slate-200 bg-slate-50/90 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -347,6 +435,10 @@ export default function Upload() {
                       setFile(null);
                       setResumeSource("");
                       setResumeSourceInformerName("");
+                      setParsedResponse(null);
+                      setToastMessage(null);
+                      setPollingError(null);
+                      setShowModal(false);
                     }}
                     className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg transition-colors cursor-pointer"
                     title="Remove file"
@@ -363,7 +455,6 @@ export default function Upload() {
                   <select
                     value={resumeSource}
                     onChange={(e) => setResumeSource(e.target.value)}
-                    disabled={isParsing}
                     className="w-full sm:w-64 bg-white border border-slate-300 text-xs font-semibold text-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-pointer shadow-xs"
                   >
                     {sourceOptions.map((opt) => (
@@ -385,7 +476,6 @@ export default function Upload() {
                       placeholder="Enter informer / sourcer name..."
                       value={resumeSourceInformerName}
                       onChange={(e) => setResumeSourceInformerName(e.target.value)}
-                      disabled={isParsing}
                       className="w-full sm:w-64 bg-white border border-slate-300 text-xs font-semibold text-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-text shadow-xs"
                     />
                   </div>
@@ -396,20 +486,155 @@ export default function Upload() {
                   <div className="pt-3 border-t border-slate-200/80 flex justify-end">
                     <button
                       onClick={handleParse}
-                      disabled={isParsing}
-                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md cursor-pointer animate-fadeIn"
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer animate-fadeIn"
                     >
-                      {isParsing ? (
-                        <>
-                          <Loader2 className="animate-spin" size={14} />
-                          Extracting AI Data...
-                        </>
-                      ) : (
-                        <>Start AI Parsing</>
-                      )}
+                      Start AI Parsing
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* AI Parsing Progress Loader & Notification Card (Full Width Un-truncated Layout) */}
+            {isParsing && (
+              <div className="mt-2 p-8 bg-white rounded-3xl shadow-sm border border-slate-200 border-t-4 border-t-indigo-600 space-y-6 relative overflow-hidden animate-fadeIn font-sans max-w-5xl mx-auto">
+
+                {/* Header Section */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    {/* Animated Circular Spinner Container */}
+                    <div className="w-16 h-16 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs relative">
+                      <Loader2 className="animate-spin text-indigo-600" size={32} />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-lg font-bold text-slate-900 tracking-tight">AI Resume Parsing in Progress</h3>
+                        <span className="bg-indigo-50 border border-indigo-200 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-full inline-flex items-center gap-1.5 shadow-2xs">
+                          <Sparkles size={12} className="text-indigo-500 animate-spin" /> AI Active
+                        </span>
+                      </div>
+                      <p className="text-xs text-indigo-600 font-semibold mt-0.5">{parsingStatusText}</p>
+                    </div>
+                  </div>
+
+                  {/* Time Elapsed Widget */}
+                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl px-5 py-3 flex items-center gap-3.5 shadow-2xs self-stretch sm:self-auto justify-between sm:justify-start shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                      <Clock size={20} className="text-indigo-600 animate-pulse" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-slate-400 font-medium">Time Elapsed</span>
+                      <span className="text-base font-bold text-slate-900 font-mono leading-none">{formatTime(elapsedSeconds)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* File Details Container Card */}
+                {file && (
+                  <div className="bg-slate-50/70 border border-slate-200/70 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-3.5 overflow-hidden w-full sm:w-auto">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                        <FileText size={22} />
+                      </div>
+                      <div className="space-y-0.5 overflow-hidden">
+                        <h4 className="text-xs font-bold text-slate-800 font-mono break-all">{file.name}</h4>
+                        <p className="text-[11px] text-slate-400 font-medium">({(file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                      </div>
+                    </div>
+
+                    {resumeSource && (
+                      <span className="bg-indigo-50 text-indigo-600 border border-indigo-100 text-xs font-semibold px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5 shrink-0">
+                        <Send size={12} className="text-indigo-500" />
+                        Source: {sourceOptions.find(s => s.value === resumeSource)?.label || resumeSource}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Progress Bar Section */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-900 font-bold flex items-center gap-2">
+                      <Cpu size={16} className="text-indigo-600" />
+                      Extraction Progress
+                    </span>
+                    <span className="text-indigo-600 font-mono font-bold text-sm">{parsingProgress}%</span>
+                  </div>
+
+                  <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60 shadow-inner">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500 rounded-full transition-all duration-700 ease-out"
+                      style={{ width: `${parsingProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Step Wizard Steps Connected by Dashed Line (Un-truncated Text Labels) */}
+                <div className="relative pt-2">
+                  {/* Dashed connecting background line */}
+                  <div className="hidden sm:block absolute top-1/2 left-10 right-10 h-0.5 border-t-2 border-dashed border-slate-200 -z-0"></div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 relative z-10">
+                    {/* Step 1 */}
+                    <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 transition-all ${
+                      parsingStep >= 1 ? "bg-indigo-50/80 border-indigo-200 text-indigo-600 shadow-2xs" : "bg-slate-50/70 border-slate-200/80 text-slate-400"
+                    }`}>
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        parsingStep >= 1 ? "bg-indigo-600 text-white" : "bg-slate-400 text-white"
+                      }`}>01</span>
+                      <UploadCloud size={18} className={parsingStep >= 1 ? "text-indigo-600 shrink-0" : "text-slate-400 shrink-0"} />
+                      <span className={`text-xs font-bold whitespace-nowrap ${parsingStep >= 1 ? "text-indigo-600" : "text-slate-500"}`}>File Upload</span>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 transition-all ${
+                      parsingStep >= 2 ? "bg-indigo-50/80 border-indigo-200 text-indigo-600 shadow-2xs" : "bg-slate-50/70 border-slate-200/80 text-slate-400"
+                    }`}>
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        parsingStep >= 2 ? "bg-indigo-600 text-white" : "bg-slate-400 text-white"
+                      }`}>02</span>
+                      <FileText size={18} className={parsingStep >= 2 ? "text-indigo-600 shrink-0" : "text-slate-400 shrink-0"} />
+                      <span className={`text-xs font-bold whitespace-nowrap ${parsingStep >= 2 ? "text-indigo-600" : "text-slate-500"}`}>Text Extraction</span>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 transition-all ${
+                      parsingStep >= 3 ? "bg-indigo-50/80 border-indigo-200 text-indigo-600 shadow-2xs" : "bg-slate-50/70 border-slate-200/80 text-slate-400"
+                    }`}>
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        parsingStep >= 3 ? "bg-indigo-600 text-white" : "bg-slate-400 text-white"
+                      }`}>03</span>
+                      <Brain size={18} className={parsingStep >= 3 ? "text-indigo-600 shrink-0" : "text-slate-400 shrink-0"} />
+                      <span className={`text-xs font-bold whitespace-nowrap ${parsingStep >= 3 ? "text-indigo-600" : "text-slate-500"}`}>AI Deep Analysis</span>
+                    </div>
+
+                    {/* Step 4 */}
+                    <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 transition-all ${
+                      parsingStep >= 4 ? "bg-indigo-50/80 border-indigo-200 text-indigo-600 shadow-2xs" : "bg-slate-50/70 border-slate-200/80 text-slate-400"
+                    }`}>
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        parsingStep >= 4 ? "bg-indigo-600 text-white" : "bg-slate-400 text-white"
+                      }`}>04</span>
+                      <User size={18} className={parsingStep >= 4 ? "text-indigo-600 shrink-0" : "text-slate-400 shrink-0"} />
+                      <span className={`text-xs font-bold whitespace-nowrap ${parsingStep >= 4 ? "text-indigo-600" : "text-slate-500"}`}>Profile Ready</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Large Resume Notice Box */}
+                <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-4 flex items-start gap-4 text-amber-900">
+                  <div className="w-9 h-9 rounded-full border-2 border-amber-500 flex items-center justify-center text-amber-600 font-bold text-base shrink-0 bg-amber-100/50">
+                    !
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-amber-900">Large Resume Notice</h4>
+                    <p className="text-xs text-amber-800/90 font-medium leading-relaxed">
+                      Detailed resumes with multiple pages take extra processing time to extract work experience, projects, and skills accurately. Please do not refresh or close this browser tab while parsing.
+                    </p>
+                  </div>
+                </div>
+
               </div>
             )}
 
@@ -456,33 +681,33 @@ export default function Upload() {
             )}
           </div>
 
-          {/* Right Column: Tips & Recent Uploads */}
-          <div className="space-y-6">
-            {/* Upload Tips Box */}
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">Upload Tips</h3>
-              <ul className="space-y-3 text-xs text-slate-700">
-                <li className="flex items-start gap-2">
-                  <span className="text-slate-400 text-base leading-none">◇</span>
-                  <span>Upload latest resume (PDF / DOC / DOCX)</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-slate-400 text-base leading-none">◇</span>
-                  <span>Ensure all experience sections are clear</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-slate-400 text-base leading-none">◇</span>
-                  <span>Auto extracts Skills, Projects, CTC & History</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-slate-400 text-base leading-none">◇</span>
-                  <span>Max file size: 20MB</span>
-                </li>
-              </ul>
+          {/* Right Column: Tips & Recent Uploads (Hidden when parsing) */}
+          {!isParsing && (
+            <div className="space-y-6">
+              {/* Upload Tips Box */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                <h3 className="text-sm font-bold text-slate-900">Upload Tips</h3>
+                <ul className="space-y-3 text-xs text-slate-700">
+                  <li className="flex items-start gap-2">
+                    <span className="text-slate-400 text-base leading-none">◇</span>
+                    <span>Upload latest resume (PDF / DOC / DOCX)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-slate-400 text-base leading-none">◇</span>
+                    <span>Ensure all experience sections are clear</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-slate-400 text-base leading-none">◇</span>
+                    <span>Auto extracts Skills, Projects, CTC & History</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-slate-400 text-base leading-none">◇</span>
+                    <span>Max file size: 20MB</span>
+                  </li>
+                </ul>
+              </div>
             </div>
-
-
-          </div>
+          )}
         </div>
       </div>
 

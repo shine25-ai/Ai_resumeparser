@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   Filter, Search, RefreshCw, UserCheck, X, Calendar, CheckSquare, Square, FileText, CheckCircle,
   Briefcase, Clock, MapPin, ShieldCheck, Mail, Layers, AlignLeft, Sparkles, Video, Hash,
-  Upload, Building2
+  Upload, Building2, AlertCircle, UserX
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, type MatchFilterParams, type InterviewTypeEnum } from "../utils/Api";
+import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, type MatchFilterParams, type InterviewTypeEnum } from "../utils/Api";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -56,6 +56,44 @@ export default function JDMatch() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [blockedCandidatesList, setBlockedCandidatesList] = useState<any[]>([]);
+  const [ignoredCandidateIds, setIgnoredCandidateIds] = useState<string[]>([]);
+  const [checkingActiveStatus, setCheckingActiveStatus] = useState<boolean>(false);
+
+  // Ignore single blocked candidate from batch assignment
+  const handleIgnoreCandidate = (candidateId: string) => {
+    setBlockedCandidatesList((prev) => prev.filter((b) => b.candidate_id !== candidateId));
+    const newIgnored = [...new Set([...ignoredCandidateIds, candidateId])];
+    setIgnoredCandidateIds(newIgnored);
+
+    // Calculate remaining active target candidates count
+    const baseTargets = selectedCandidateIds.length > 0
+      ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
+      : matchedResumes;
+    const remainingCount = baseTargets.filter((r) => !newIgnored.includes(r.id)).length;
+
+    if (remainingCount <= 0) {
+      setIsAssignModalOpen(false);
+    }
+  };
+
+  // Skip & Exclude all blocked candidates at once
+  const handleIgnoreAllBlockedCandidates = () => {
+    const blockedIds = blockedCandidatesList.map((b) => b.candidate_id);
+    const newIgnored = [...new Set([...ignoredCandidateIds, ...blockedIds])];
+    setIgnoredCandidateIds(newIgnored);
+    setBlockedCandidatesList([]);
+
+    // Calculate remaining active target candidates count
+    const baseTargets = selectedCandidateIds.length > 0
+      ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
+      : matchedResumes;
+    const remainingCount = baseTargets.filter((r) => !newIgnored.includes(r.id)).length;
+
+    if (remainingCount <= 0) {
+      setIsAssignModalOpen(false);
+    }
+  };
 
   // Form State for Global Interview Assignment
   const [interviewForm, setInterviewForm] = useState({
@@ -114,7 +152,7 @@ export default function JDMatch() {
     const fetchSummaryDropdowns = async () => {
       try {
         const res = await getParsedResumeSummary();
-        
+
         if (res) {
           setSummaryOptions({
             locations: res.locations || [],
@@ -196,7 +234,7 @@ export default function JDMatch() {
   // Generate suggestions based on search input
   const getSuggestions = () => {
     const lowerInput = searchInput.toLowerCase().trim();
-    
+
     const filterOpts = (opts: (string | number)[], category: FilterCategory) => {
       return Array.from(new Set(opts))
         .filter(opt => String(opt).toLowerCase().includes(lowerInput))
@@ -251,8 +289,8 @@ export default function JDMatch() {
     );
   };
 
-  // Open Global Interview Assignment Modal
-  const handleOpenAssignModal = () => {
+  // Open Global Interview Assignment Modal with Backend API Check
+  const handleOpenAssignModal = async () => {
     const defaultJobPill = pills.find((p) => p.category === "Job Title");
     const jobTitleVal = defaultJobPill ? String(defaultJobPill.value) : "Software Engineer";
 
@@ -260,7 +298,38 @@ export default function JDMatch() {
       ...prev,
       job_title: prev.job_title || jobTitleVal,
     }));
+
     setIsAssignModalOpen(true);
+    setCheckingActiveStatus(true);
+    setBlockedCandidatesList([]);
+    setIgnoredCandidateIds([]);
+
+    // Determine target candidate records
+    const targetResumes = selectedCandidateIds.length > 0
+      ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
+      : matchedResumes;
+
+    const blocked: any[] = [];
+    for (const r of targetResumes) {
+      const p = r.parsed_data || {};
+      const nameStr = p.full_name || p.name || r.original_filename || "Candidate";
+      try {
+        const res = await checkCandidateActiveInterviewStatus(r.id, nameStr);
+        if (res && res.has_active_interview) {
+          blocked.push({
+            candidate_id: r.id,
+            candidate_name: nameStr,
+            status: res.status,
+            message: res.message,
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to check active interview status from backend:", r.id, err);
+      }
+    }
+
+    setBlockedCandidatesList(blocked);
+    setCheckingActiveStatus(false);
   };
 
   // Submit Global Interview Assignment to Backend
@@ -270,10 +339,17 @@ export default function JDMatch() {
     setSuccessMessage(null);
 
     try {
-      // Determine targets: selected candidate records, or all matched candidate records
-      const targetResumes = selectedCandidateIds.length > 0
-        ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
-        : matchedResumes;
+      if (blockedCandidatesList.length > 0) {
+        setAssignLoading(false);
+        return;
+      }
+
+      // Determine targets: selected candidate records, or all matched candidate records (excluding ignored candidates)
+      const targetResumes = (
+        selectedCandidateIds.length > 0
+          ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
+          : matchedResumes
+      ).filter((r) => !ignoredCandidateIds.includes(r.id));
 
       if (targetResumes.length === 0) {
         alert("No candidates available to assign interview.");
@@ -344,7 +420,7 @@ export default function JDMatch() {
   };
 
   return (
-    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
+    <div className="bg-white text-slate-800 min-h-screen p-2 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
       {/* Success Banner */}
       {successMessage && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex items-center justify-between shadow-xs">
@@ -398,7 +474,7 @@ export default function JDMatch() {
             <label className="text-[11px] font-semibold text-slate-600 block">
               Search by Skills, Location, Role, Experience, or Year of Passing
             </label>
-            
+
             <div className="relative" ref={dropdownRef}>
               <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
                 <Search size={16} className="text-slate-400 mr-2" />
@@ -467,7 +543,7 @@ export default function JDMatch() {
                   </button>
                 )}
               </div>
-              
+
               <div className="flex flex-wrap gap-2 min-h-[32px]">
                 {pills.length > 0 ? (
                   pills.map((pill) => (
@@ -525,8 +601,8 @@ export default function JDMatch() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 text-[11px] text-slate-500 font-semibold uppercase tracking-wider">
-                <th className="py-3 px-3 w-10">
+              <tr className="border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase tracking-wider bg-slate-50/70">
+                <th className="py-3 px-3.5 w-10">
                   <button onClick={handleSelectAll} className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer">
                     {selectedCandidateIds.length > 0 && selectedCandidateIds.length === matchedResumes.length ? (
                       <CheckSquare size={16} className="text-indigo-600" />
@@ -535,19 +611,17 @@ export default function JDMatch() {
                     )}
                   </button>
                 </th>
-                <th className="py-3 px-3">Candidate Name</th>
-                <th className="py-3 px-3">Designation / Role</th>
-                <th className="py-3 px-3">Experience</th>
-                <th className="py-3 px-3">Location</th>
-                <th className="py-3 px-3">Primary Skills</th>
-                <th className="py-3 px-3">AI Tech Score</th>
-                <th className="py-3 px-3 text-right">Actions</th>
+                <th className="py-3 px-3.5">Candidate & Role</th>
+                <th className="py-3 px-3.5">Experience & Location</th>
+                <th className="py-3 px-3.5">Primary Skills</th>
+                <th className="py-3 px-3.5">AI Tech Score</th>
+                <th className="py-3 px-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
+                  <td colSpan={6} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw size={16} className="animate-spin text-indigo-600" />
                       <span>Fetching matched candidates from backend API...</span>
@@ -556,7 +630,7 @@ export default function JDMatch() {
                 </tr>
               ) : matchedResumes.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
+                  <td colSpan={6} className="py-12 text-center text-slate-500">
                     No matching candidate records found. Try adjusting filter parameters.
                   </td>
                 </tr>
@@ -569,55 +643,96 @@ export default function JDMatch() {
                   const exp = p.total_experience_years !== undefined && p.total_experience_years !== null
                     ? `${p.total_experience_years} Yrs`
                     : p.years_of_experience !== undefined
-                    ? `${p.years_of_experience} Yrs`
-                    : "N/A";
+                      ? `${p.years_of_experience} Yrs`
+                      : "N/A";
                   const loc = p.location || "N/A";
                   const skillsList: string[] = p.primary_skills || p.skills || [];
                   const score = evalInfo.ai_technical_score ?? 0;
                   const isSelected = selectedCandidateIds.includes(row.id);
 
                   return (
-                    <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${isSelected ? "bg-indigo-50/50" : ""}`}>
-                      <td className="py-3.5 px-3">
+                    <tr key={row.id} className={`hover:bg-slate-50/80 transition-colors ${isSelected ? "bg-indigo-50/40" : ""}`}>
+                      <td className="py-3.5 px-3.5">
                         <button onClick={() => toggleSelectCandidate(row.id)} className="text-slate-400 hover:text-indigo-600 cursor-pointer">
                           {isSelected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} />}
                         </button>
                       </td>
-                      <td className="py-3.5 px-3 font-bold text-slate-900">{name}</td>
-                      <td className="py-3.5 px-3 text-slate-700 font-medium">{role}</td>
-                      <td className="py-3.5 px-3 text-slate-500">{exp}</td>
-                      <td className="py-3.5 px-3 text-slate-500">{loc}</td>
-                      <td className="py-3.5 px-3">
-                        <div className="flex flex-wrap gap-1 max-w-xs">
-                          {skillsList.slice(0, 4).map((s, idx) => (
-                            <span key={idx} className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] px-2 py-0.5 rounded">
+
+                      {/* Candidate Name & Designation / Role */}
+                      <td className="py-3.5 px-3.5">
+                        <div className="space-y-0.5">
+                          <div className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                            <span>{name}</span>
+                            {p.email && (
+                              <span className="text-[10px] text-slate-400 font-normal font-mono hidden xl:inline">
+                                ({p.email})
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-[11px] px-2 py-0.5 rounded-md inline-block">
+                              {role}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Combined Experience & Location */}
+                      <td className="py-3.5 px-3.5">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-800 font-bold text-xs">
+                            <Clock size={13} className="text-indigo-600 flex-shrink-0" />
+                            <span>{exp}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
+                            <MapPin size={13} className="text-rose-500 flex-shrink-0" />
+                            <span className="truncate max-w-[190px]" title={loc}>{loc}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Primary Skills (2-3 per row horizontal pills) */}
+                      <td className="py-3.5 px-3.5">
+                        <div className="flex flex-wrap items-center gap-1.5 max-w-xs sm:max-w-sm">
+                          {skillsList.slice(0, 3).map((s, idx) => (
+                            <span key={idx} className="bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-bold text-[10px] px-2.5 py-0.5 rounded-lg shadow-2xs">
                               {s}
                             </span>
                           ))}
-                          {skillsList.length > 4 && (
-                            <span className="text-[10px] text-slate-500 font-semibold self-center">
-                              +{skillsList.length - 4} more
+                          {skillsList.length > 3 && (
+                            <span className="bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-2xs">
+                              +{skillsList.length - 3} more
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="py-3.5 px-3">
-                        <span className="font-bold text-emerald-600 text-xs">
+
+                      {/* AI Tech Score */}
+                      <td className="py-3.5 px-3.5">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border shadow-2xs ${score >= 70
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                            : score >= 40
+                              ? "bg-amber-50 border-amber-200 text-amber-700"
+                              : "bg-slate-100 border-slate-200 text-slate-600"
+                          }`}>
                           {score}%
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 text-right">
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-3.5 text-right">
                         {row.s3_url ? (
                           <a
                             href={row.s3_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                            className="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-3 py-1 rounded-xl text-xs font-bold transition-all shadow-2xs"
                           >
-                            View Resume
+                            <FileText size={13} />
+                            <span>View Resume</span>
                           </a>
                         ) : (
-                          <span className="text-slate-400 text-xs">No File</span>
+                          <span className="text-slate-400 text-xs font-medium">No File</span>
                         )}
                       </td>
                     </tr>
@@ -629,15 +744,15 @@ export default function JDMatch() {
         </div>
       </div>
 
-      {/* GLOBAL INTERVIEW ASSIGNMENT MODAL (COLORFUL & USER-FRIENDLY UI) */}
+      {/* GLOBAL INTERVIEW ASSIGNMENT MODAL (COLORFUL & USER-FRIENDLY FULL PAGE UI) */}
       {isAssignModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
-            
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
+
             {/* Modal Header */}
             <div className="flex justify-between items-start border-b border-slate-200 pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-600 shadow-xs">
+                <div className="p-3 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-md text-white">
                   <Sparkles size={22} />
                 </div>
                 <div>
@@ -645,9 +760,24 @@ export default function JDMatch() {
                     <h2 className="text-lg font-bold text-slate-900 tracking-wide">
                       Assign Global Interview Session
                     </h2>
-                    <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-xs">
-                      {selectedCandidateIds.length > 0 ? selectedCandidateIds.length : matchedResumes.length} Candidate(s)
-                    </span>
+                    {(() => {
+                      const baseTargets = selectedCandidateIds.length > 0
+                        ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
+                        : matchedResumes;
+                      const activeCount = baseTargets.filter((r) => !ignoredCandidateIds.includes(r.id)).length;
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-xs">
+                            {activeCount} Candidate(s) Selected
+                          </span>
+                          {ignoredCandidateIds.length > 0 && (
+                            <span className="bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-xs">
+                              ({ignoredCandidateIds.length} Excluded / Ignored)
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Schedule and save interview records for all selected candidates into MongoDB database
@@ -663,297 +793,340 @@ export default function JDMatch() {
               </button>
             </div>
 
+            {/* Warning Banner for Candidates with Active Pending Interviews */}
+            {blockedCandidatesList.length > 0 && (
+              <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-2xl space-y-3 text-xs font-semibold shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/80 pb-2.5">
+                  <div className="flex items-center gap-2 text-amber-950 font-extrabold text-xs">
+                    <AlertCircle size={18} className="text-amber-600 flex-shrink-0" />
+                    <span>Active Interview Session Pending Feedback ({blockedCandidatesList.length} Candidate(s) Verified from DB)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleIgnoreAllBlockedCandidates}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 self-start sm:self-auto"
+                    title="Remove all blocked candidates from interview assignment and enable schedule submit"
+                  >
+                    <UserX size={14} />
+                    <span>Skip & Exclude All Blocked ({blockedCandidatesList.length})</span>
+                  </button>
+                </div>
+                <ul className="space-y-1.5 text-slate-800">
+                  {blockedCandidatesList.map((b, idx) => (
+                    <li key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/80 border border-amber-200 p-2.5 rounded-xl shadow-2xs">
+                      <span>
+                        • Candidate <span className="font-extrabold text-indigo-700">'{b.candidate_name}'</span> already has an assigned interview (Status: <span className="font-black text-amber-800 uppercase">{b.status}</span>) that is not yet completed.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleIgnoreCandidate(b.candidate_id)}
+                        className="inline-flex items-center gap-1 bg-amber-100 hover:bg-amber-200 text-amber-950 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer border border-amber-300 shadow-2xs shrink-0"
+                        title="Exclude this candidate from interview assignment"
+                      >
+                        <UserX size={12} />
+                        <span>Ignore / Exclude</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <form onSubmit={handleAssignInterviewSubmit} className="space-y-6 text-xs">
-              
-              {/* SECTION 1: JOB & INTERVIEW SETUP */}
-              <div className="bg-slate-50 border border-indigo-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
-                  <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
-                    <Briefcase size={15} />
-                    <span>Job Role, Location & Interview Setup</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-mono">Schema: job_location / job_type</span>
-                </div>
+              {/* 2-COLUMN / FULL-PAGE COLORFUL CARD GRID */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      Job Title / Role <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Senior Fullstack Engineer"
-                      value={interviewForm.job_title}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, job_title: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                      required
-                    />
+                {/* SECTION 1: JOB & INTERVIEW SETUP */}
+                <div className="bg-slate-50 border border-indigo-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                    <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
+                      <Briefcase size={15} />
+                      <span>Job Role, Location & Interview Setup</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Schema: job_location / job_type</span>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Building2 size={13} className="text-indigo-600" /> Job Location
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Bangalore / Remote / Hybrid"
-                      value={interviewForm.job_location}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, job_location: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        Job Title / Role <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Senior Fullstack Engineer"
+                        value={interviewForm.job_title}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, job_title: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Building2 size={13} className="text-indigo-600" /> Job Location
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Bangalore / Remote / Hybrid"
+                        value={interviewForm.job_location}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, job_location: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Briefcase size={13} className="text-indigo-600" /> Job Type
+                      </label>
+                      <select
+                        value={interviewForm.job_type}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, job_type: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
+                      >
+                        <option value="Full Time">💼 Full Time</option>
+                        <option value="Part Time">⏱️ Part Time</option>
+                        <option value="Contract">📄 Contract</option>
+                        <option value="Hybrid">🏢 Hybrid</option>
+                        <option value="Remote">🌐 Remote</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Briefcase size={13} className="text-indigo-600" /> Job Type
-                    </label>
-                    <select
-                      value={interviewForm.job_type}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, job_type: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
-                    >
-                      <option value="Full Time">💼 Full Time</option>
-                      <option value="Part Time">⏱️ Part Time</option>
-                      <option value="Contract">📄 Contract</option>
-                      <option value="Hybrid">🏢 Hybrid</option>
-                      <option value="Remote">🌐 Remote</option>
-                    </select>
-                  </div>
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Layers size={13} className="text-indigo-600" /> Interview Type
+                      </label>
+                      <select
+                        value={interviewForm.interview_type}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, interview_type: e.target.value as InterviewTypeEnum })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
+                      >
+                        <option value="TECHNICAL">💻 TECHNICAL</option>
+                        <option value="HR">👥 HR SCREENING</option>
+                        <option value="MANAGERIAL">👔 MANAGERIAL</option>
+                        <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
+                        <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
+                        <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                      </select>
+                    </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Layers size={13} className="text-indigo-600" /> Interview Type
-                    </label>
-                    <select
-                      value={interviewForm.interview_type}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, interview_type: e.target.value as InterviewTypeEnum })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
-                    >
-                      <option value="TECHNICAL">💻 TECHNICAL</option>
-                      <option value="HR">👥 HR SCREENING</option>
-                      <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                      <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                      <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                      <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Hash size={13} className="text-indigo-600" /> Round Number
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={interviewForm.round_number}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, round_number: Number(e.target.value) })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-bold"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 2: SCHEDULE & MEETING LINK */}
-              <div className="bg-slate-50 border border-sky-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                <div className="flex items-center gap-2 text-sky-700 font-bold text-xs border-b border-sky-100 pb-2">
-                  <Clock size={15} />
-                  <span>Date, Time & Video Meeting</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Calendar size={13} className="text-sky-600" /> Scheduled Date <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={interviewForm.scheduled_date}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_date: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Clock size={13} className="text-sky-600" /> Scheduled Time <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="time"
-                      value={interviewForm.scheduled_time}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_time: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Duration (Minutes)</label>
-                    <input
-                      type="number"
-                      step="15"
-                      value={interviewForm.duration_minutes}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, duration_minutes: Number(e.target.value) })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                    />
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Hash size={13} className="text-indigo-600" /> Round Number
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={interviewForm.round_number}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, round_number: Number(e.target.value) })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-bold"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Video size={13} className="text-sky-600" /> Meeting Platform
-                    </label>
-                    <select
-                      value={interviewForm.meeting_platform}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, meeting_platform: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sky-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium cursor-pointer"
-                    >
-                      <option value="Google Meet">🎥 Google Meet</option>
-                      <option value="Zoom">📹 Zoom</option>
-                      <option value="Microsoft Teams">💻 Microsoft Teams</option>
-                      <option value="In Person">🏢 In Person / Office</option>
-                    </select>
+                {/* SECTION 2: SCHEDULE & MEETING LINK */}
+                <div className="bg-slate-50 border border-sky-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center gap-2 text-sky-700 font-bold text-xs border-b border-sky-100 pb-2">
+                    <Clock size={15} />
+                    <span>Date, Time & Video Meeting</span>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
-                    <input
-                      type="text"
-                      placeholder="https://meet.google.com/abc-defg-hij"
-                      value={interviewForm.meeting_link}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, meeting_link: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Calendar size={13} className="text-sky-600" /> Scheduled Date <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={interviewForm.scheduled_date}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_date: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Clock size={13} className="text-sky-600" /> Scheduled Time <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="time"
+                        value={interviewForm.scheduled_time}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_time: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">Duration (Minutes)</label>
+                      <input
+                        type="number"
+                        step="15"
+                        value={interviewForm.duration_minutes}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, duration_minutes: Number(e.target.value) })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Video size={13} className="text-sky-600" /> Meeting Platform
+                      </label>
+                      <select
+                        value={interviewForm.meeting_platform}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, meeting_platform: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sky-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium cursor-pointer"
+                      >
+                        <option value="Google Meet">🎥 Google Meet</option>
+                        <option value="Zoom">📹 Zoom</option>
+                        <option value="Microsoft Teams">💻 Microsoft Teams</option>
+                        <option value="In Person">🏢 In Person / Office</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
+                      <input
+                        type="text"
+                        placeholder="https://meet.google.com/abc-defg-hij"
+                        value={interviewForm.meeting_link}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, meeting_link: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* SECTION 3: INTERVIEWER & LOCATION */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Interviewer Box */}
-                <div className="bg-slate-50 border border-purple-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                  <div className="flex items-center gap-2 text-purple-700 font-bold text-xs border-b border-purple-100 pb-2">
-                    <UserCheck size={15} />
-                    <span>Interviewer Details</span>
+                {/* SECTION 3: INTERVIEWER & LOCATION */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Interviewer Box */}
+                  <div className="bg-slate-50 border border-purple-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                    <div className="flex items-center gap-2 text-purple-700 font-bold text-xs border-b border-purple-100 pb-2">
+                      <UserCheck size={15} />
+                      <span>Interviewer Details</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">Interviewer Name <span className="text-rose-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Alex Rivera (Tech Lead)"
+                        value={interviewForm.interviewer_name}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <Mail size={12} className="text-purple-600" /> Email Address
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="interviewer@company.com"
+                        value={interviewForm.interviewer_email}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_email: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Interviewer Name <span className="text-rose-500">*</span></label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Alex Rivera (Tech Lead)"
-                      value={interviewForm.interviewer_name}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                      required
-                    />
-                  </div>
+                  {/* Location & Verification Box */}
+                  <div className="bg-slate-50 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                      <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs">
+                        <MapPin size={15} />
+                        <span>Interview Location & Verification</span>
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Mail size={12} className="text-purple-600" /> Email Address
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="interviewer@company.com"
-                      value={interviewForm.interviewer_email}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_email: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                    />
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <MapPin size={12} className="text-emerald-600" /> Interview Location
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Conference Room A / Bangalore Office"
+                        value={interviewForm.interview_location || interviewForm.location}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, interview_location: e.target.value, location: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
+                        <ShieldCheck size={12} className="text-emerald-600" /> HR Call Verification
+                      </label>
+                      <select
+                        value={interviewForm.hr_call_verification}
+                        onChange={(e) => setInterviewForm({ ...interviewForm, hr_call_verification: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-bold cursor-pointer"
+                      >
+                        <option value="Verified">✅ Verified (Eligible)</option>
+                        <option value="Pending">⏳ Pending Verification</option>
+                        <option value="Needs Followup">📞 Needs Followup Call</option>
+                        <option value="Not Eligible">❌ Not Eligible</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                {/* Location & Verification Box */}
-                <div className="bg-slate-50 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                  <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
-                    <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs">
-                      <MapPin size={15} />
-                      <span>Interview Location & Verification</span>
+                {/* SECTION 5: DOCUMENTS & UPLOAD & NOTES */}
+                <div className="bg-slate-50 border border-rose-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-rose-100 pb-2">
+                    <div className="flex items-center gap-2 text-rose-700 font-bold text-xs">
+                      <FileText size={15} />
+                      <span>Interview Document Files (URLs & Upload)</span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <MapPin size={12} className="text-emerald-600" /> Interview Location
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Conference Room A / Bangalore Office"
-                      value={interviewForm.interview_location || interviewForm.location}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, interview_location: e.target.value, location: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-700 font-semibold flex items-center gap-1">
+                        <FileText size={12} className="text-rose-600" /> Attached Document Files (URLs or Uploaded filenames)
+                      </label>
+                      {/* FILE UPLOAD BUTTON */}
+                      <label className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
+                        <Upload size={13} />
+                        <span>Browse / Attach Files</span>
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    <textarea
+                      rows={2}
+                      value={interviewForm.interview_document_files}
+                      onChange={(e) => setInterviewForm({ ...interviewForm, interview_document_files: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-[11px]"
+                      placeholder="Document names or URLs (one per line)... Use button above to attach files directly."
                     />
                   </div>
 
                   <div>
                     <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <ShieldCheck size={12} className="text-emerald-600" /> HR Call Verification
+                      <AlignLeft size={12} className="text-rose-600" /> Notes / Special Instructions
                     </label>
-                    <select
-                      value={interviewForm.hr_call_verification}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, hr_call_verification: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-bold cursor-pointer"
-                    >
-                      <option value="Verified">✅ Verified (Eligible)</option>
-                      <option value="Pending">⏳ Pending Verification</option>
-                      <option value="Needs Followup">📞 Needs Followup Call</option>
-                      <option value="Not Eligible">❌ Not Eligible</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 5: DOCUMENTS & UPLOAD & NOTES */}
-              <div className="bg-slate-50 border border-rose-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                <div className="flex items-center justify-between border-b border-rose-100 pb-2">
-                  <div className="flex items-center gap-2 text-rose-700 font-bold text-xs">
-                    <FileText size={15} />
-                    <span>Interview Document Files (URLs & Upload)</span>
+                    <textarea
+                      rows={2}
+                      value={interviewForm.notes}
+                      onChange={(e) => setInterviewForm({ ...interviewForm, notes: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                      placeholder="Key assessment areas, candidate prep notes, internal guidelines..."
+                    />
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-slate-700 font-semibold flex items-center gap-1">
-                      <FileText size={12} className="text-rose-600" /> Attached Document Files (URLs or Uploaded filenames)
-                    </label>
-                    {/* FILE UPLOAD BUTTON */}
-                    <label className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                      <Upload size={13} />
-                      <span>Browse / Attach Files</span>
-                      <input
-                        type="file"
-                        multiple
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-
-                  <textarea
-                    rows={2}
-                    value={interviewForm.interview_document_files}
-                    onChange={(e) => setInterviewForm({ ...interviewForm, interview_document_files: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-[11px]"
-                    placeholder="Document names or URLs (one per line)... Use button above to attach files directly."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                    <AlignLeft size={12} className="text-rose-600" /> Notes / Special Instructions
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={interviewForm.notes}
-                    onChange={(e) => setInterviewForm({ ...interviewForm, notes: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                    placeholder="Key assessment areas, candidate prep notes, internal guidelines..."
-                  />
-                </div>
               </div>
 
               {/* Action Buttons Footer */}
@@ -967,10 +1140,23 @@ export default function JDMatch() {
                 </button>
                 <button
                   type="submit"
-                  disabled={assignLoading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                  disabled={blockedCandidatesList.length > 0 || checkingActiveStatus || assignLoading}
+                  title={
+                    blockedCandidatesList.length > 0
+                      ? `Cannot assign: ${blockedCandidatesList.length} candidate(s) already have an active pending interview.`
+                      : "Save & Assign Interviews Globally"
+                  }
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all ${blockedCandidatesList.length > 0 || checkingActiveStatus || assignLoading
+                      ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none opacity-60"
+                      : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md cursor-pointer active:scale-95"
+                    }`}
                 >
-                  {assignLoading ? (
+                  {checkingActiveStatus ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" />
+                      <span>Checking Candidate DB Status...</span>
+                    </>
+                  ) : assignLoading ? (
                     <>
                       <RefreshCw size={16} className="animate-spin" />
                       <span>Saving Interviews into MongoDB...</span>
@@ -978,7 +1164,14 @@ export default function JDMatch() {
                   ) : (
                     <>
                       <Sparkles size={16} />
-                      <span>Save & Assign Interviews Globally</span>
+                      <span>
+                        Save & Assign Interviews Globally ({
+                          (selectedCandidateIds.length > 0
+                            ? matchedResumes.filter((r) => selectedCandidateIds.includes(r.id))
+                            : matchedResumes
+                          ).filter((r) => !ignoredCandidateIds.includes(r.id)).length
+                        })
+                      </span>
                     </>
                   )}
                 </button>

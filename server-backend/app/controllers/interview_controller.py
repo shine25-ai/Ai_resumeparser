@@ -169,3 +169,19 @@ class InterviewController:
             message="Feedback questions retrieved successfully.",
         )
 
+    async def get_next_round_number(self, candidate_id: str, interview_type: Optional[str] = None) -> JSONResponse:
+        """Get calculated next round number for a candidate."""
+        res = await self.interview_service.get_next_round_number(candidate_id, interview_type=interview_type)
+        return success_response(
+            data=res,
+            message="Next round number calculated successfully.",
+        )
+
+    async def check_candidate_active_status(self, candidate_id: str, candidate_name: Optional[str] = None) -> JSONResponse:
+        """Check candidate active incomplete interview status from database."""
+        res = await self.interview_service.check_candidate_active_status(candidate_id, candidate_name=candidate_name)
+        return success_response(
+            data=res,
+            message="Candidate active status checked successfully.",
+        )
+

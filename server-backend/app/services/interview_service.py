@@ -37,6 +37,18 @@ class InterviewService:
 
     async def create_interview(self, payload: InterviewCreateRequest, created_by: Optional[str] = None) -> InterviewResponse:
         """Schedule a new interview document."""
+        # Validation: Ensure candidate does not already have an active incomplete interview session
+        active_interviews = await self.interview_repo.get_active_incomplete_by_candidate(
+            candidate_id=payload.candidate_id, candidate_name=payload.candidate_name
+        )
+        if active_interviews:
+            active = active_interviews[0]
+            st = active.get("status", "SCHEDULED")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot schedule interview/next round. Candidate '{payload.candidate_name}' already has an active interview session (Status: {st}) that is not completed yet. Please submit feedback to complete the previous round first."
+            )
+
         interview_doc = InterviewDocument(
             candidate_id=payload.candidate_id,
             candidate_name=payload.candidate_name,
@@ -78,6 +90,8 @@ class InterviewService:
             client_notes=payload.client_notes,
             client_name=payload.client_name,
             client_feedback_date=payload.client_feedback_date,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else [],
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else [],
             notes=payload.notes,
             created_by=created_by,
             updated_by=created_by,
@@ -94,6 +108,18 @@ class InterviewService:
         created_interviews: List[InterviewResponse] = []
 
         for candidate in payload.candidates:
+            # Validation: Ensure candidate does not already have an active incomplete interview session
+            active_interviews = await self.interview_repo.get_active_incomplete_by_candidate(
+                candidate_id=candidate.candidate_id, candidate_name=candidate.candidate_name
+            )
+            if active_interviews:
+                active = active_interviews[0]
+                st = active.get("status", "SCHEDULED")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot batch schedule interview. Candidate '{candidate.candidate_name}' already has an active interview session (Status: {st}) that is not completed yet. Please complete current interview round first."
+                )
+
             loc = candidate.interview_location or candidate.location or payload.interview_location or payload.location
             interview_doc = InterviewDocument(
                 candidate_id=candidate.candidate_id,
@@ -271,6 +297,7 @@ class InterviewService:
             client_name=payload.client_name,
             client_feedback_date=payload.client_feedback_date,
             updated_by=updated_by,
+            candidate_requested_date_time=payload.candidate_requested_date_time,
             candidate_requested_date=payload.candidate_requested_date,
             candidate_requested_time=payload.candidate_requested_time,
             candidate_requested_role=payload.candidate_requested_role,
@@ -278,10 +305,49 @@ class InterviewService:
             final_fit_salary=payload.final_fit_salary,
             joining_date=payload.joining_date,
             interview_document_files=payload.interview_document_files,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
+            skill_ratings=[s.model_dump() for s in payload.skill_ratings] if payload.skill_ratings else None,
+            category_scores=[cat.model_dump() for cat in payload.category_scores] if payload.category_scores else None,
+            ai_score=payload.ai_score,
+            ai_recommendation=payload.ai_recommendation,
+            hr_call_verification=payload.hr_call_verification,
+            location=payload.location,
+            interview_location=payload.interview_location,
+            meeting_link=payload.meeting_link,
+            meeting_platform=payload.meeting_platform,
         )
 
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
         return InterviewResponse.model_validate(updated_doc)
+
+    async def get_next_round_number(self, candidate_id: str, interview_type: Optional[str] = None) -> Dict[str, Any]:
+        """Calculate the next round number for a candidate, specifically per interview_type if provided."""
+        raw_interviews = await self.interview_repo.get_by_candidate_id(candidate_id, skip=0, limit=200)
+        
+        if not raw_interviews:
+            return {"candidate_id": candidate_id, "interview_type": interview_type, "next_round_number": 1}
+
+        matching_rounds = []
+        if interview_type:
+            norm_type = interview_type.upper().strip()
+            for doc in raw_interviews:
+                doc_type = str(doc.get("interview_type", "")).upper().strip()
+                if doc_type == norm_type:
+                    matching_rounds.append(doc.get("round_number", 1))
+        
+        if matching_rounds:
+            next_round = max(matching_rounds) + 1
+        else:
+            # If no rounds of this specific type exist, default to 1 for this type, or max total rounds + 1
+            next_round = max((doc.get("round_number", 1) for doc in raw_interviews), default=0) + 1 if not interview_type else 1
+
+        return {
+            "candidate_id": candidate_id,
+            "interview_type": interview_type,
+            "next_round_number": next_round,
+            "total_existing_rounds": len(raw_interviews)
+        }
 
     async def bulk_submit_feedback(
         self,
@@ -718,6 +784,32 @@ class InterviewService:
         return {
             "interview_type": norm_type,
             "questions": questions
+        }
+
+    async def check_candidate_active_status(self, candidate_id: str, candidate_name: Optional[str] = None) -> Dict[str, Any]:
+        """Check candidate active incomplete interview status directly from database."""
+        active_interviews = await self.interview_repo.get_active_incomplete_by_candidate(
+            candidate_id=candidate_id, candidate_name=candidate_name
+        )
+        if active_interviews:
+            active = active_interviews[0]
+            st = active.get("status", "SCHEDULED")
+            cand_name = active.get("candidate_name") or candidate_name or "Candidate"
+            return {
+                "has_active_interview": True,
+                "interview_id": active.get("id"),
+                "candidate_id": active.get("candidate_id"),
+                "candidate_name": cand_name,
+                "status": st,
+                "job_title": active.get("job_title"),
+                "scheduled_date": active.get("scheduled_date"),
+                "scheduled_time": active.get("scheduled_time"),
+                "round_number": active.get("round_number", 1),
+                "message": f"Cannot assign new interview. Candidate '{cand_name}' already has an assigned interview session (Status: {st}) that is not yet completed. Please complete feedback for the previous round first."
+            }
+        return {
+            "has_active_interview": False,
+            "message": "Candidate has no active pending interviews."
         }
 
 

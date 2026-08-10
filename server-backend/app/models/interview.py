@@ -71,6 +71,12 @@ class InterviewDocument(BaseModel):
     strengths: List[str] = Field(default_factory=list)
     weaknesses: List[str] = Field(default_factory=list)
 
+    # Dynamic Skills Ratings & Weighted Category Evaluations & AI Score Calculation
+    skill_ratings: List[Dict[str, Any]] = Field(default_factory=list)
+    category_scores: List[Dict[str, Any]] = Field(default_factory=list)
+    ai_score: Optional[float] = None
+    ai_recommendation: Optional[str] = None
+
     # Client Feedback
     client_rating: Optional[float] = None
     client_feedback: Optional[str] = None
@@ -80,6 +86,10 @@ class InterviewDocument(BaseModel):
     client_notes: Optional[str] = None
     client_name: Optional[str] = None
     client_feedback_date: Optional[str] = None
+
+    # Multiple Interviewers & Clients Panel Support
+    interviewers: List[Dict[str, Any]] = Field(default_factory=list)
+    clients: List[Dict[str, Any]] = Field(default_factory=list)
 
     # Recommendation
     recommendation: Optional[str] = None  # Selected / Rejected / Next Round / Hold

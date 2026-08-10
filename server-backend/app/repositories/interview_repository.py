@@ -26,6 +26,31 @@ class InterviewRepository(BaseRepository):
             descending=True,
         )
 
+    async def get_active_incomplete_by_candidate(
+        self, candidate_id: str, candidate_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch incomplete/active interviews for candidate by candidate_id or candidate_name."""
+        or_conds: List[Dict[str, Any]] = [{"candidate_id": candidate_id}]
+        if candidate_name and candidate_name.strip():
+            or_conds.append({"candidate_name": candidate_name.strip()})
+
+        query = {
+            "$and": [
+                {"$or": or_conds},
+                {
+                    "status": {
+                        "$nin": [
+                            InterviewStatus.COMPLETED.value,
+                            InterviewStatus.CANCELLED.value,
+                            "COMPLETED",
+                            "CANCELLED",
+                        ]
+                    }
+                },
+            ]
+        }
+        return await self.find_many(query=query, limit=10)
+
     async def filter_interviews(
         self,
         candidate_id: Optional[str] = None,
@@ -142,6 +167,7 @@ class InterviewRepository(BaseRepository):
         client_name: Optional[str] = None,
         client_feedback_date: Optional[str] = None,
         updated_by: Optional[str] = None,
+        candidate_requested_date_time: Optional[str] = None,
         candidate_requested_date: Optional[str] = None,
         candidate_requested_time: Optional[str] = None,
         candidate_requested_role: Optional[str] = None,
@@ -149,6 +175,17 @@ class InterviewRepository(BaseRepository):
         final_fit_salary: Optional[str] = None,
         joining_date: Optional[str] = None,
         interview_document_files: Optional[List[str]] = None,
+        interviewers: Optional[List[Dict[str, Any]]] = None,
+        clients: Optional[List[Dict[str, Any]]] = None,
+        skill_ratings: Optional[List[Dict[str, Any]]] = None,
+        category_scores: Optional[List[Dict[str, Any]]] = None,
+        ai_score: Optional[float] = None,
+        ai_recommendation: Optional[str] = None,
+        hr_call_verification: Optional[str] = None,
+        location: Optional[str] = None,
+        interview_location: Optional[str] = None,
+        meeting_link: Optional[str] = None,
+        meeting_platform: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update feedback (interviewer round and/or client feedback) for an interview document."""
         update_data: Dict[str, Any] = {
@@ -156,6 +193,19 @@ class InterviewRepository(BaseRepository):
             "updated_by": updated_by,
             "updated_at": utc_now().isoformat(),
         }
+
+        if interviewers is not None:
+            update_data["interviewers"] = interviewers
+        if clients is not None:
+            update_data["clients"] = clients
+        if skill_ratings is not None:
+            update_data["skill_ratings"] = skill_ratings
+        if category_scores is not None:
+            update_data["category_scores"] = category_scores
+        if ai_score is not None:
+            update_data["ai_score"] = ai_score
+        if ai_recommendation is not None:
+            update_data["ai_recommendation"] = ai_recommendation
 
         if rating is not None:
             update_data["rating"] = rating
@@ -203,12 +253,24 @@ class InterviewRepository(BaseRepository):
         if interview_document_files is not None:
             update_data["interview_document_files"] = interview_document_files
 
+        if hr_call_verification is not None:
+            update_data["hr_call_verification"] = hr_call_verification
+        if location is not None:
+            update_data["location"] = location
+        if interview_location is not None:
+            update_data["interview_location"] = interview_location
+        if meeting_link is not None:
+            update_data["meeting_link"] = meeting_link
+        if meeting_platform is not None:
+            update_data["meeting_platform"] = meeting_platform
+
         # Calculate a combined candidate_requested_date_time if provided or updated
-        combined_dt = None
-        if candidate_requested_date:
+        if candidate_requested_date_time is not None:
+            update_data["candidate_requested_date_time"] = candidate_requested_date_time
+        elif candidate_requested_date:
             combined_dt = f"{candidate_requested_date} {candidate_requested_time or ''}".strip()
-        if combined_dt:
-            update_data["candidate_requested_date_time"] = combined_dt
+            if combined_dt:
+                update_data["candidate_requested_date_time"] = combined_dt
 
         return await self.update(interview_id, update_data)
 
