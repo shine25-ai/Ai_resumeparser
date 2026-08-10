@@ -2919,7 +2919,7 @@ export default function InterviewManagement() {
                             </div>
 
                             {/* Conditional Multiple-Selection Observation Reasons Dropdown for Interviewer Rating < 5 */}
-                            {interviewer.rating < 5 && (
+                            {(interviewer.rating ?? 0) < 5 && (
                               <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
                                 <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                                   <HelpCircle size={14} className="text-amber-600" />
@@ -3095,7 +3095,7 @@ export default function InterviewManagement() {
                             </div>
 
                             {/* Conditional Multiple-Selection Observation Reasons Dropdown for Client Rating < 5 */}
-                            {client.client_rating < 5 && (
+                            {(client.client_rating ?? 0) < 5 && (
                               <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
                                 <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                                   <HelpCircle size={14} className="text-amber-600" />
