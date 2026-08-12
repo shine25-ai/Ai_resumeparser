@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.lifespan import lifespan
 from app.middleware.request_logger import RequestLoggerMiddleware
-from app.routes import auth, health, interview, resume, users, dashboard
+from app.routes import auth, health, interview, resume, users, dashboard, roles
 from app.routes import settings as settings_router
 from app.routes import templates
 from app.routes import transcription
@@ -66,6 +66,7 @@ def create_application() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(users.router)
+    app.include_router(roles.router)
     app.include_router(resume.router)
     app.include_router(interview.router)
     app.include_router(settings_router.router)

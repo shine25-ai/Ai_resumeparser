@@ -88,7 +88,9 @@ class InterviewService:
             client_weaknesses=payload.client_weaknesses,
             client_recommendation=payload.client_recommendation,
             client_notes=payload.client_notes,
+            client_id=payload.client_id,
             client_name=payload.client_name,
+            client_email=payload.client_email,
             client_feedback_date=payload.client_feedback_date,
             interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else [],
             clients=[c.model_dump() for c in payload.clients] if payload.clients else [],
@@ -159,8 +161,12 @@ class InterviewService:
                 client_weaknesses=payload.client_weaknesses,
                 client_recommendation=payload.client_recommendation,
                 client_notes=payload.client_notes,
+                client_id=payload.client_id,
                 client_name=payload.client_name,
+                client_email=payload.client_email,
                 client_feedback_date=payload.client_feedback_date,
+                interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else [],
+                clients=[c.model_dump() for c in payload.clients] if payload.clients else [],
                 notes=payload.notes,
                 created_by=created_by,
                 updated_by=created_by,
@@ -738,6 +744,14 @@ class InterviewService:
 
             if not sent_recipients:
                 raise HTTPException(status_code=400, detail="No email recipients selected.")
+
+            # Record email dispatch in database (updates email_sent_count, last_email_sent_at, email_sent_history)
+            email_type = "RESCHEDULE_NOTIFICATION" if "RESCHEDULED" in (payload.custom_notes or "").upper() else "SCHEDULE_NOTIFICATION"
+            await self.interview_repo.record_email_sent(
+                interview_id=interview_id,
+                sent_recipients=sent_recipients,
+                email_type=email_type,
+            )
 
         except HTTPException:
             raise

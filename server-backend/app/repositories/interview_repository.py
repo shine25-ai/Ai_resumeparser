@@ -274,3 +274,36 @@ class InterviewRepository(BaseRepository):
 
         return await self.update(interview_id, update_data)
 
+    async def record_email_sent(
+        self,
+        interview_id: str,
+        sent_recipients: List[str],
+        sent_by: Optional[str] = None,
+        email_type: Optional[str] = "SCHEDULE_NOTIFICATION",
+    ) -> Optional[Dict[str, Any]]:
+        """Increment email_sent_count, update last_email_sent_at timestamp, and append entry to email_sent_history."""
+        now_iso = utc_now().isoformat()
+        recipients_count = len(sent_recipients)
+
+        history_entry = {
+            "sent_at": now_iso,
+            "recipients_count": recipients_count,
+            "recipients": sent_recipients,
+            "sent_by": sent_by,
+            "email_type": email_type,
+        }
+
+        doc = await self.collection.find_one_and_update(
+            {"id": interview_id},
+            {
+                "$inc": {"email_sent_count": 1},
+                "$set": {
+                    "last_email_sent_at": now_iso,
+                    "updated_at": now_iso,
+                },
+                "$push": {"email_sent_history": history_entry},
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        return doc
+

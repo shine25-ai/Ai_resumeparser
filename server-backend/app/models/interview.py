@@ -84,7 +84,9 @@ class InterviewDocument(BaseModel):
     client_weaknesses: List[str] = Field(default_factory=list)
     client_recommendation: Optional[str] = None  # Selected / Rejected / Next Round / Hold
     client_notes: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
     # Multiple Interviewers & Clients Panel Support
@@ -99,6 +101,11 @@ class InterviewDocument(BaseModel):
 
     # Reschedule History
     reschedule_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Email Dispatch Audit Tracking
+    email_sent_count: int = 0
+    last_email_sent_at: Optional[str] = None
+    email_sent_history: List[Dict[str, Any]] = Field(default_factory=list)
 
     # Audit Fields
     created_by: Optional[str] = None

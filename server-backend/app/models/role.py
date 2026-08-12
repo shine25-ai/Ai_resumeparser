@@ -1,22 +1,21 @@
 """
-User entity model representation for MongoDB document persistence.
+Role entity model representation for MongoDB document persistence.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from app.utils.enums import UserRole
 from app.utils.helpers import generate_uuid, utc_now
 
 
-class UserDocument(BaseModel):
-    """MongoDB User Document structure representation."""
+class RoleDocument(BaseModel):
+    """MongoDB Role Document structure representation."""
 
     id: str = Field(default_factory=generate_uuid)
-    full_name: str
-    email: str
-    password: str
-    role: str = "user"
-    is_active: bool = True
+    name: str
+    slug: str
+    description: Optional[str] = ""
+    permissions: List[str] = Field(default_factory=list)
+    is_system: bool = False
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 

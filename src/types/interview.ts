@@ -115,7 +115,9 @@ export interface InterviewItem {
   client_weaknesses?: string[];
   client_recommendation?: string;
   client_notes?: string;
+  client_id?: string;
   client_name?: string;
+  client_email?: string;
   client_feedback_date?: string;
 
   // Multiple Interviewers & Clients Panel Support
@@ -124,6 +126,9 @@ export interface InterviewItem {
 
   notes?: string;
   reschedule_history?: any[];
+  email_sent_count?: number;
+  last_email_sent_at?: string;
+  email_sent_history?: Array<{ sent_at: string; recipients_count?: number; recipients?: string[]; email_type?: string }>;
   created_by?: string;
   updated_by?: string;
   created_at: string;
@@ -168,7 +173,9 @@ export interface CreateInterviewPayload {
   client_weaknesses?: string[];
   client_recommendation?: string;
   client_notes?: string;
+  client_id?: string;
   client_name?: string;
+  client_email?: string;
   client_feedback_date?: string;
 
   interviewers?: InterviewerItem[];
@@ -224,7 +231,9 @@ export interface BatchCreateInterviewPayload {
   client_weaknesses?: string[];
   client_recommendation?: string;
   client_notes?: string;
+  client_id?: string;
   client_name?: string;
+  client_email?: string;
   client_feedback_date?: string;
 
   interviewers?: InterviewerItem[];
@@ -235,6 +244,9 @@ export interface BatchCreateInterviewPayload {
   ai_recommendation?: string;
 
   notes?: string;
+  email_sent_count?: number;
+  last_email_sent_at?: string;
+  email_sent_history?: Array<{ sent_at: string; recipients_count?: number; recipients?: string[]; email_type?: string }>;
 }
 
 export interface UpdateInterviewPayload {
@@ -275,7 +287,9 @@ export interface UpdateInterviewPayload {
   client_weaknesses?: string[];
   client_recommendation?: string;
   client_notes?: string;
+  client_id?: string;
   client_name?: string;
+  client_email?: string;
   client_feedback_date?: string;
 
   interviewers?: InterviewerItem[];
@@ -310,7 +324,9 @@ export interface SubmitFeedbackPayload {
   client_weaknesses?: string[];
   client_recommendation?: string;
   client_notes?: string;
+  client_id?: string;
   client_name?: string;
+  client_email?: string;
   client_feedback_date?: string;
   candidate_requested_date?: string;
   candidate_requested_time?: string;

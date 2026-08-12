@@ -4,19 +4,32 @@ import {
   Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle
 } from "lucide-react";
 import {
-  getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes,
+  getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
   sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, MAIL_TEMPLATES_URL,
-  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem
+  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
 import { SkillRatingsEvaluation } from "../components/SkillRatingsEvaluation";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 
+const formatTimeTo12Hour = (timeStr?: string) => {
+  if (!timeStr) return "";
+  const parts = timeStr.split(":");
+  if (parts.length < 2) return timeStr;
+  const h = parseInt(parts[0], 10);
+  if (isNaN(h)) return timeStr;
+  const period = h >= 12 ? "PM" : "AM";
+  const hours12 = h % 12 || 12;
+  const minutesStr = parts[1] !== undefined ? parts[1] : "00";
+  return `${hours12}:${minutesStr} ${period}`;
+};
+
 export default function InterviewManagement() {
   const [activeTab, setActiveTab] = useState<string>("All");
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [candidatesList, setCandidatesList] = useState<any[]>([]);
+  const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +68,56 @@ export default function InterviewManagement() {
   });
   const [sendMailLoading, setSendMailLoading] = useState<boolean>(false);
   const [sendMailStatus, setSendMailStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Send Email Modal Multiple Recipients States
+  const [interviewerMailRecipients, setInterviewerMailRecipients] = useState<
+    Array<{ send: boolean; name: string; email: string }>
+  >([]);
+  const [clientMailRecipients, setClientMailRecipients] = useState<
+    Array<{ send: boolean; name: string; email: string }>
+  >([]);
+
+  const handleAddInterviewerMailRecipient = () => {
+    setInterviewerMailRecipients((prev) => [
+      ...prev,
+      { send: true, name: `Interviewer ${prev.length + 1}`, email: "" },
+    ]);
+  };
+
+  const handleRemoveInterviewerMailRecipient = (index: number) => {
+    setInterviewerMailRecipients((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleInterviewerMailRecipientChange = (index: number, field: string, value: any) => {
+    setInterviewerMailRecipients((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: value };
+      }
+      return updated;
+    });
+  };
+
+  const handleAddClientMailRecipient = () => {
+    setClientMailRecipients((prev) => [
+      ...prev,
+      { send: true, name: `Client Evaluator ${prev.length + 1}`, email: "" },
+    ]);
+  };
+
+  const handleRemoveClientMailRecipient = (index: number) => {
+    setClientMailRecipients((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleClientMailRecipientChange = (index: number, field: string, value: any) => {
+    setClientMailRecipients((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: value };
+      }
+      return updated;
+    });
+  };
 
   const handleOpenDetails = (item: InterviewItem) => {
     setSelectedInterview(item);
@@ -118,8 +181,12 @@ export default function InterviewManagement() {
     scheduled_date: new Date().toISOString().split("T")[0],
     scheduled_time: "10:00",
     duration_minutes: 60,
+    interviewer_id: "",
     interviewer_name: "",
     interviewer_email: "",
+    client_id: "",
+    client_name: "",
+    client_email: "",
     meeting_platform: "Google Meet",
     meeting_link: "",
     location: "",
@@ -136,6 +203,54 @@ export default function InterviewManagement() {
     recommendation: "Pending",
     notes: "",
   });
+
+  // Multi Interviewer Panel State for Schedule Modal
+  const [scheduleInterviewersList, setScheduleInterviewersList] = useState<InterviewerItem[]>([
+    { interviewer_name: "", interviewer_email: "" },
+  ]);
+
+  // Multi Client Panel State for Schedule Modal
+  const [scheduleClientsList, setScheduleClientsList] = useState<ClientFeedbackItem[]>([
+    { client_name: "", client_email: "" },
+  ]);
+
+  const handleAddScheduleInterviewer = () => {
+    setScheduleInterviewersList((prev) => [...prev, { interviewer_name: "", interviewer_email: "" }]);
+  };
+
+  const handleRemoveScheduleInterviewer = (index: number) => {
+    if (scheduleInterviewersList.length <= 1) return;
+    setScheduleInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleScheduleInterviewerChange = (index: number, field: keyof InterviewerItem, val: any) => {
+    setScheduleInterviewersList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: val };
+      }
+      return updated;
+    });
+  };
+
+  const handleAddScheduleClient = () => {
+    setScheduleClientsList((prev) => [...prev, { client_name: "", client_email: "" }]);
+  };
+
+  const handleRemoveScheduleClient = (index: number) => {
+    if (scheduleClientsList.length <= 1) return;
+    setScheduleClientsList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleScheduleClientChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
+    setScheduleClientsList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: val };
+      }
+      return updated;
+    });
+  };
 
   const [editForm, setEditForm] = useState({
     candidate_name: "",
@@ -184,7 +299,14 @@ export default function InterviewManagement() {
     scheduled_date: "",
     scheduled_time: "",
     reason: "",
+    send_email_notification: true,
+    candidate_name: "",
+    candidate_email: "",
   });
+
+  const [reschedulePanelRecipients, setReschedulePanelRecipients] = useState<
+    Array<{ send: boolean; name: string; email: string; type: "Interviewer" | "Client" }>
+  >([]);
 
   const [feedbackTab, setFeedbackTab] = useState<"INTERVIEWER" | "CLIENT">("INTERVIEWER");
 
@@ -350,9 +472,10 @@ export default function InterviewManagement() {
     setLoading(true);
     setError(null);
     try {
-      const [interviewData, resumesData] = await Promise.all([
+      const [interviewData, resumesData, usersData] = await Promise.all([
         getInterviews(),
         getResumes().catch(() => []),
+        getUsers().catch(() => []),
       ]);
 
       const items = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || [];
@@ -360,6 +483,9 @@ export default function InterviewManagement() {
 
       const resumes = Array.isArray(resumesData) ? resumesData : resumesData?.resumes || [];
       setCandidatesList(resumes);
+
+      const userList = Array.isArray(usersData) ? usersData : (usersData as any)?.users || [];
+      setSystemUsers(userList);
     } catch (err: any) {
       console.error("Failed to load interview management data:", err);
       setError(err.message || "Failed to load interviews.");
@@ -486,9 +612,16 @@ export default function InterviewManagement() {
         ? `${scheduleForm.candidate_requested_date} ${scheduleForm.candidate_requested_time || ""}`.trim()
         : scheduleForm.candidate_requested_date_time;
 
+      const primaryInt: Partial<InterviewerItem> = scheduleInterviewersList[0] || {};
+      const primaryClient: Partial<ClientFeedbackItem> = scheduleClientsList[0] || {};
+
+      const filteredInterviewers = scheduleInterviewersList.filter((i) => i.interviewer_name && i.interviewer_name.trim());
+      const filteredClients = scheduleClientsList.filter((c) => c.client_name && c.client_name.trim());
+
       await createInterview({
         candidate_id: scheduleForm.candidate_id || `cand_${Date.now()}`,
         candidate_name: scheduleForm.candidate_name,
+        candidate_email: scheduleForm.candidate_email || undefined,
         resume_id: scheduleForm.resume_id || undefined,
         job_title: scheduleForm.job_title,
         job_location: scheduleForm.job_location || undefined,
@@ -498,8 +631,14 @@ export default function InterviewManagement() {
         scheduled_date: scheduleForm.scheduled_date,
         scheduled_time: scheduleForm.scheduled_time,
         duration_minutes: Number(scheduleForm.duration_minutes),
-        interviewer_name: scheduleForm.interviewer_name || "Hiring Manager",
-        interviewer_email: scheduleForm.interviewer_email || undefined,
+        interviewer_id: primaryInt.interviewer_id || scheduleForm.interviewer_id || undefined,
+        interviewer_name: primaryInt.interviewer_name || scheduleForm.interviewer_name || "Hiring Manager",
+        interviewer_email: primaryInt.interviewer_email || scheduleForm.interviewer_email || undefined,
+        client_id: primaryClient.client_id || scheduleForm.client_id || undefined,
+        client_name: primaryClient.client_name || scheduleForm.client_name || undefined,
+        client_email: primaryClient.client_email || scheduleForm.client_email || undefined,
+        interviewers: filteredInterviewers.length > 0 ? filteredInterviewers : undefined,
+        clients: filteredClients.length > 0 ? filteredClients : undefined,
         meeting_platform: scheduleForm.meeting_platform,
         meeting_link: scheduleForm.meeting_link || undefined,
         location: scheduleForm.interview_location || scheduleForm.location || undefined,
@@ -641,10 +780,56 @@ export default function InterviewManagement() {
   // Open Reschedule Modal
   const handleOpenReschedule = (item: InterviewItem) => {
     setSelectedInterview(item);
+
+    let candEmail = item.candidate_email || "";
+    if (!candEmail && candidatesList && candidatesList.length > 0) {
+      const matched = candidatesList.find(
+        (c: any) =>
+          (item.candidate_id && (c.id === item.candidate_id || c._id === item.candidate_id)) ||
+          (c.candidate_name && c.candidate_name === item.candidate_name) ||
+          (c.name && c.name === item.candidate_name)
+      );
+      if (matched) {
+        candEmail = matched.email || matched.parsed_data?.email || "";
+      }
+    }
+
+    const intList = item.interviewers && item.interviewers.length > 0
+      ? item.interviewers.map((i) => ({
+          send: true,
+          name: i.interviewer_name || "Interviewer",
+          email: i.interviewer_email || "",
+          type: "Interviewer" as const,
+        }))
+      : item.interviewer_email
+      ? [{ send: true, name: item.interviewer_name || "Interviewer", email: item.interviewer_email, type: "Interviewer" as const }]
+      : [];
+
+    const cliList = item.clients && item.clients.length > 0
+      ? item.clients.map((c) => ({
+          send: true,
+          name: c.client_name || "Client Evaluator",
+          email: c.client_email || "",
+          type: "Client" as const,
+        }))
+      : item.client_email
+      ? [{ send: true, name: item.client_name || "Client Evaluator", email: item.client_email, type: "Client" as const }]
+      : [];
+
+    const combinedRecipients = [...intList, ...cliList];
+    if (combinedRecipients.length === 0) {
+      combinedRecipients.push({ send: true, name: "Interviewer 1", email: "", type: "Interviewer" });
+    }
+
+    setReschedulePanelRecipients(combinedRecipients);
+
     setRescheduleForm({
       scheduled_date: item.scheduled_date || new Date().toISOString().split("T")[0],
       scheduled_time: item.scheduled_time || "10:00",
       reason: "",
+      send_email_notification: true,
+      candidate_name: item.candidate_name || "",
+      candidate_email: candEmail,
     });
     setIsRescheduleOpen(true);
   };
@@ -654,11 +839,34 @@ export default function InterviewManagement() {
     if (!selectedInterview) return;
     try {
       setActionLoading(true);
+
+      // 1. Reschedule interview via backend endpoint
       await rescheduleInterview(selectedInterview.id, {
         scheduled_date: rescheduleForm.scheduled_date,
         scheduled_time: rescheduleForm.scheduled_time,
         reason: rescheduleForm.reason || undefined,
       });
+
+      // 2. Dispatch rescheduled meeting invitation email if notification enabled
+      if (rescheduleForm.send_email_notification) {
+        const formattedNewTime = formatTimeTo12Hour(rescheduleForm.scheduled_time);
+        const rescheduleNotes = `INTERVIEW RESCHEDULED: New Session Date: ${rescheduleForm.scheduled_date} at ${formattedNewTime}.\nReason / Details: ${rescheduleForm.reason || "Schedule adjustment"}\nMeeting Link / Location: ${selectedInterview.meeting_link || selectedInterview.meeting_platform || "Google Meet"}`;
+
+        const activePanelEmails = reschedulePanelRecipients
+          .filter((r) => r.send && r.email.trim())
+          .map((r) => r.email.trim())
+          .join(", ");
+
+        await sendInterviewEmail(selectedInterview.id, {
+          send_to_candidate: true,
+          candidate_email: rescheduleForm.candidate_email.trim() || undefined,
+          send_to_interviewer: activePanelEmails ? true : false,
+          interviewer_email: activePanelEmails || undefined,
+          custom_notes: rescheduleNotes,
+        }).catch((err) => {
+          console.error("Failed to send rescheduled email notification:", err);
+        });
+      }
 
       setIsRescheduleOpen(false);
       fetchAllData();
@@ -842,6 +1050,45 @@ export default function InterviewManagement() {
       template_id: "",
       custom_notes: item.notes || "",
     });
+
+    // Initialize interviewer mail recipient list
+    const initInts =
+      item.interviewers && item.interviewers.length > 0
+        ? item.interviewers.map((i) => ({
+            send: true,
+            name: i.interviewer_name || "Interviewer",
+            email: i.interviewer_email || "",
+          }))
+        : item.interviewer_name || item.interviewer_email
+        ? [
+            {
+              send: true,
+              name: item.interviewer_name || "Interviewer",
+              email: item.interviewer_email || "",
+            },
+          ]
+        : [];
+    setInterviewerMailRecipients(initInts);
+
+    // Initialize client evaluator mail recipient list
+    const initClients =
+      item.clients && item.clients.length > 0
+        ? item.clients.map((c) => ({
+            send: true,
+            name: c.client_name || "Client Evaluator",
+            email: c.client_email || "",
+          }))
+        : item.client_name || item.client_email
+        ? [
+            {
+              send: true,
+              name: item.client_name || "Client Evaluator",
+              email: item.client_email || "",
+            },
+          ]
+        : [];
+    setClientMailRecipients(initClients);
+
     setIsSendMailOpen(true);
     fetchMailTemplates();
   };
@@ -866,8 +1113,16 @@ export default function InterviewManagement() {
     e.preventDefault();
     if (!selectedInterview) return;
 
-    if (!sendMailForm.send_to_candidate && !sendMailForm.send_to_interviewer) {
-      setSendMailStatus({ type: "error", text: "Please check at least Candidate or Interviewer email option." });
+    const activeInterviewerEmails = interviewerMailRecipients
+      .filter((i) => i.send && i.email && i.email.trim())
+      .map((i) => i.email.trim());
+
+    const activeClientEmails = clientMailRecipients
+      .filter((c) => c.send && c.email && c.email.trim())
+      .map((c) => c.email.trim());
+
+    if (!sendMailForm.send_to_candidate && activeInterviewerEmails.length === 0 && activeClientEmails.length === 0) {
+      setSendMailStatus({ type: "error", text: "Please select at least one recipient (Candidate, Interviewer, or Client)." });
       return;
     }
 
@@ -876,24 +1131,24 @@ export default function InterviewManagement() {
       return;
     }
 
-    if (sendMailForm.send_to_interviewer && !sendMailForm.interviewer_email.trim()) {
-      setSendMailStatus({ type: "error", text: "Interviewer email is required to send mail to interviewer." });
-      return;
-    }
-
     try {
       setSendMailLoading(true);
       setSendMailStatus(null);
+
+      const allPanelEmails = [...activeInterviewerEmails, ...activeClientEmails];
+      const combinedPanelEmailStr = allPanelEmails.join(", ") || sendMailForm.interviewer_email.trim() || undefined;
+
       const res = await sendInterviewEmail(selectedInterview.id, {
         send_to_candidate: sendMailForm.send_to_candidate,
         candidate_email: sendMailForm.candidate_email.trim() || undefined,
-        send_to_interviewer: sendMailForm.send_to_interviewer,
-        interviewer_email: sendMailForm.interviewer_email.trim() || undefined,
+        send_to_interviewer: allPanelEmails.length > 0 ? true : sendMailForm.send_to_interviewer,
+        interviewer_email: combinedPanelEmailStr,
         template_id: sendMailForm.template_id || undefined,
         custom_notes: sendMailForm.custom_notes || undefined,
       });
 
-      setSendMailStatus({ type: "success", text: res.message || "Interview email sent successfully!" });
+      setSendMailStatus({ type: "success", text: res.message || "Interview email notifications dispatched successfully!" });
+      fetchAllData();
       setTimeout(() => {
         setIsSendMailOpen(false);
         setSendMailStatus(null);
@@ -1226,13 +1481,22 @@ export default function InterviewManagement() {
                     <td className="py-4 px-4">
                       <div className="font-semibold text-slate-800 text-xs">{row.scheduled_date}</div>
                       <div className="text-[10px] text-slate-500 font-medium">{row.scheduled_time} ({row.timezone || "IST"})</div>
-                      <div className="mt-1">
+                      <div className="mt-1 flex items-center gap-1 flex-wrap">
                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${row.hr_call_verification === "Verified"
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                           : "bg-slate-100 text-slate-700 border-slate-200"
                           }`}>
                           HR: {row.hr_call_verification || "Pending"}
                         </span>
+                        {row.email_sent_count && row.email_sent_count > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border bg-cyan-50 text-cyan-700 border-cyan-200" title={`Last email sent at: ${row.last_email_sent_at || 'N/A'}`}>
+                            <Mail size={10} /> Mail Sent ({row.email_sent_count})
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border bg-slate-50 text-slate-400 border-slate-200">
+                            <Mail size={10} /> Not Sent
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -1472,7 +1736,7 @@ export default function InterviewManagement() {
                     );
                   })()}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-slate-700 mb-1 font-semibold">
                         Candidate Name <span className="text-rose-500">*</span>
@@ -1484,6 +1748,19 @@ export default function InterviewManagement() {
                         onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
                         className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                         required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 mb-1 font-semibold">
+                        Candidate Email
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="candidate@email.com"
+                        value={scheduleForm.candidate_email}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_email: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                       />
                     </div>
 
@@ -1706,31 +1983,177 @@ export default function InterviewManagement() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">
-                        Interviewer Name <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Interviewer Name"
-                        value={scheduleForm.interviewer_name}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, interviewer_name: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
-                        required
-                      />
+                  {/* Multi-Interviewer Panel Section */}
+                  <div className="bg-white border border-sky-200 rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between border-b border-sky-100 pb-2">
+                      <div className="flex items-center gap-2 text-sky-800 font-bold text-xs">
+                        <UserCheck size={14} />
+                        <span>Interviewer Panel Selection ({scheduleInterviewersList.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddScheduleInterviewer}
+                        className="flex items-center gap-1 bg-sky-100 hover:bg-sky-200 text-sky-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Interviewer
+                      </button>
                     </div>
 
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">Interviewer Email</label>
-                      <input
-                        type="email"
-                        placeholder="interviewer@company.com"
-                        value={scheduleForm.interviewer_email}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, interviewer_email: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
-                      />
+                    {scheduleInterviewersList.map((interviewer, idx) => (
+                      <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] font-bold text-sky-900 uppercase">
+                            Interviewer #{idx + 1}
+                          </label>
+                          {scheduleInterviewersList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveScheduleInterviewer(idx)}
+                              className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <select
+                              value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom" || !val) {
+                                  handleScheduleInterviewerChange(idx, "interviewer_id", undefined);
+                                } else {
+                                  const u = systemUsers.find((user) => user.id === val);
+                                  if (u) {
+                                    handleScheduleInterviewerChange(idx, "interviewer_id", u.id);
+                                    handleScheduleInterviewerChange(idx, "interviewer_name", u.full_name);
+                                    handleScheduleInterviewerChange(idx, "interviewer_email", u.email);
+                                  }
+                                }
+                              }}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-sky-500 cursor-pointer"
+                            >
+                              <option value="">-- Choose User --</option>
+                              {systemUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.full_name} ({u.role || u.email})
+                                </option>
+                              ))}
+                              <option value="custom">+ External / Custom</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Interviewer Name *"
+                              value={interviewer.interviewer_name}
+                              onChange={(e) => handleScheduleInterviewerChange(idx, "interviewer_name", e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-sky-500 font-medium"
+                              required={idx === 0}
+                            />
+                          </div>
+
+                          <div>
+                            <input
+                              type="email"
+                              placeholder="interviewer@company.com"
+                              value={interviewer.interviewer_email || ""}
+                              onChange={(e) => handleScheduleInterviewerChange(idx, "interviewer_email", e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-sky-500 font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Multi-Client Panel Section */}
+                  <div className="bg-white border border-teal-200 rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between border-b border-teal-100 pb-2">
+                      <div className="flex items-center gap-2 text-teal-800 font-bold text-xs">
+                        <Building2 size={14} />
+                        <span>Client Evaluator Panel Selection ({scheduleClientsList.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddScheduleClient}
+                        className="flex items-center gap-1 bg-teal-100 hover:bg-teal-200 text-teal-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Client
+                      </button>
                     </div>
+
+                    {scheduleClientsList.map((client, idx) => (
+                      <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] font-bold text-teal-900 uppercase">
+                            Client Evaluator #{idx + 1}
+                          </label>
+                          {scheduleClientsList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveScheduleClient(idx)}
+                              className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <select
+                              value={client.client_id || (client.client_name ? "custom" : "")}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom" || !val) {
+                                  handleScheduleClientChange(idx, "client_id", undefined);
+                                } else {
+                                  const u = systemUsers.find((user) => user.id === val);
+                                  if (u) {
+                                    handleScheduleClientChange(idx, "client_id", u.id);
+                                    handleScheduleClientChange(idx, "client_name", u.full_name);
+                                    handleScheduleClientChange(idx, "client_email", u.email);
+                                  }
+                                }
+                              }}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
+                            >
+                              <option value="">-- Choose User --</option>
+                              {systemUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.full_name} ({u.role || u.email})
+                                </option>
+                              ))}
+                              <option value="custom">+ External / Custom</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Client Name / Company"
+                              value={client.client_name}
+                              onChange={(e) => handleScheduleClientChange(idx, "client_name", e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                            />
+                          </div>
+
+                          <div>
+                            <input
+                              type="email"
+                              placeholder="client@company.com"
+                              value={client.client_email || ""}
+                              onChange={(e) => handleScheduleClientChange(idx, "client_email", e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2597,75 +3020,279 @@ export default function InterviewManagement() {
 
       {/* RESCHEDULE MODAL */}
       {isRescheduleOpen && selectedInterview && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl text-slate-900">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Calendar size={18} className="text-amber-600" /> Reschedule Interview
-              </h2>
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-3 sm:p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200/90 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-900">
+            
+            {/* Modal Header (Fixed at top) */}
+            <div className="px-6 py-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-slate-200 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl shadow-md">
+                  <Calendar size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                    Reschedule Interview Session
+                    <span className="bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full">
+                      Round {selectedInterview.round_number || 1}
+                    </span>
+                  </h2>
+                  <p className="text-[11px] text-slate-500 font-medium">Update scheduled date, time, and notify all stakeholders via email</p>
+                </div>
+              </div>
               <button
+                type="button"
                 onClick={() => setIsRescheduleOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-800">
-              Candidate: <span className="font-bold text-slate-900">{selectedInterview.candidate_name}</span> ({selectedInterview.job_title})
-            </div>
+            {/* Scrollable Form Body (Flexible middle) */}
+            <form id="reschedule-form" onSubmit={handleRescheduleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs scrollbar-thin">
+              
+              {/* Candidate & Session Banner Card (Full Width) */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-3.5 shadow-md border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 font-black text-sm flex items-center justify-center shadow-xs">
+                    {selectedInterview.candidate_name ? selectedInterview.candidate_name.charAt(0).toUpperCase() : "C"}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-sm text-white">{selectedInterview.candidate_name}</h3>
+                      <span className="bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        {selectedInterview.interview_type}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 font-medium mt-0.5">Job Role: <span className="text-white font-bold">{selectedInterview.job_title}</span></p>
+                  </div>
+                </div>
 
-            <form onSubmit={handleRescheduleSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">New Scheduled Date</label>
-                <input
-                  type="date"
-                  value={rescheduleForm.scheduled_date}
-                  onChange={(e) => setRescheduleForm({ ...rescheduleForm, scheduled_date: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                  required
-                />
+                <div className="flex items-center gap-2 bg-amber-950/70 border border-amber-700/50 px-3 py-1 rounded-xl text-[11px] text-slate-200">
+                  <span className="text-slate-400 font-medium">Current Schedule:</span>
+                  <span className="font-extrabold text-amber-400">📅 {selectedInterview.scheduled_date} at {formatTimeTo12Hour(selectedInterview.scheduled_time)}</span>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">New Scheduled Time</label>
-                <input
-                  type="time"
-                  value={rescheduleForm.scheduled_time}
-                  onChange={(e) => setRescheduleForm({ ...rescheduleForm, scheduled_time: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                  required
-                />
-              </div>
+              {/* 2-COLUMN WIDE GRID */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* LEFT COLUMN: RESCHEDULE TIME & REASON */}
+                <div className="space-y-3.5 bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl">
+                  <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Calendar size={14} className="text-amber-600" /> New Session Schedule
+                  </span>
 
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">Reason for Rescheduling</label>
-                <textarea
-                  rows={3}
-                  value={rescheduleForm.reason}
-                  onChange={(e) => setRescheduleForm({ ...rescheduleForm, reason: e.target.value })}
-                  placeholder="e.g. Candidate requested time change due to conflict..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                />
-              </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-slate-800 mb-1 font-bold">New Date <span className="text-rose-500">*</span></label>
+                      <input
+                        type="date"
+                        value={rescheduleForm.scheduled_date}
+                        onChange={(e) => setRescheduleForm({ ...rescheduleForm, scheduled_date: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                        required
+                      />
+                    </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsRescheduleOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  {actionLoading ? "Rescheduling..." : "Reschedule Interview"}
-                </button>
+                    <div>
+                      <label className="block text-slate-800 mb-1 font-bold">New Time <span className="text-rose-500">*</span></label>
+                      <input
+                        type="time"
+                        value={rescheduleForm.scheduled_time}
+                        onChange={(e) => setRescheduleForm({ ...rescheduleForm, scheduled_time: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-800 mb-1 font-bold">Reason for Rescheduling</label>
+                    <textarea
+                      rows={2}
+                      value={rescheduleForm.reason}
+                      onChange={(e) => setRescheduleForm({ ...rescheduleForm, reason: e.target.value })}
+                      placeholder="e.g. Candidate requested time change due to schedule conflict..."
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all resize-none text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: EMAIL NOTIFICATION & RECIPIENTS */}
+                <div className="space-y-3.5 bg-indigo-50/60 border border-indigo-200/80 p-4 rounded-2xl flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wider">
+                        <Mail size={14} className="text-indigo-600" /> Reschedule Meeting Email
+                      </span>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={rescheduleForm.send_email_notification}
+                          onChange={(e) => setRescheduleForm({ ...rescheduleForm, send_email_notification: e.target.checked })}
+                          className="rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-[11px] font-extrabold text-indigo-900">Send Email</span>
+                      </label>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 font-medium leading-relaxed bg-white/80 border border-indigo-100 p-2 rounded-xl">
+                      An updated interview invitation email with the new date, time, and meeting details will automatically be dispatched.
+                    </p>
+
+                    {rescheduleForm.send_email_notification && (
+                      <div className="space-y-2.5 pt-1 animate-in fade-in duration-200">
+                        {/* CANDIDATE RECIPIENT FIELDS */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Candidate Email Recipient</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">Candidate Name</label>
+                              <input
+                                type="text"
+                                placeholder="Candidate Name"
+                                value={rescheduleForm.candidate_name}
+                                onChange={(e) => setRescheduleForm({ ...rescheduleForm, candidate_name: e.target.value })}
+                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">Candidate Email *</label>
+                              <input
+                                type="email"
+                                required
+                                placeholder="candidate@example.com"
+                                value={rescheduleForm.candidate_email}
+                                onChange={(e) => setRescheduleForm({ ...rescheduleForm, candidate_email: e.target.value })}
+                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* INTERVIEWER & CLIENT PANEL RECIPIENT INDIVIDUAL CARDS */}
+                        <div className="space-y-1.5 pt-1.5 border-t border-slate-200/80">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                              Interviewer & Client Panel Recipients
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setReschedulePanelRecipients((prev) => [
+                                  ...prev,
+                                  { send: true, name: `Panel Member ${prev.length + 1}`, email: "", type: "Interviewer" },
+                                ])
+                              }
+                              className="text-[11px] font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
+                            >
+                              + Add Recipient
+                            </button>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                            {reschedulePanelRecipients.map((rec, idx) => (
+                              <div key={idx} className="bg-white border border-slate-200 rounded-xl p-2 space-y-1 shadow-2xs">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={rec.send}
+                                      onChange={(e) => {
+                                        const updated = [...reschedulePanelRecipients];
+                                        updated[idx].send = e.target.checked;
+                                        setReschedulePanelRecipients(updated);
+                                      }}
+                                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                                    />
+                                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                      rec.type === "Client"
+                                        ? "bg-teal-50 border border-teal-200 text-teal-700"
+                                        : "bg-indigo-50 border border-indigo-200 text-indigo-700"
+                                    }`}>
+                                      {rec.type}
+                                    </span>
+                                  </div>
+                                  {reschedulePanelRecipients.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setReschedulePanelRecipients((prev) => prev.filter((_, i) => i !== idx))}
+                                      className="text-rose-500 hover:text-rose-700 text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <input
+                                      type="text"
+                                      placeholder="Recipient Name"
+                                      value={rec.name}
+                                      onChange={(e) => {
+                                        const updated = [...reschedulePanelRecipients];
+                                        updated[idx].name = e.target.value;
+                                        setReschedulePanelRecipients(updated);
+                                      }}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900 focus:bg-white focus:outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <input
+                                      type="email"
+                                      placeholder="recipient@company.com"
+                                      value={rec.email}
+                                      onChange={(e) => {
+                                        const updated = [...reschedulePanelRecipients];
+                                        updated[idx].email = e.target.value;
+                                        setReschedulePanelRecipients(updated);
+                                      }}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-900 focus:bg-white focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
               </div>
             </form>
+
+            {/* Modal Footer Actions (Fixed at bottom of modal) */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsRescheduleOpen(false)}
+                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-100 font-bold transition-all text-xs cursor-pointer shadow-2xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="reschedule-form"
+                disabled={actionLoading}
+                className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-amber-600 via-amber-500 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold shadow-md shadow-amber-500/20 transition-all text-xs cursor-pointer disabled:opacity-50 active:scale-95"
+              >
+                {actionLoading ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Rescheduling & Sending Email...</span>
+                  </>
+                ) : (
+                  <>
+                    <Calendar size={14} />
+                    <span>Reschedule & Send Update Email</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2870,13 +3497,7 @@ export default function InterviewManagement() {
                                 <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center">
                                   {interviewer.interviewer_name ? interviewer.interviewer_name.charAt(0).toUpperCase() : "I"}
                                 </div>
-                                <input
-                                  type="text"
-                                  value={interviewer.interviewer_name}
-                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_name", e.target.value)}
-                                  placeholder="Interviewer Name"
-                                  className="text-sm font-extrabold text-slate-900 border-b border-dashed border-slate-300 focus:border-indigo-600 focus:outline-none bg-transparent"
-                                />
+                                <span className="font-extrabold text-slate-900 text-sm">Interviewer #{idx + 1}</span>
                               </div>
                               {feedbackInterviewersList.length > 1 && (
                                 <button
@@ -2887,6 +3508,59 @@ export default function InterviewManagement() {
                                   <Trash2 size={13} /> Remove
                                 </button>
                               )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
+                                <select
+                                  value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === "custom" || !val) {
+                                      handleFeedbackInterviewerItemChange(idx, "interviewer_id", undefined);
+                                    } else {
+                                      const u = systemUsers.find((user) => user.id === val);
+                                      if (u) {
+                                        handleFeedbackInterviewerItemChange(idx, "interviewer_id", u.id);
+                                        handleFeedbackInterviewerItemChange(idx, "interviewer_name", u.full_name);
+                                        handleFeedbackInterviewerItemChange(idx, "interviewer_email", u.email);
+                                      }
+                                    }
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                                >
+                                  <option value="">-- Choose Registered User --</option>
+                                  {systemUsers.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.full_name} ({u.role || u.email})
+                                    </option>
+                                  ))}
+                                  <option value="custom">+ External / Custom</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Name *</label>
+                                <input
+                                  type="text"
+                                  value={interviewer.interviewer_name}
+                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_name", e.target.value)}
+                                  placeholder="Interviewer Name"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Email</label>
+                                <input
+                                  type="email"
+                                  value={interviewer.interviewer_email || ""}
+                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_email", e.target.value)}
+                                  placeholder="interviewer@company.com"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                />
+                              </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3047,13 +3721,12 @@ export default function InterviewManagement() {
                         {feedbackClientsList.map((client, idx) => (
                           <div key={idx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-teal-200 transition-all">
                             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                              <input
-                                type="text"
-                                value={client.client_name}
-                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_name", e.target.value)}
-                                placeholder="Client Evaluator Name"
-                                className="text-sm font-extrabold text-slate-900 border-b border-dashed border-teal-400 focus:border-teal-500 focus:outline-none bg-transparent"
-                              />
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-xs flex items-center justify-center">
+                                  {client.client_name ? client.client_name.charAt(0).toUpperCase() : "C"}
+                                </div>
+                                <span className="font-extrabold text-slate-900 text-sm">Client Evaluator #{idx + 1}</span>
+                              </div>
                               {feedbackClientsList.length > 1 && (
                                 <button
                                   type="button"
@@ -3063,6 +3736,59 @@ export default function InterviewManagement() {
                                   <Trash2 size={13} /> Remove
                                 </button>
                               )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
+                                <select
+                                  value={client.client_id || (client.client_name ? "custom" : "")}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === "custom" || !val) {
+                                      handleFeedbackClientItemChange(idx, "client_id", undefined);
+                                    } else {
+                                      const u = systemUsers.find((user) => user.id === val);
+                                      if (u) {
+                                        handleFeedbackClientItemChange(idx, "client_id", u.id);
+                                        handleFeedbackClientItemChange(idx, "client_name", u.full_name);
+                                        handleFeedbackClientItemChange(idx, "client_email", u.email);
+                                      }
+                                    }
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
+                                >
+                                  <option value="">-- Choose Registered User --</option>
+                                  {systemUsers.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.full_name} ({u.role || u.email})
+                                    </option>
+                                  ))}
+                                  <option value="custom">+ External / Custom</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Name / Company</label>
+                                <input
+                                  type="text"
+                                  value={client.client_name}
+                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_name", e.target.value)}
+                                  placeholder="Client Evaluator Name"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Email</label>
+                                <input
+                                  type="email"
+                                  value={client.client_email || ""}
+                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_email", e.target.value)}
+                                  placeholder="client@company.com"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                />
+                              </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3757,9 +4483,9 @@ export default function InterviewManagement() {
       {/* SEND INTERVIEW EMAIL POPUP MODAL */}
       {isSendMailOpen && selectedInterview && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl text-slate-900">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl text-slate-900 max-h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="flex justify-between items-center bg-slate-50 px-6 py-4 border-b border-slate-200">
+            <div className="flex justify-between items-center bg-slate-50 px-6 py-4 border-b border-slate-200 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-600">
                   <Mail size={18} />
@@ -3767,7 +4493,7 @@ export default function InterviewManagement() {
                 <div>
                   <h2 className="text-base font-bold text-slate-900">Send Interview Notification Email</h2>
                   <p className="text-xs text-slate-500">
-                    Candidate: <span className="font-semibold text-slate-700">{selectedInterview.candidate_name}</span> | Role: <span className="font-semibold text-slate-700">{selectedInterview.job_title}</span>
+                    Dispatch notifications to Candidate, Panel Interviewers & Client Evaluators
                   </p>
                 </div>
               </div>
@@ -3780,7 +4506,7 @@ export default function InterviewManagement() {
             </div>
 
             {/* Modal Body / Form */}
-            <form onSubmit={handleSendMailSubmit} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSendMailSubmit} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
               {sendMailStatus && (
                 <div
                   className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${
@@ -3798,12 +4524,47 @@ export default function InterviewManagement() {
                 </div>
               )}
 
-              {/* Recipient Indications */}
-              <div className="space-y-3 bg-slate-50/80 p-4 rounded-xl border border-slate-200">
+              {/* Session Overview Box */}
+              <div className="bg-gradient-to-r from-indigo-50/80 to-purple-50/80 border border-indigo-100 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-indigo-900 font-bold text-xs border-b border-indigo-100/80 pb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar size={14} className="text-indigo-600" />
+                    Interview Session Summary
+                  </span>
+                  <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-md font-extrabold text-[11px]">
+                    {selectedInterview.interview_type} (Round {selectedInterview.round_number || 1})
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
+                  <div>
+                    <span className="font-semibold text-slate-500">Candidate:</span>{" "}
+                    <span className="font-bold text-slate-900">{selectedInterview.candidate_name}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-500">Job Title:</span>{" "}
+                    <span className="font-bold text-slate-900">{selectedInterview.job_title}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-500">Scheduled Date & Time:</span>{" "}
+                    <span className="font-bold text-slate-900">
+                      {selectedInterview.scheduled_date} at {selectedInterview.scheduled_time} ({selectedInterview.duration_minutes || 60} mins)
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-500">Platform / Link:</span>{" "}
+                    <span className="font-bold text-slate-900">
+                      {selectedInterview.meeting_platform || "Google Meet"} {selectedInterview.meeting_link ? `(${selectedInterview.meeting_link})` : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recipient Indications Section */}
+              <div className="space-y-3">
                 <span className="text-xs font-bold text-slate-800 block">Select Email Recipients & Indications:</span>
 
-                {/* Candidate Email Option */}
-                <div className="space-y-1.5">
+                {/* Candidate Mail Option */}
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -3811,40 +4572,153 @@ export default function InterviewManagement() {
                       onChange={(e) => setSendMailForm({ ...sendMailForm, send_to_candidate: e.target.checked })}
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                     />
-                    <span className="text-xs font-semibold text-slate-700">Candidate Mail Indication</span>
+                    <span className="text-xs font-bold text-slate-800">Candidate Email Notification</span>
                   </label>
                   {sendMailForm.send_to_candidate && (
-                    <input
-                      type="email"
-                      required
-                      placeholder="candidate@example.com"
-                      value={sendMailForm.candidate_email}
-                      onChange={(e) => setSendMailForm({ ...sendMailForm, candidate_email: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <input
+                        type="text"
+                        disabled
+                        value={selectedInterview.candidate_name || "Candidate"}
+                        className="bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600 font-medium"
+                      />
+                      <input
+                        type="email"
+                        required
+                        placeholder="candidate@example.com"
+                        value={sendMailForm.candidate_email}
+                        onChange={(e) => setSendMailForm({ ...sendMailForm, candidate_email: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                      />
+                    </div>
                   )}
                 </div>
 
-                {/* Interviewer Email Option */}
-                <div className="space-y-1.5 pt-1 border-t border-slate-200">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={sendMailForm.send_to_interviewer}
-                      onChange={(e) => setSendMailForm({ ...sendMailForm, send_to_interviewer: e.target.checked })}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-                    />
-                    <span className="text-xs font-semibold text-slate-700">Interviewer Mail Indication ({selectedInterview.interviewer_name || "Interviewer"})</span>
-                  </label>
-                  {sendMailForm.send_to_interviewer && (
-                    <input
-                      type="email"
-                      required
-                      placeholder="interviewer@company.com"
-                      value={sendMailForm.interviewer_email}
-                      onChange={(e) => setSendMailForm({ ...sendMailForm, interviewer_email: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
+                {/* Panel Interviewers Recipients Box */}
+                <div className="bg-purple-50/50 border border-purple-200 p-3.5 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-purple-100 pb-1.5">
+                    <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                      <UserCheck size={14} className="text-purple-600" />
+                      Interviewer Panel Recipients ({interviewerMailRecipients.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddInterviewerMailRecipient}
+                      className="flex items-center gap-1 bg-purple-100 hover:bg-purple-200 text-purple-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Interviewer Email
+                    </button>
+                  </div>
+
+                  {interviewerMailRecipients.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic">No interviewers specified. Click "+ Add Interviewer Email" to add one.</p>
+                  ) : (
+                    interviewerMailRecipients.map((int, idx) => (
+                      <div key={idx} className="p-2.5 bg-white border border-purple-100 rounded-lg space-y-2 shadow-2xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={int.send}
+                              onChange={(e) => handleInterviewerMailRecipientChange(idx, "send", e.target.checked)}
+                              className="rounded border-purple-300 text-purple-600 focus:ring-purple-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span className="text-[11px] font-bold text-purple-900 uppercase">
+                              Interviewer #{idx + 1}: {int.name}
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveInterviewerMailRecipient(idx)}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        </div>
+                        {int.send && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="Interviewer Name"
+                              value={int.name}
+                              onChange={(e) => handleInterviewerMailRecipientChange(idx, "name", e.target.value)}
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-800 font-medium"
+                            />
+                            <input
+                              type="email"
+                              placeholder="interviewer@company.com"
+                              value={int.email}
+                              onChange={(e) => handleInterviewerMailRecipientChange(idx, "email", e.target.value)}
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-800 font-medium focus:outline-none focus:border-purple-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Client Evaluators Recipients Box */}
+                <div className="bg-teal-50/50 border border-teal-200 p-3.5 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-teal-100 pb-1.5">
+                    <span className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
+                      <Building2 size={14} className="text-teal-600" />
+                      Client Evaluator Panel Recipients ({clientMailRecipients.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddClientMailRecipient}
+                      className="flex items-center gap-1 bg-teal-100 hover:bg-teal-200 text-teal-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Client Email
+                    </button>
+                  </div>
+
+                  {clientMailRecipients.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic">No client evaluators specified. Click "+ Add Client Email" to add one.</p>
+                  ) : (
+                    clientMailRecipients.map((cli, idx) => (
+                      <div key={idx} className="p-2.5 bg-white border border-teal-100 rounded-lg space-y-2 shadow-2xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={cli.send}
+                              onChange={(e) => handleClientMailRecipientChange(idx, "send", e.target.checked)}
+                              className="rounded border-teal-300 text-teal-600 focus:ring-teal-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span className="text-[11px] font-bold text-teal-900 uppercase">
+                              Client Evaluator #{idx + 1}: {cli.name}
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveClientMailRecipient(idx)}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        </div>
+                        {cli.send && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="Client Name / Company"
+                              value={cli.name}
+                              onChange={(e) => handleClientMailRecipientChange(idx, "name", e.target.value)}
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-800 font-medium"
+                            />
+                            <input
+                              type="email"
+                              placeholder="client@company.com"
+                              value={cli.email}
+                              onChange={(e) => handleClientMailRecipientChange(idx, "email", e.target.value)}
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-800 font-medium focus:outline-none focus:border-teal-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
@@ -3872,8 +4746,8 @@ export default function InterviewManagement() {
                   Interview Schedule Notes <span className="text-slate-400 font-normal font-mono">(Replaces {'{{notes}}'} in template)</span>
                 </label>
                 <textarea
-                  rows={3}
-                  placeholder="Enter specific instructions or schedule notes for candidate / interviewer..."
+                  rows={2}
+                  placeholder="Enter specific instructions or schedule notes for candidate / interviewer / client..."
                   value={sendMailForm.custom_notes}
                   onChange={(e) => setSendMailForm({ ...sendMailForm, custom_notes: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors font-sans"
@@ -3881,7 +4755,7 @@ export default function InterviewManagement() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsSendMailOpen(false)}

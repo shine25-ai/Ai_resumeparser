@@ -2,9 +2,8 @@
 Pydantic schemas for User entity representations, creation, updates, and password changes.
 """
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from app.utils.enums import UserRole
 
 
 class UserResponse(BaseModel):
@@ -13,7 +12,8 @@ class UserResponse(BaseModel):
     id: str
     full_name: str
     email: EmailStr
-    role: UserRole
+    role: str
+    permissions: Optional[List[str]] = Field(default_factory=list)
     is_active: bool
     created_at: str
     updated_at: str
@@ -27,7 +27,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(..., min_length=6)
-    role: UserRole = UserRole.USER
+    role: str = "user"
     is_active: bool = True
 
 
@@ -36,8 +36,15 @@ class UserUpdate(BaseModel):
 
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=6)
     is_active: Optional[bool] = None
-    role: Optional[UserRole] = None
+    role: Optional[str] = None
+
+
+class UserRoleUpdate(BaseModel):
+    """Schema for updating a user's role."""
+
+    role: str = Field(..., min_length=1)
 
 
 class ChangePasswordRequest(BaseModel):

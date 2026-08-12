@@ -12,6 +12,7 @@ ALLOWED_MIME_TYPES = {
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
 
 USERS_COLLECTION = "users"
+ROLES_COLLECTION = "roles"
 RESUMES_COLLECTION = "resumes"
 RESUME_LOGS_COLLECTION = "resume_logs"
 INTERVIEWS_COLLECTION = "interviews"
@@ -19,6 +20,9 @@ INTERVIEWS_COLLECTION = "interviews"
 ERROR_USER_EXISTS = "User with this email already exists."
 ERROR_INVALID_CREDENTIALS = "Invalid email or password."
 ERROR_USER_NOT_FOUND = "User not found."
+ERROR_ROLE_NOT_FOUND = "Role not found."
+ERROR_RESUME_NOT_FOUND = "Resume not found."
+ERROR_INTERVIEW_NOT_FOUND = "Interview not found."
 ERROR_RESUME_NOT_FOUND = "Resume not found."
 ERROR_INTERVIEW_NOT_FOUND = "Interview not found."
 ERROR_UNAUTHORIZED = "Authentication token invalid or expired."

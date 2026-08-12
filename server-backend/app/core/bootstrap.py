@@ -1,13 +1,77 @@
 """
-Idempotent default admin user bootstrap logic executed automatically during FastAPI application lifespan startup.
+Idempotent default admin user and default system roles bootstrap logic executed during startup.
 """
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from loguru import logger
 from app.core.config import settings
 from app.core.security import hash_password
-from app.utils.constants import USERS_COLLECTION
+from app.utils.constants import ROLES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import generate_uuid, utc_now
+
+
+DEFAULT_SYSTEM_ROLES = [
+    {
+        "name": "Administrator",
+        "slug": "admin",
+        "description": "System administrator with full permissions across all tools and configurations.",
+        "permissions": [
+            "dashboard", "upload", "database", "evaluation",
+            "jd-match", "interviews", "interview-dashboard",
+            "client-feedback", "analytics", "settings", "role-management"
+        ],
+        "is_system": True,
+    },
+    {
+        "name": "HR Manager",
+        "slug": "hr_manager",
+        "description": "HR Manager with full access to talent recruitment, candidate evaluation, and analytics.",
+        "permissions": [
+            "dashboard", "upload", "database", "evaluation",
+            "jd-match", "interviews", "interview-dashboard",
+            "client-feedback", "analytics"
+        ],
+        "is_system": True,
+    },
+    {
+        "name": "Interviewer",
+        "slug": "interviewer",
+        "description": "Interviewer with access to assigned candidate interviews, feedback, and video recording.",
+        "permissions": [
+            "dashboard", "interviews", "interview-dashboard", "client-feedback"
+        ],
+        "is_system": True,
+    },
+    {
+        "name": "User",
+        "slug": "user",
+        "description": "Standard user with access to resume upload, candidate database, and basic evaluation.",
+        "permissions": [
+            "dashboard", "upload", "database", "evaluation"
+        ],
+        "is_system": True,
+    },
+]
+
+
+async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:
+    """Idempotently create default system roles if absent in MongoDB."""
+    roles_collection = db[ROLES_COLLECTION]
+    for default_role in DEFAULT_SYSTEM_ROLES:
+        existing = await roles_collection.find_one({"slug": default_role["slug"]})
+        if not existing:
+            role_doc = {
+                "id": generate_uuid(),
+                "name": default_role["name"],
+                "slug": default_role["slug"],
+                "description": default_role["description"],
+                "permissions": default_role["permissions"],
+                "is_system": True,
+                "created_at": utc_now().isoformat(),
+                "updated_at": utc_now().isoformat(),
+            }
+            await roles_collection.insert_one(role_doc)
+            logger.info(f"Bootstrapped system role: {default_role['name']} ({default_role['slug']})")
 
 
 async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
@@ -16,6 +80,8 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
     If absent, create administrator account automatically.
     This operation is strictly idempotent.
     """
+    await bootstrap_default_roles(db)
+
     users_collection = db[USERS_COLLECTION]
 
     # Ensure Collections and Indexes exist
@@ -24,7 +90,8 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
         await db[RESUME_LOGS_COLLECTION].create_index([("resume_id", 1)])
         await db[RESUME_LOGS_COLLECTION].create_index([("email", 1)])
         await db[RESUMES_COLLECTION].create_index([("parsed_data.email", 1)])
-        logger.info(f"Initialized MongoDB collections '{RESUME_LOGS_COLLECTION}' and '{RESUMES_COLLECTION}' with indexes.")
+        await db[ROLES_COLLECTION].create_index([("slug", 1)], unique=True)
+        logger.info(f"Initialized MongoDB collections '{RESUME_LOGS_COLLECTION}', '{RESUMES_COLLECTION}', and '{ROLES_COLLECTION}' with indexes.")
     except Exception as idx_err:
         logger.warning(f"Index initialization note: {idx_err}")
 

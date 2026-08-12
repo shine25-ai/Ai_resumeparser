@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Star, Plus, ChevronDown, HelpCircle, Trash2, UserCheck, Building2 } from "lucide-react";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
-import type { ClientFeedbackItem } from "../utils/Api";
+import { getUsers, type ClientFeedbackItem, type UserProfile } from "../utils/Api";
 
 export default function ClientFeedback() {
   const navigate = useNavigate();
   const [decision, setDecision] = useState("Selected");
   const [nextSteps, setNextSteps] = useState("Offer will be released");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
 
   // Multi Client Evaluators State
   const [clientEvaluators, setClientEvaluators] = useState<ClientFeedbackItem[]>([
@@ -28,6 +29,7 @@ export default function ClientFeedback() {
 
   useEffect(() => {
     getFeedbackQuestionsAsync(interviewType).then((opts) => setQuestionOptions(opts));
+    getUsers().then((users) => setSystemUsers(users)).catch(() => setSystemUsers([]));
   }, [interviewType]);
 
   const handleAddClientEvaluator = () => {
@@ -179,22 +181,51 @@ export default function ClientFeedback() {
               key={idx}
               className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5 relative"
             >
-              <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-                <div className="flex items-center gap-2">
-                  <Building2 size={16} className="text-teal-600" />
-                  <input
-                    type="text"
-                    value={evaluator.client_name}
-                    onChange={(e) => handleEvaluatorChange(idx, "client_name", e.target.value)}
-                    placeholder="Enter Evaluator / Client Name"
-                    className="text-sm font-bold text-slate-900 border-b border-dashed border-slate-300 focus:border-indigo-500 focus:outline-none bg-transparent"
-                  />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-3">
+                <div className="flex items-center gap-2 flex-1">
+                  <Building2 size={16} className="text-teal-600 shrink-0" />
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full">
+                    <select
+                      value={evaluator.client_id || (evaluator.client_name ? "custom" : "")}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "custom" || !val) {
+                          handleEvaluatorChange(idx, "client_id", undefined);
+                          handleEvaluatorChange(idx, "client_email", undefined);
+                        } else {
+                          const u = systemUsers.find((user) => user.id === val);
+                          if (u) {
+                            handleEvaluatorChange(idx, "client_id", u.id);
+                            handleEvaluatorChange(idx, "client_name", u.full_name);
+                            handleEvaluatorChange(idx, "client_email", u.email);
+                          }
+                        }
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
+                    >
+                      <option value="">-- Choose Registered User --</option>
+                      {systemUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.full_name} ({u.role || u.email})
+                        </option>
+                      ))}
+                      <option value="custom">+ External / Custom Evaluator</option>
+                    </select>
+
+                    <input
+                      type="text"
+                      value={evaluator.client_name}
+                      onChange={(e) => handleEvaluatorChange(idx, "client_name", e.target.value)}
+                      placeholder="Enter Evaluator / Client Name"
+                      className="text-sm font-bold text-slate-900 border-b border-dashed border-slate-300 focus:border-indigo-500 focus:outline-none bg-transparent flex-1"
+                    />
+                  </div>
                 </div>
                 {clientEvaluators.length > 1 && (
                   <button
                     type="button"
                     onClick={() => handleRemoveClientEvaluator(idx)}
-                    className="text-rose-500 hover:text-rose-700 text-xs flex items-center gap-1 font-semibold cursor-pointer"
+                    className="text-rose-500 hover:text-rose-700 text-xs flex items-center gap-1 font-semibold cursor-pointer shrink-0"
                   >
                     <Trash2 size={14} /> Remove
                   </button>
