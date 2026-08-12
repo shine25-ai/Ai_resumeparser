@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText } from 'lucide-react';
+import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield } from 'lucide-react';
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
 import MailTemplates from '../components/MailTemplates';
+import RoleManagement from '../components/RoleManagement';
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'config' | 'templates'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles'>('config');
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -93,10 +94,10 @@ export default function Settings() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto pb-12">
+    <div className="w-full pb-12">
       <div className="mb-8">
         <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-cyan-600">Settings</h1>
-        <p className="text-slate-500 mt-2">Configure system settings, email preferences, and templates</p>
+        <p className="text-slate-500 mt-2 font-medium">Configure system settings, email preferences, and role-based user access</p>
       </div>
 
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl mb-8 border border-slate-200">
@@ -121,6 +122,17 @@ export default function Settings() {
         >
           <FileText className="w-4 h-4" />
           Mail Templates
+        </button>
+        <button
+          onClick={() => setActiveTab('roles')}
+          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+            activeTab === 'roles'
+              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          Roles & Access Control
         </button>
       </div>
 
@@ -288,8 +300,10 @@ export default function Settings() {
             </div>
           </div>
         </>
-      ) : (
+      ) : activeTab === 'templates' ? (
         <MailTemplates />
+      ) : (
+        <RoleManagement />
       )}
     </div>
   );

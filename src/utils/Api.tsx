@@ -15,10 +15,13 @@ export const AUTH_REGISTER = `${BASE_URL}/auth/register`;
 export const AUTH_REFRESH = `${BASE_URL}/auth/refresh`;
 
 export const USER_ME = `${BASE_URL}/users/me`;
+export const USERS_URL = `${BASE_URL}/users`;
+export const ROLES_URL = `${BASE_URL}/roles`;
 export const SETTINGS_EMAIL = `${BASE_URL}/settings/email`;
 export const SETTINGS_EMAIL_TEST = `${BASE_URL}/settings/email/test`;
 export const MAIL_TEMPLATES_URL = `${BASE_URL}/templates`;
 export const DASHBOARD_METRICS = `${BASE_URL}/dashboard/metrics`;
+
 export interface LoginPayload {
   email: string;
   password: string;
@@ -29,9 +32,50 @@ export interface UserProfile {
   full_name: string;
   email: string;
   role: string;
+  permissions?: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserCreatePayload {
+  full_name: string;
+  email: string;
+  password: string;
+  role?: string;
+  is_active?: boolean;
+}
+
+export interface UserUpdatePayload {
+  full_name?: string;
+  email?: string;
+  password?: string;
+  role?: string;
+  is_active?: boolean;
+}
+
+export interface RoleItem {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  permissions: string[];
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleCreatePayload {
+  name: string;
+  slug?: string;
+  description?: string;
+  permissions: string[];
+}
+
+export interface RoleUpdatePayload {
+  name?: string;
+  description?: string;
+  permissions?: string[];
 }
 
 export interface LoginApiResponse {
@@ -660,5 +704,189 @@ export const checkCandidateActiveInterviewStatus = async (candidateId: string, c
   }
 
   return resData.data || resData;
+};
+
+// ROLE & USER MANAGEMENT API FUNCTIONS
+export const getRoles = async (): Promise<RoleItem[]> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(ROLES_URL, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch roles");
+  }
+
+  const data = resData.data || resData;
+  return data.roles || data;
+};
+
+export const createRole = async (payload: RoleCreatePayload): Promise<RoleItem> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(ROLES_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to create role");
+  }
+
+  return resData.data || resData;
+};
+
+export const updateRole = async (roleId: string, payload: RoleUpdatePayload): Promise<RoleItem> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${ROLES_URL}/${roleId}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to update role");
+  }
+
+  return resData.data || resData;
+};
+
+export const deleteRole = async (roleId: string): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${ROLES_URL}/${roleId}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to delete role");
+  }
+};
+
+export const getUsers = async (): Promise<UserProfile[]> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(USERS_URL, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch users");
+  }
+
+  const data = resData.data || resData;
+  return data.users || data;
+};
+
+export const updateUserRole = async (userId: string, role: string): Promise<UserProfile> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${USERS_URL}/${userId}/role`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role }),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to update user role");
+  }
+
+  return resData.data || resData;
+};
+
+export const createUser = async (payload: UserCreatePayload): Promise<UserProfile> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(USERS_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to create user account");
+  }
+
+  return resData.data || resData;
+};
+
+export const updateUser = async (userId: string, payload: UserUpdatePayload): Promise<UserProfile> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${USERS_URL}/${userId}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to update user details");
+  }
+
+  return resData.data || resData;
+};
+
+export const deleteUser = async (userId: string): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${USERS_URL}/${userId}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to delete user account");
+  }
 };
 

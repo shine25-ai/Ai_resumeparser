@@ -34,6 +34,20 @@ class AuthorizationError(AppException):
         super().__init__(message=message, status_code=status.HTTP_403_FORBIDDEN, errors=errors)
 
 
+class BadRequestError(AppException):
+    """Raised when request payload or parameters are invalid."""
+
+    def __init__(self, message: str = "Bad request", errors: Optional[List[Any]] = None):
+        super().__init__(message=message, status_code=status.HTTP_400_BAD_REQUEST, errors=errors)
+
+
+class ConflictError(AppException):
+    """Raised when resource creation conflicts with existing state (e.g. duplicate key)."""
+
+    def __init__(self, message: str = "Resource conflict", errors: Optional[List[Any]] = None):
+        super().__init__(message=message, status_code=status.HTTP_409_CONFLICT, errors=errors)
+
+
 class NotFoundError(AppException):
     """Raised when requested resource is not found."""
 

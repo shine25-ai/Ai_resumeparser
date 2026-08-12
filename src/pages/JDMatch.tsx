@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Filter, Search, RefreshCw, UserCheck, X, Calendar, CheckSquare, Square, FileText, CheckCircle,
-  Briefcase, Clock, MapPin, ShieldCheck, Mail, Layers, AlignLeft, Sparkles, Video, Hash,
-  Upload, Building2, AlertCircle, UserX
+  Briefcase, Clock, MapPin, ShieldCheck, Layers, AlignLeft, Sparkles, Video, Hash,
+  Upload, Building2, AlertCircle, UserX, Plus, Trash2
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, type MatchFilterParams, type InterviewTypeEnum } from "../utils/Api";
+import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -16,6 +16,7 @@ interface FilterPill {
 
 export default function JDMatch() {
   const [loading, setLoading] = useState(false);
+  const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
 
   // Dynamic dropdown options state fetched from /api/v1/resumes/parsed-summary
   const [summaryOptions, setSummaryOptions] = useState<{
@@ -105,8 +106,12 @@ export default function JDMatch() {
     scheduled_date: new Date().toISOString().split("T")[0],
     scheduled_time: "10:00",
     duration_minutes: 60,
+    interviewer_id: "",
     interviewer_name: "",
     interviewer_email: "",
+    client_id: "",
+    client_name: "",
+    client_email: "",
     meeting_platform: "Google Meet",
     meeting_link: "",
     location: "",
@@ -123,6 +128,54 @@ export default function JDMatch() {
     recommendation: "Pending",
     notes: "",
   });
+
+  // Multi Interviewer Panel State
+  const [interviewersList, setInterviewersList] = useState<InterviewerItem[]>([
+    { interviewer_name: "", interviewer_email: "" },
+  ]);
+
+  // Multi Client Panel State
+  const [clientsList, setClientsList] = useState<ClientFeedbackItem[]>([
+    { client_name: "", client_email: "" },
+  ]);
+
+  const handleAddInterviewer = () => {
+    setInterviewersList((prev) => [...prev, { interviewer_name: "", interviewer_email: "" }]);
+  };
+
+  const handleRemoveInterviewer = (index: number) => {
+    if (interviewersList.length <= 1) return;
+    setInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleInterviewerChange = (index: number, field: keyof InterviewerItem, val: any) => {
+    setInterviewersList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: val };
+      }
+      return updated;
+    });
+  };
+
+  const handleAddClient = () => {
+    setClientsList((prev) => [...prev, { client_name: "", client_email: "" }]);
+  };
+
+  const handleRemoveClient = (index: number) => {
+    if (clientsList.length <= 1) return;
+    setClientsList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleClientChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
+    setClientsList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: val };
+      }
+      return updated;
+    });
+  };
 
   // Handle local document file selection/upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,11 +200,14 @@ export default function JDMatch() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch parsed resume summary dropdown values
+  // Fetch parsed resume summary dropdown values & registered system users
   useEffect(() => {
     const fetchSummaryDropdowns = async () => {
       try {
-        const res = await getParsedResumeSummary();
+        const [res, usersData] = await Promise.all([
+          getParsedResumeSummary().catch(() => null),
+          getUsers().catch(() => []),
+        ]);
 
         if (res) {
           setSummaryOptions({
@@ -167,6 +223,8 @@ export default function JDMatch() {
             ai_technical_scores: res.ai_technical_scores || [],
           });
         }
+        const userList = Array.isArray(usersData) ? usersData : (usersData as any)?.users || [];
+        setSystemUsers(userList);
       } catch (err) {
         console.error("Failed to load parsed resume summary options:", err);
       }
@@ -377,6 +435,12 @@ export default function JDMatch() {
         ? `${interviewForm.candidate_requested_date} ${interviewForm.candidate_requested_time || ""}`.trim()
         : interviewForm.candidate_requested_date_time;
 
+      const primaryInt: Partial<InterviewerItem> = interviewersList[0] || {};
+      const primaryClient: Partial<ClientFeedbackItem> = clientsList[0] || {};
+
+      const filteredInterviewers = interviewersList.filter((i) => i.interviewer_name && i.interviewer_name.trim());
+      const filteredClients = clientsList.filter((c) => c.client_name && c.client_name.trim());
+
       await batchCreateInterviews({
         candidates: candidateItems,
         job_title: interviewForm.job_title,
@@ -387,8 +451,14 @@ export default function JDMatch() {
         scheduled_date: interviewForm.scheduled_date,
         scheduled_time: interviewForm.scheduled_time,
         duration_minutes: Number(interviewForm.duration_minutes),
-        interviewer_name: interviewForm.interviewer_name || "Hiring Manager",
-        interviewer_email: interviewForm.interviewer_email || undefined,
+        interviewer_id: primaryInt.interviewer_id || interviewForm.interviewer_id || undefined,
+        interviewer_name: primaryInt.interviewer_name || interviewForm.interviewer_name || "Hiring Manager",
+        interviewer_email: primaryInt.interviewer_email || interviewForm.interviewer_email || undefined,
+        client_id: primaryClient.client_id || interviewForm.client_id || undefined,
+        client_name: primaryClient.client_name || interviewForm.client_name || undefined,
+        client_email: primaryClient.client_email || interviewForm.client_email || undefined,
+        interviewers: filteredInterviewers.length > 0 ? filteredInterviewers : undefined,
+        clients: filteredClients.length > 0 ? filteredClients : undefined,
         meeting_platform: interviewForm.meeting_platform,
         meeting_link: interviewForm.meeting_link || undefined,
         location: interviewForm.interview_location || interviewForm.location || undefined,
@@ -1002,50 +1072,192 @@ export default function JDMatch() {
                   </div>
                 </div>
 
-                {/* SECTION 3: INTERVIEWER & LOCATION */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Interviewer Box */}
+                {/* SECTION 3: MULTI-INTERVIEWER & MULTI-CLIENT SELECTION PANEL */}
+                <div className="space-y-4">
+                  {/* Multi-Interviewer Panel Section */}
                   <div className="bg-slate-50 border border-purple-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center gap-2 text-purple-700 font-bold text-xs border-b border-purple-100 pb-2">
-                      <UserCheck size={15} />
-                      <span>Interviewer Details</span>
+                    <div className="flex items-center justify-between border-b border-purple-100 pb-2">
+                      <div className="flex items-center gap-2 text-purple-700 font-bold text-xs">
+                        <UserCheck size={15} />
+                        <span>Interviewer Panel Selection ({interviewersList.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddInterviewer}
+                        className="flex items-center gap-1 bg-purple-100 hover:bg-purple-200 text-purple-800 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Interviewer
+                      </button>
                     </div>
 
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">Interviewer Name <span className="text-rose-500">*</span></label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Alex Rivera (Tech Lead)"
-                        value={interviewForm.interviewer_name}
-                        onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                        required
-                      />
+                    {interviewersList.map((interviewer, idx) => (
+                      <div key={idx} className="p-3 bg-white border border-purple-100 rounded-xl space-y-2 relative shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] font-bold text-purple-900 uppercase">
+                            Interviewer #{idx + 1}
+                          </label>
+                          {interviewersList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveInterviewer(idx)}
+                              className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <select
+                              value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom" || !val) {
+                                  handleInterviewerChange(idx, "interviewer_id", undefined);
+                                } else {
+                                  const u = systemUsers.find((user) => user.id === val);
+                                  if (u) {
+                                    handleInterviewerChange(idx, "interviewer_id", u.id);
+                                    handleInterviewerChange(idx, "interviewer_name", u.full_name);
+                                    handleInterviewerChange(idx, "interviewer_email", u.email);
+                                  }
+                                }
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-purple-500 cursor-pointer"
+                            >
+                              <option value="">-- Choose Registered User --</option>
+                              {systemUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.full_name} ({u.role || u.email})
+                                </option>
+                              ))}
+                              <option value="custom">+ External / Custom</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Interviewer Name *"
+                              value={interviewer.interviewer_name}
+                              onChange={(e) => handleInterviewerChange(idx, "interviewer_name", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-purple-500 font-medium"
+                              required={idx === 0}
+                            />
+                          </div>
+
+                          <div>
+                            <input
+                              type="email"
+                              placeholder="interviewer@company.com"
+                              value={interviewer.interviewer_email || ""}
+                              onChange={(e) => handleInterviewerChange(idx, "interviewer_email", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-purple-500 font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Multi-Client Panel Section */}
+                  <div className="bg-slate-50 border border-teal-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-teal-100 pb-2">
+                      <div className="flex items-center gap-2 text-teal-700 font-bold text-xs">
+                        <Building2 size={15} />
+                        <span>Client Evaluator Panel Selection ({clientsList.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddClient}
+                        className="flex items-center gap-1 bg-teal-100 hover:bg-teal-200 text-teal-800 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Client
+                      </button>
                     </div>
 
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Mail size={12} className="text-purple-600" /> Email Address
-                      </label>
-                      <input
-                        type="email"
-                        placeholder="interviewer@company.com"
-                        value={interviewForm.interviewer_email}
-                        onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_email: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
-                      />
+                    {clientsList.map((client, idx) => (
+                      <div key={idx} className="p-3 bg-white border border-teal-100 rounded-xl space-y-2 relative shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] font-bold text-teal-900 uppercase">
+                            Client Evaluator #{idx + 1}
+                          </label>
+                          {clientsList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveClient(idx)}
+                              className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <select
+                              value={client.client_id || (client.client_name ? "custom" : "")}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom" || !val) {
+                                  handleClientChange(idx, "client_id", undefined);
+                                } else {
+                                  const u = systemUsers.find((user) => user.id === val);
+                                  if (u) {
+                                    handleClientChange(idx, "client_id", u.id);
+                                    handleClientChange(idx, "client_name", u.full_name);
+                                    handleClientChange(idx, "client_email", u.email);
+                                  }
+                                }
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
+                            >
+                              <option value="">-- Choose Registered User --</option>
+                              {systemUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.full_name} ({u.role || u.email})
+                                </option>
+                              ))}
+                              <option value="custom">+ External / Custom</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Client Name / Company"
+                              value={client.client_name}
+                              onChange={(e) => handleClientChange(idx, "client_name", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                            />
+                          </div>
+
+                          <div>
+                            <input
+                              type="email"
+                              placeholder="client@company.com"
+                              value={client.client_email || ""}
+                              onChange={(e) => handleClientChange(idx, "client_email", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SECTION 4: LOCATION & VERIFICATION */}
+                <div className="bg-slate-50 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                    <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs">
+                      <MapPin size={15} />
+                      <span>Interview Location & HR Verification</span>
                     </div>
                   </div>
 
-                  {/* Location & Verification Box */}
-                  <div className="bg-slate-50 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
-                      <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs">
-                        <MapPin size={15} />
-                        <span>Interview Location & Verification</span>
-                      </div>
-                    </div>
-
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
                         <MapPin size={12} className="text-emerald-600" /> Interview Location

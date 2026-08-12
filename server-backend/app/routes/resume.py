@@ -12,11 +12,30 @@ from app.repositories.resume_repository import ResumeRepository
 from app.schemas.resume import ResumeUpdateRequest
 from app.services.resume_service import ResumeService
 from app.utils.enums import UserRole
+from app.repositories.resume_log_repository import ResumeLogRepository
 
 router = APIRouter(prefix="/api/v1/resumes", tags=["Resumes"])
 
 
-from app.repositories.resume_log_repository import ResumeLogRepository
+def is_admin_or_staff(user: dict) -> bool:
+    """
+    Check if the user has staff privileges (Admin, HR Manager, Interviewer, or permission access)
+    to query candidate resumes across the repository.
+    """
+    if not user:
+        return False
+    role = user.get("role")
+    if isinstance(role, str):
+        role = role.lower()
+
+    if role in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter"]:
+        return True
+
+    permissions = user.get("permissions", [])
+    if any(p in permissions for p in ["database", "evaluation", "jd-match", "upload"]):
+        return True
+
+    return False
 
 
 def get_resume_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -> ResumeController:
@@ -48,7 +67,7 @@ async def upload_resume(
     "",
     status_code=status.HTTP_200_OK,
     summary="List user resumes",
-    description="Retrieve paginated list of uploaded resumes belonging to current user.",
+    description="Retrieve paginated list of uploaded resumes.",
 )
 async def list_resumes(
     skip: int = Query(0, ge=0),
@@ -56,7 +75,7 @@ async def list_resumes(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") in [UserRole.ADMIN, UserRole.ADMIN.value, "admin", "superadmin"]
+    is_admin = is_admin_or_staff(current_user)
     return await controller.list_resumes(current_user["id"], skip=skip, limit=limit, is_admin=is_admin)
 
 
@@ -80,7 +99,7 @@ async def match_resumes(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") in [UserRole.ADMIN, UserRole.ADMIN.value, "admin", "superadmin"]
+    is_admin = is_admin_or_staff(current_user)
     return await controller.filter_resumes(
         user_id=current_user["id"],
         job_title=job_title,
@@ -109,7 +128,7 @@ async def parsed_resume_summary(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") in [UserRole.ADMIN, UserRole.ADMIN.value, "admin", "superadmin"]
+    is_admin = is_admin_or_staff(current_user)
     return await controller.parsed_resume_summary(
         user_id=current_user["id"],
         skip=skip,
@@ -129,7 +148,7 @@ async def get_resume(
     current_user: dict = Depends(get_current_active_user_optional),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") == UserRole.ADMIN
+    is_admin = is_admin_or_staff(current_user)
     return await controller.get_resume(resume_id, current_user["id"], is_admin=is_admin)
 
 
@@ -145,7 +164,7 @@ async def update_resume(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") == UserRole.ADMIN
+    is_admin = is_admin_or_staff(current_user)
     return await controller.update_resume(resume_id, update_payload, current_user["id"], is_admin=is_admin)
 
 
@@ -160,7 +179,7 @@ async def extract_text(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") == UserRole.ADMIN
+    is_admin = is_admin_or_staff(current_user)
     return await controller.extract_text(resume_id, current_user["id"], is_admin=is_admin)
 
 
@@ -175,8 +194,9 @@ async def delete_resume(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") == UserRole.ADMIN
+    is_admin = is_admin_or_staff(current_user)
     return await controller.delete_resume(resume_id, current_user["id"], is_admin=is_admin)
+
 
 @router.post(
     "/{resume_id}/merge",
@@ -190,8 +210,9 @@ async def merge_resume(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") == UserRole.ADMIN
+    is_admin = is_admin_or_staff(current_user)
     return await controller.merge_resume(resume_id, existing_resume_id, current_user["id"], is_admin=is_admin)
+
 
 @router.post(
     "/{resume_id}/documents",
@@ -207,8 +228,9 @@ async def add_document(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") == UserRole.ADMIN
+    is_admin = is_admin_or_staff(current_user)
     return await controller.add_document(resume_id, file, doc_type, current_user["id"], doc_title=doc_title, is_admin=is_admin)
+
 
 @router.get(
     "/{resume_id}/logs",
@@ -221,5 +243,5 @@ async def get_resume_logs(
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
-    is_admin = current_user.get("role") in [UserRole.ADMIN, UserRole.ADMIN.value, "admin", "superadmin"]
+    is_admin = is_admin_or_staff(current_user)
     return await controller.get_resume_logs(resume_id, current_user["id"], is_admin=is_admin)

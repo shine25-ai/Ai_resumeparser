@@ -115,7 +115,9 @@ class InterviewCreateRequest(BaseModel):
     client_weaknesses: List[str] = Field(default_factory=list)
     client_recommendation: Optional[str] = None
     client_notes: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
     # Multiple Interviewers & Clients Panel Support
@@ -182,7 +184,9 @@ class InterviewBatchCreateRequest(BaseModel):
     client_weaknesses: List[str] = Field(default_factory=list)
     client_recommendation: Optional[str] = None
     client_notes: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
     notes: Optional[str] = None
@@ -243,7 +247,9 @@ class InterviewUpdateRequest(BaseModel):
     client_weaknesses: Optional[List[str]] = None
     client_recommendation: Optional[str] = None
     client_notes: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
     # Multiple Interviewers & Clients Panel Support
@@ -286,7 +292,9 @@ class InterviewFeedbackRequest(BaseModel):
     client_weaknesses: List[str] = Field(default_factory=list)
     client_recommendation: Optional[str] = None  # Selected / Rejected / Pending / Hold
     client_notes: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
     # Dynamic Skills Ratings & Weighted Category Evaluations & AI Scores
@@ -394,7 +402,9 @@ class InterviewResponse(BaseModel):
     client_weaknesses: List[str] = Field(default_factory=list)
     client_recommendation: Optional[str] = None
     client_notes: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
     client_feedback_date: Optional[str] = None
 
     # Multiple Interviewers & Clients Panel Support
@@ -405,6 +415,10 @@ class InterviewResponse(BaseModel):
     notes: Optional[str] = None
 
     reschedule_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+    email_sent_count: Optional[int] = 0
+    last_email_sent_at: Optional[str] = None
+    email_sent_history: List[Dict[str, Any]] = Field(default_factory=list)
 
     created_by: Optional[str] = None
     updated_by: Optional[str] = None

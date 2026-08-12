@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from "react";
 import {
-  X, Save, ChevronLeft, ChevronRight, UserCheck,
-  Building2, DollarSign, Sparkles, HelpCircle, Plus, Trash2
+  X, ChevronLeft, ChevronRight, UserCheck,
+  Building2, DollarSign, Sparkles, HelpCircle, Plus, Trash2,
+  Star, FileText, Upload, Calendar, RefreshCw, ShieldCheck,
+  AlignLeft, Briefcase, TrendingUp
 } from "lucide-react";
 import {
   bulkSubmitInterviewFeedback,
+  getUsers,
   type InterviewItem,
   type BulkFeedbackItemPayload,
   type InterviewerItem,
   type ClientFeedbackItem,
+  type UserProfile,
 } from "../utils/Api";
+import type { CategoryScoreItem } from "../types/interview";
+import { SkillRatingsEvaluation } from "./SkillRatingsEvaluation";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 
 interface BulkFeedbackModalProps {
@@ -26,6 +32,12 @@ interface SingleCandidateFeedbackForm {
   job_title: string;
   interview_type: string;
   round_number: number;
+  scheduled_date?: string;
+  scheduled_time?: string;
+  meeting_platform?: string;
+  meeting_link?: string;
+
+  feedbackTab: "INTERVIEWER" | "CLIENT";
   
   // Single Primary Interviewer Feedback (Top level sync)
   rating: number;
@@ -50,6 +62,12 @@ interface SingleCandidateFeedbackForm {
   // Multi Client Panel List
   clientsList: ClientFeedbackItem[];
 
+  // Skill Ratings & AI Score
+  skill_ratings: { skill_name: string; rating: number }[];
+  category_scores: CategoryScoreItem[];
+  ai_score: number;
+  ai_recommendation: string;
+
   // Shared Candidate Info & Outcomes
   candidate_requested_date: string;
   candidate_requested_time: string;
@@ -71,13 +89,20 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   const [formsData, setFormsData] = useState<SingleCandidateFeedbackForm[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
 
   const [questionOptions, setQuestionOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      getUsers().then((users) => setSystemUsers(users)).catch(() => setSystemUsers([]));
+    }
+  }, [isOpen]);
 
   // Initialize form state when selectedInterviews change or modal opens
   useEffect(() => {
     if (selectedInterviews && selectedInterviews.length > 0) {
-      const initialForms = selectedInterviews.map((item) => {
+      const initialForms: SingleCandidateFeedbackForm[] = selectedInterviews.map((item) => {
         const initInterviewers: InterviewerItem[] =
           item.interviewers && item.interviewers.length > 0
             ? item.interviewers
@@ -106,13 +131,28 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                 },
               ];
 
+        const initSkills =
+          item.skill_ratings && item.skill_ratings.length > 0
+            ? item.skill_ratings
+            : [
+                { skill_name: "Java", rating: 1 },
+                { skill_name: "SQL", rating: 1 },
+                { skill_name: "DATA BRICKS", rating: 1 },
+              ];
+
         return {
           interview_id: item.id,
           candidate_name: item.candidate_name,
           candidate_email: item.candidate_email,
           job_title: item.job_title,
           interview_type: item.interview_type,
-          round_number: item.round_number,
+          round_number: item.round_number || 1,
+          scheduled_date: item.scheduled_date,
+          scheduled_time: item.scheduled_time,
+          meeting_platform: item.meeting_platform,
+          meeting_link: item.meeting_link,
+
+          feedbackTab: "INTERVIEWER",
           
           rating: item.rating || 4,
           feedback: item.feedback || "",
@@ -130,6 +170,11 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           client_notes: item.client_notes || "",
           client_feedback_date: item.client_feedback_date || new Date().toISOString().split("T")[0],
           clientsList: initClients,
+
+          skill_ratings: initSkills,
+          category_scores: item.category_scores || [],
+          ai_score: item.ai_score || 21,
+          ai_recommendation: item.ai_recommendation || "No Hire",
 
           candidate_requested_date: item.candidate_requested_date || "",
           candidate_requested_time: item.candidate_requested_time || "",
@@ -283,6 +328,23 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
     });
   };
 
+  // Document Upload Handler
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileNames = Array.from(files).map((f) => f.name).join("\n");
+    setFormsData((prev) => {
+      const updated = [...prev];
+      const form = updated[activeCandidateIndex];
+      if (form) {
+        form.interview_document_files = form.interview_document_files
+          ? `${form.interview_document_files}\n${fileNames}`
+          : fileNames;
+      }
+      return updated;
+    });
+  };
+
   const handleSubmitAll = async () => {
     try {
       setLoading(true);
@@ -312,6 +374,11 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           client_feedback_date: f.client_feedback_date || undefined,
           clients: f.clientsList,
 
+          skill_ratings: f.skill_ratings,
+          category_scores: f.category_scores,
+          ai_score: f.ai_score,
+          ai_recommendation: f.ai_recommendation,
+
           candidate_requested_date: f.candidate_requested_date || undefined,
           candidate_requested_time: f.candidate_requested_time || undefined,
           candidate_requested_role: f.candidate_requested_role || undefined,
@@ -335,449 +402,896 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-      <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl text-slate-900">
+    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 md:p-4 font-sans animate-in fade-in duration-300">
+      <div className="bg-slate-50 border border-slate-200/80 rounded-3xl w-full max-w-[98vw] h-[95vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-900">
         
-        {/* MODAL HEADER */}
-        <div className="flex justify-between items-center bg-slate-50 px-6 py-4 border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-600 shadow-xs">
-              <Sparkles size={20} />
+        {/* 1. TOP STICKY WORKSPACE HEADER BAR */}
+        <header className="flex flex-nowrap items-center justify-between gap-3 px-5 py-2.5 bg-white/90 backdrop-blur-md border-b border-slate-200/80 flex-shrink-0 sticky top-0 z-20">
+          {/* Left Title & Stepper info */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl shadow-xs">
+              <Sparkles size={18} />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Bulk Feedback Entry ({selectedInterviews.length} Candidates Selected)
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Provide round assessment, panel interviewers & client reviews in a single submission.
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-extrabold text-slate-900 tracking-tight whitespace-nowrap">
+                  Bulk Feedback Workspace ({selectedInterviews.length} Candidates)
+                </h2>
+                <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                  Candidate {activeCandidateIndex + 1} of {formsData.length}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium truncate">
+                Assess individual candidate technical round, panel interviewers & client evaluators
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
-        </div>
 
-        {/* CANDIDATE STEPPER / TABS BAR */}
-        <div className="bg-slate-100/80 px-6 py-3 border-b border-slate-200 flex items-center gap-2 overflow-x-auto scrollbar-none">
-          {formsData.map((f, idx) => {
-            const isActive = idx === activeCandidateIndex;
-            return (
+          {/* Right Panel Tab Switcher & Actions */}
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            {currentForm && (
+              <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleCurrentFormChange("feedbackTab", "INTERVIEWER")}
+                  className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    currentForm.feedbackTab === "INTERVIEWER"
+                      ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <UserCheck size={14} />
+                  Panel Interviewers
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleCurrentFormChange("feedbackTab", "CLIENT")}
+                  className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    currentForm.feedbackTab === "CLIENT"
+                      ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Building2 size={14} />
+                  Client Evaluators
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-2.5">
               <button
-                key={f.interview_id}
-                onClick={() => setActiveCandidateIndex(idx)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                  isActive
-                    ? "bg-indigo-600 text-white shadow-sm scale-[1.02]"
-                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
+                type="button"
+                onClick={onClose}
+                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 rounded-lg font-extrabold transition-all cursor-pointer text-xs"
               >
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`}>
-                  {idx + 1}
-                </span>
-                <span className="truncate max-w-[140px]">{f.candidate_name}</span>
+                Cancel
               </button>
-            );
-          })}
+
+              <button
+                type="button"
+                onClick={handleSubmitAll}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3.5 py-1 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white rounded-lg font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95 text-xs"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin" />
+                    <span>Submitting All...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={13} />
+                    <span>Save & Submit All Bulk Feedback</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-800 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer shadow-xs"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </header>
+
+        {/* 2. CANDIDATE STEPPER / TABS NAVIGATION BAR */}
+        <div className="bg-slate-100/90 px-5 py-2.5 border-b border-slate-200/80 flex items-center justify-between gap-3 overflow-x-auto shrink-0">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
+            {formsData.map((f, idx) => {
+              const isActive = idx === activeCandidateIndex;
+              return (
+                <button
+                  key={f.interview_id}
+                  type="button"
+                  onClick={() => setActiveCandidateIndex(idx)}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                    isActive
+                      ? "bg-indigo-600 text-white shadow-sm scale-[1.02]"
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`}>
+                    {idx + 1}
+                  </span>
+                  <span className="truncate max-w-[130px]">{f.candidate_name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={activeCandidateIndex === 0}
+              onClick={() => setActiveCandidateIndex((prev) => prev - 1)}
+              className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            >
+              <ChevronLeft size={13} /> Prev
+            </button>
+            <span className="text-[11px] font-bold text-slate-500">
+              {activeCandidateIndex + 1} / {formsData.length}
+            </span>
+            <button
+              type="button"
+              disabled={activeCandidateIndex === formsData.length - 1}
+              onClick={() => setActiveCandidateIndex((prev) => prev + 1)}
+              className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            >
+              Next <ChevronRight size={13} />
+            </button>
+          </div>
         </div>
 
-        {/* MODAL MAIN BODY SCROLLABLE */}
+        {/* 3. MAIN DASHBOARD CONTENT AREA FOR CURRENT CANDIDATE */}
         {currentForm && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
             {error && (
-              <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl font-bold flex items-center gap-2">
+              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-bold flex items-center gap-2">
                 <span>⚠️ {error}</span>
               </div>
             )}
 
-            {/* CANDIDATE HEADER INFO BANNER */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+            {/* CANDIDATE PROFILE BANNER */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-600 font-extrabold flex items-center justify-center text-sm shadow-xs">
-                  {currentForm.candidate_name.charAt(0)}
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                  {currentForm.candidate_name ? currentForm.candidate_name.charAt(0).toUpperCase() : "C"}
                 </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">{currentForm.candidate_name}</h3>
-                  <p className="text-xs text-slate-500 font-medium">{currentForm.job_title} | {currentForm.interview_type} (Round {currentForm.round_number})</p>
+
+                <div className="flex flex-col justify-center">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                      {currentForm.candidate_name}
+                    </h3>
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                      currentForm.ai_recommendation === "Strong Hire" || currentForm.ai_recommendation === "Selected"
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : currentForm.ai_recommendation === "Hire"
+                        ? "bg-teal-50 border-teal-200 text-teal-700"
+                        : currentForm.ai_recommendation === "Hold"
+                        ? "bg-amber-50 border-amber-200 text-amber-700"
+                        : "bg-rose-50 border-rose-200 text-rose-700"
+                    }`}>
+                      {currentForm.ai_recommendation} ({currentForm.ai_score}/100)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full whitespace-nowrap">
+                      {currentForm.job_title} ({currentForm.interview_type} - R{currentForm.round_number})
+                    </span>
+                    {currentForm.scheduled_date && (
+                      <span className="bg-slate-100 border border-slate-200/80 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1">
+                        <Calendar size={11} className="text-slate-500" />
+                        {currentForm.scheduled_date} at {currentForm.scheduled_time || "10:00"}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Step Navigation Controls */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={activeCandidateIndex === 0}
-                  onClick={() => setActiveCandidateIndex((prev) => prev - 1)}
-                  className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-slate-100 flex items-center gap-1 transition-all cursor-pointer"
-                >
-                  <ChevronLeft size={14} /> Previous
-                </button>
-                <span className="text-xs font-bold text-slate-500">
-                  {activeCandidateIndex + 1} / {formsData.length}
+            {/* 3-COLUMN WORKSPACE GRID */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+              {/* LEFT SIDEBAR NAVIGATION (2 COLS) */}
+              <div className="lg:col-span-2 hidden lg:block space-y-1.5 sticky top-0 self-start">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 block mb-2">
+                  Evaluation Workspace
                 </span>
-                <button
-                  type="button"
-                  disabled={activeCandidateIndex === formsData.length - 1}
-                  onClick={() => setActiveCandidateIndex((prev) => prev + 1)}
-                  className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-slate-100 flex items-center gap-1 transition-all cursor-pointer"
+                
+                <a
+                  href="#sec-interviewer"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
                 >
-                  Next <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
+                  <UserCheck size={15} className="text-indigo-600" />
+                  <span>Panel Feedback</span>
+                </a>
 
-            {/* SECTION 1: INTERVIEWER FEEDBACK (MULTI PANEL) */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div className="flex items-center gap-2">
-                  <UserCheck size={18} className="text-indigo-600" />
-                  <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                    Interviewer Panel Feedback ({currentForm.interviewersList.length})
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddInterviewer}
-                  className="flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                <a
+                  href="#sec-skills"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
                 >
-                  <Plus size={14} /> Add Interviewer
-                </button>
+                  <Star size={15} className="text-amber-500" />
+                  <span>Skill Assessment</span>
+                </a>
+
+                <a
+                  href="#sec-compensation"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                >
+                  <DollarSign size={15} className="text-emerald-600" />
+                  <span>Compensation & Role</span>
+                </a>
+
+                <a
+                  href="#sec-documents"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                >
+                  <FileText size={15} className="text-rose-600" />
+                  <span>Documents & Notes</span>
+                </a>
               </div>
 
-              {currentForm.interviewersList.map((interviewer, intIdx) => (
-                <div key={intIdx} className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl space-y-4 relative">
-                  <div className="flex justify-between items-center">
-                    <input
-                      type="text"
-                      value={interviewer.interviewer_name}
-                      onChange={(e) => handleInterviewerItemChange(intIdx, "interviewer_name", e.target.value)}
-                      placeholder="Interviewer Name"
-                      className="text-xs font-bold text-slate-900 border-b border-dashed border-slate-300 focus:border-indigo-500 focus:outline-none bg-transparent"
-                    />
-                    {currentForm.interviewersList.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveInterviewer(intIdx)}
-                        className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 size={13} /> Remove
-                      </button>
-                    )}
-                  </div>
+              {/* MAIN CONTENT AREA (7 COLS) */}
+              <div className="lg:col-span-7 space-y-6">
+                
+                {/* SECTION 1: PANEL INTERVIEWER / CLIENT CARDS SECTION */}
+                <div id="sec-interviewer" className="space-y-4">
+                  {currentForm.feedbackTab === "INTERVIEWER" && (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                            <UserCheck size={18} />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-extrabold text-slate-900">Panel Interviewers Evaluation</h3>
+                            <p className="text-[11px] text-slate-500 font-medium">Record individual ratings & observations</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddInterviewer}
+                          className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                        >
+                          <Plus size={14} /> Add Interviewer
+                        </button>
+                      </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Rating (1-5)</label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        step="0.5"
-                        value={interviewer.rating || 4}
-                        onChange={(e) => handleInterviewerItemChange(intIdx, "rating", parseFloat(e.target.value))}
-                        className="w-full accent-indigo-600 cursor-pointer"
-                      />
-                      <span className="text-xs font-bold text-amber-600 block mt-1">
-                        {interviewer.rating || 4} ★
-                      </span>
-                    </div>
+                      {currentForm.interviewersList.map((interviewer, intIdx) => (
+                        <div key={intIdx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-indigo-200 transition-all">
+                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                                {interviewer.interviewer_name ? interviewer.interviewer_name.charAt(0).toUpperCase() : "I"}
+                              </div>
+                              <span className="font-extrabold text-slate-900 text-sm">Interviewer #{intIdx + 1}</span>
+                            </div>
+                            {currentForm.interviewersList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveInterviewer(intIdx)}
+                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} /> Remove
+                              </button>
+                            )}
+                          </div>
 
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Recommendation</label>
-                      <select
-                        value={interviewer.recommendation || "Selected"}
-                        onChange={(e) => handleInterviewerItemChange(intIdx, "recommendation", e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
-                      >
-                        <option value="Selected">Selected</option>
-                        <option value="Rejected">Rejected</option>
-                        <option value="Hold">Hold</option>
-                      </select>
-                    </div>
-                  </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
+                              <select
+                                value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === "custom" || !val) {
+                                    handleInterviewerItemChange(intIdx, "interviewer_id", undefined);
+                                    handleInterviewerItemChange(intIdx, "interviewer_email", undefined);
+                                  } else {
+                                    const u = systemUsers.find((user) => user.id === val);
+                                    if (u) {
+                                      handleInterviewerItemChange(intIdx, "interviewer_id", u.id);
+                                      handleInterviewerItemChange(intIdx, "interviewer_name", u.full_name);
+                                      handleInterviewerItemChange(intIdx, "interviewer_email", u.email);
+                                    }
+                                  }
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                              >
+                                <option value="">-- Choose Interviewer User --</option>
+                                {systemUsers.map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.full_name} ({u.role || u.email})
+                                  </option>
+                                ))}
+                                <option value="custom">+ External / Custom</option>
+                              </select>
+                            </div>
 
-                  {(interviewer.rating || 4) <= 4.5 && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
-                      <label className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
-                        <HelpCircle size={13} className="text-amber-600" />
-                        Select Observation Reason
-                      </label>
-                      <select
-                        onChange={(e) => {
-                          const reason = e.target.value;
-                          if (reason && !reason.startsWith("--")) {
-                            const newFb = interviewer.feedback ? `${interviewer.feedback}\nNote: ${reason}` : reason;
-                            handleInterviewerItemChange(intIdx, "feedback", newFb);
-                          }
-                        }}
-                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 cursor-pointer"
-                      >
-                        {questionOptions.map((opt, i) => (
-                          <option key={i} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Name *</label>
+                              <input
+                                type="text"
+                                value={interviewer.interviewer_name}
+                                onChange={(e) => handleInterviewerItemChange(intIdx, "interviewer_name", e.target.value)}
+                                placeholder="Interviewer Name"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Email</label>
+                              <input
+                                type="email"
+                                value={interviewer.interviewer_email || ""}
+                                onChange={(e) => handleInterviewerItemChange(intIdx, "interviewer_email", e.target.value)}
+                                placeholder="interviewer@company.com"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Rating (1-5)</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="1"
+                                max="5"
+                                value={interviewer.rating || 4}
+                                onChange={(e) => handleInterviewerItemChange(intIdx, "rating", Number(e.target.value))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Outcome Recommendation</label>
+                              <select
+                                value={interviewer.recommendation || "Selected"}
+                                onChange={(e) => handleInterviewerItemChange(intIdx, "recommendation", e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-emerald-700 focus:bg-white focus:outline-none cursor-pointer"
+                              >
+                                <option value="Selected">🟢 Selected</option>
+                                <option value="Rejected">🔴 Rejected</option>
+                                <option value="Pending">🟡 Pending</option>
+                                <option value="Hold">Hold</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Conditional Multiple-Selection Observation Reasons Dropdown for Interviewer Rating < 5 */}
+                          {(interviewer.rating ?? 0) < 5 && (
+                            <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
+                              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                <HelpCircle size={14} className="text-amber-600" />
+                                Select Observations for Rating below 5/5 (Interview Type: {currentForm.interview_type})
+                              </label>
+                              <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                {questionOptions
+                                  .filter(opt => opt && !opt.startsWith("--"))
+                                  .map((opt, optIdx) => {
+                                    const isChecked = interviewer.feedback?.includes(opt);
+                                    return (
+                                      <label key={optIdx} className="flex items-start gap-2.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let currentFeedback = interviewer.feedback || "";
+                                            if (e.target.checked) {
+                                              if (!currentFeedback.includes(opt)) {
+                                                currentFeedback = currentFeedback ? `${currentFeedback}\n- ${opt}` : `- ${opt}`;
+                                              }
+                                            } else {
+                                              currentFeedback = currentFeedback
+                                                .replace(new RegExp(`\\n?- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g'), "")
+                                                .replace(new RegExp(`- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\n?`, 'g'), "")
+                                                .trim();
+                                            }
+                                            handleInterviewerItemChange(intIdx, "feedback", currentFeedback);
+                                          }}
+                                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                        />
+                                        <span>{opt}</span>
+                                      </label>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* SELECTABLE OBSERVATION CHIPS */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-slate-600 block">Quick Observation Reasons (Click to append)</label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {["Technical Skills", "Communication", "System Design", "Problem Solving", "Architecture", "Culture Fit", "Behavior"].map((chip, cIdx) => (
+                                <button
+                                  key={cIdx}
+                                  type="button"
+                                  onClick={() => {
+                                    const newFb = interviewer.feedback ? `${interviewer.feedback}\nObservation: ${chip}` : chip;
+                                    handleInterviewerItemChange(intIdx, "feedback", newFb);
+                                  }}
+                                  className="bg-slate-100 hover:bg-indigo-50 hover:border-indigo-300 border border-slate-200 text-slate-700 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all cursor-pointer"
+                                >
+                                  + {chip}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Strengths (Comma-separated)</label>
+                              <input
+                                type="text"
+                                value={interviewer.strengths ? (Array.isArray(interviewer.strengths) ? interviewer.strengths.join(", ") : interviewer.strengths) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleInterviewerItemChange(intIdx, "strengths", list);
+                                }}
+                                placeholder="e.g. Problem Solving, React"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Weaknesses / Areas for Improvement</label>
+                              <input
+                                type="text"
+                                value={interviewer.weaknesses ? (Array.isArray(interviewer.weaknesses) ? interviewer.weaknesses.join(", ") : interviewer.weaknesses) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleInterviewerItemChange(intIdx, "weaknesses", list);
+                                }}
+                                placeholder="e.g. System Design edge cases"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Round Feedback Comments</label>
+                            <textarea
+                              rows={2}
+                              value={interviewer.feedback || ""}
+                              onChange={(e) => handleInterviewerItemChange(intIdx, "feedback", e.target.value)}
+                              placeholder="Provide technical evaluation feedback..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none resize-none"
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Strengths (Comma-separated)</label>
-                      <input
-                        type="text"
-                        value={interviewer.strengths ? (Array.isArray(interviewer.strengths) ? interviewer.strengths.join(", ") : interviewer.strengths) : ""}
-                        onChange={(e) => {
-                          const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                          handleInterviewerItemChange(intIdx, "strengths", list);
-                        }}
-                        placeholder="e.g. Problem Solving, React"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Weaknesses / Improvement Areas</label>
-                      <input
-                        type="text"
-                        value={interviewer.weaknesses ? (Array.isArray(interviewer.weaknesses) ? interviewer.weaknesses.join(", ") : interviewer.weaknesses) : ""}
-                        onChange={(e) => {
-                          const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                          handleInterviewerItemChange(intIdx, "weaknesses", list);
-                        }}
-                        placeholder="e.g. System Design edge cases"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none"
-                      />
-                    </div>
-                  </div>
+                  {currentForm.feedbackTab === "CLIENT" && (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-teal-50 text-teal-600 rounded-xl">
+                            <Building2 size={18} />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-extrabold text-slate-900">Client Panel Evaluators</h3>
+                            <p className="text-[11px] text-slate-500 font-medium">Manage client team feedback</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddClient}
+                          className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                        >
+                          <Plus size={14} /> Add Client Evaluator
+                        </button>
+                      </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 mb-1 block">Feedback Comments</label>
-                    <textarea
-                      rows={2}
-                      value={interviewer.feedback || ""}
-                      onChange={(e) => handleInterviewerItemChange(intIdx, "feedback", e.target.value)}
-                      placeholder="Interviewer specific feedback..."
-                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-none resize-none"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                      {currentForm.clientsList.map((client, clientIdx) => (
+                        <div key={clientIdx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-teal-200 transition-all">
+                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-xs flex items-center justify-center">
+                                {client.client_name ? client.client_name.charAt(0).toUpperCase() : "C"}
+                              </div>
+                              <span className="font-extrabold text-slate-900 text-sm">Client Evaluator #{clientIdx + 1}</span>
+                            </div>
+                            {currentForm.clientsList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveClient(clientIdx)}
+                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} /> Remove
+                              </button>
+                            )}
+                          </div>
 
-            {/* SECTION 2: CLIENT FEEDBACK (MULTI PANEL) */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div className="flex items-center gap-2">
-                  <Building2 size={18} className="text-teal-600" />
-                  <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                    Client Panel Feedback ({currentForm.clientsList.length})
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddClient}
-                  className="flex items-center gap-1 bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                >
-                  <Plus size={14} /> Add Client
-                </button>
-              </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
+                              <select
+                                value={client.client_id || (client.client_name ? "custom" : "")}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === "custom" || !val) {
+                                    handleClientItemChange(clientIdx, "client_id", undefined);
+                                    handleClientItemChange(clientIdx, "client_email", undefined);
+                                  } else {
+                                    const u = systemUsers.find((user) => user.id === val);
+                                    if (u) {
+                                      handleClientItemChange(clientIdx, "client_id", u.id);
+                                      handleClientItemChange(clientIdx, "client_name", u.full_name);
+                                      handleClientItemChange(clientIdx, "client_email", u.email);
+                                    }
+                                  }
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
+                              >
+                                <option value="">-- Choose Client User --</option>
+                                {systemUsers.map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.full_name} ({u.role || u.email})
+                                  </option>
+                                ))}
+                                <option value="custom">+ External / Custom</option>
+                              </select>
+                            </div>
 
-              {currentForm.clientsList.map((client, clientIdx) => (
-                <div key={clientIdx} className="p-4 bg-teal-50/30 border border-teal-200 rounded-xl space-y-4 relative">
-                  <div className="flex justify-between items-center">
-                    <input
-                      type="text"
-                      value={client.client_name}
-                      onChange={(e) => handleClientItemChange(clientIdx, "client_name", e.target.value)}
-                      placeholder="Client Name / Company"
-                      className="text-xs font-bold text-slate-900 border-b border-dashed border-teal-300 focus:border-teal-500 focus:outline-none bg-transparent"
-                    />
-                    {currentForm.clientsList.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveClient(clientIdx)}
-                        className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 size={13} /> Remove
-                      </button>
-                    )}
-                  </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Client Name / Company</label>
+                              <input
+                                type="text"
+                                value={client.client_name}
+                                onChange={(e) => handleClientItemChange(clientIdx, "client_name", e.target.value)}
+                                placeholder="Client Evaluator Name"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                              />
+                            </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Rating (1-5)</label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        step="0.5"
-                        value={client.client_rating || 4}
-                        onChange={(e) => handleClientItemChange(clientIdx, "client_rating", parseFloat(e.target.value))}
-                        className="w-full accent-teal-600 cursor-pointer"
-                      />
-                      <span className="text-xs font-bold text-teal-700 block mt-1">
-                        {client.client_rating || 4} ★
-                      </span>
-                    </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Client Email</label>
+                              <input
+                                type="email"
+                                value={client.client_email || ""}
+                                onChange={(e) => handleClientItemChange(clientIdx, "client_email", e.target.value)}
+                                placeholder="client@company.com"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                              />
+                            </div>
+                          </div>
 
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Recommendation</label>
-                      <select
-                        value={client.client_recommendation || "Selected"}
-                        onChange={(e) => handleClientItemChange(clientIdx, "client_recommendation", e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
-                      >
-                        <option value="Selected">Selected</option>
-                        <option value="Rejected">Rejected</option>
-                        <option value="On Hold">On Hold</option>
-                      </select>
-                    </div>
-                  </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Client Rating (1-5)</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="1"
+                                max="5"
+                                value={client.client_rating || 4}
+                                onChange={(e) => handleClientItemChange(clientIdx, "client_rating", Number(e.target.value))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
+                              />
+                            </div>
 
-                  {(client.client_rating || 4) <= 4.5 && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
-                      <label className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
-                        <HelpCircle size={13} className="text-amber-600" />
-                        Select Client Observation Reason
-                      </label>
-                      <select
-                        onChange={(e) => {
-                          const reason = e.target.value;
-                          if (reason && !reason.startsWith("--")) {
-                            const newFb = client.client_feedback ? `${client.client_feedback}\nNote: ${reason}` : reason;
-                            handleClientItemChange(clientIdx, "client_feedback", newFb);
-                          }
-                        }}
-                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 cursor-pointer"
-                      >
-                        {questionOptions.map((opt, i) => (
-                          <option key={i} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Client Recommendation</label>
+                              <select
+                                value={client.client_recommendation || "Selected"}
+                                onChange={(e) => handleClientItemChange(clientIdx, "client_recommendation", e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-teal-700 focus:bg-white focus:outline-none cursor-pointer"
+                              >
+                                <option value="Selected">🟢 Selected</option>
+                                <option value="Rejected">🔴 Rejected</option>
+                                <option value="Next Round">🔄 Next Round</option>
+                                <option value="Hold">Hold</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Conditional Multiple-Selection Observation Reasons Dropdown for Client Rating < 5 */}
+                          {(client.client_rating ?? 0) < 5 && (
+                            <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
+                              <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                <HelpCircle size={14} className="text-amber-600" />
+                                Select Observations for Client Rating below 5/5 (Interview Type: {currentForm.interview_type})
+                              </label>
+                              <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                {questionOptions
+                                  .filter(opt => opt && !opt.startsWith("--"))
+                                  .map((opt, optIdx) => {
+                                    const isChecked = client.client_feedback?.includes(opt);
+                                    return (
+                                      <label key={optIdx} className="flex items-start gap-2.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let currentFeedback = client.client_feedback || "";
+                                            if (e.target.checked) {
+                                              if (!currentFeedback.includes(opt)) {
+                                                currentFeedback = currentFeedback ? `${currentFeedback}\n- ${opt}` : `- ${opt}`;
+                                              }
+                                            } else {
+                                              currentFeedback = currentFeedback
+                                                .replace(new RegExp(`\\n?- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g'), "")
+                                                .replace(new RegExp(`- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\n?`, 'g'), "")
+                                                .trim();
+                                            }
+                                            handleClientItemChange(clientIdx, "client_feedback", currentFeedback);
+                                          }}
+                                          className="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                                        />
+                                        <span>{opt}</span>
+                                      </label>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Strengths (Comma-separated)</label>
+                              <input
+                                type="text"
+                                value={client.client_strengths ? (Array.isArray(client.client_strengths) ? client.client_strengths.join(", ") : client.client_strengths) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleClientItemChange(clientIdx, "client_strengths", list);
+                                }}
+                                placeholder="e.g. Domain knowledge, Communication"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Weaknesses / Areas for Improvement</label>
+                              <input
+                                type="text"
+                                value={client.client_weaknesses ? (Array.isArray(client.client_weaknesses) ? client.client_weaknesses.join(", ") : client.client_weaknesses) : ""}
+                                onChange={(e) => {
+                                  const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  handleClientItemChange(clientIdx, "client_weaknesses", list);
+                                }}
+                                placeholder="e.g. English fluency"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Client Detailed Feedback Comments</label>
+                            <textarea
+                              rows={2}
+                              value={client.client_feedback || ""}
+                              onChange={(e) => handleClientItemChange(clientIdx, "client_feedback", e.target.value)}
+                              placeholder="Provide client detailed feedback notes..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none resize-none"
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
+                </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Client Strengths (Comma-separated)</label>
+                {/* SKILL ASSESSMENT DASHBOARD SECTION (CATEGORY-WISE WEIGHTED EVALUATION) */}
+                <div id="sec-skills">
+                  <SkillRatingsEvaluation
+                    skillRatings={currentForm.skill_ratings}
+                    onChangeSkills={(newSkills) => handleCurrentFormChange("skill_ratings", newSkills)}
+                    categoryScores={currentForm.category_scores}
+                    onChangeCategoryScores={(newCatScores) => handleCurrentFormChange("category_scores", newCatScores)}
+                    onAiScoreCalculated={(score, rec) => {
+                      setFormsData((prev) => {
+                        const updated = [...prev];
+                        const form = updated[activeCandidateIndex];
+                        if (form) {
+                          form.ai_score = score;
+                          form.ai_recommendation = rec;
+                        }
+                        return updated;
+                      });
+                    }}
+                  />
+                </div>
+
+                {/* COMPENSATION & ROLE KPI CARDS SECTION */}
+                <div id="sec-compensation" className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+                    <DollarSign size={18} className="text-emerald-600" />
+                    <h3 className="text-sm font-extrabold text-slate-900">Compensation & Role Details</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* KPI Card 1: Requested Salary */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-amber-800 flex items-center gap-1.5">
+                        <DollarSign size={14} className="text-amber-600" /> Requested Salary
+                      </span>
                       <input
                         type="text"
-                        value={client.client_strengths ? (Array.isArray(client.client_strengths) ? client.client_strengths.join(", ") : client.client_strengths) : ""}
-                        onChange={(e) => {
-                          const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                          handleClientItemChange(clientIdx, "client_strengths", list);
-                        }}
-                        placeholder="e.g. Domain depth, Communication"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none"
+                        value={currentForm.salary_requested}
+                        onChange={(e) => handleCurrentFormChange("salary_requested", e.target.value)}
+                        placeholder="e.g. 50000"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-amber-700 focus:bg-white focus:outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 mb-1 block">Client Weaknesses / Improvement Areas</label>
+
+                    {/* KPI Card 2: Final Fit Salary */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
+                        <TrendingUp size={14} className="text-emerald-600" /> Final Fit Salary
+                      </span>
                       <input
                         type="text"
-                        value={client.client_weaknesses ? (Array.isArray(client.client_weaknesses) ? client.client_weaknesses.join(", ") : client.client_weaknesses) : ""}
-                        onChange={(e) => {
-                          const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                          handleClientItemChange(clientIdx, "client_weaknesses", list);
-                        }}
-                        placeholder="e.g. English fluency"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none"
+                        value={currentForm.final_fit_salary}
+                        onChange={(e) => handleCurrentFormChange("final_fit_salary", e.target.value)}
+                        placeholder="e.g. 45000"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-emerald-600 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+
+                    {/* KPI Card 3: Requested Work Role */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
+                        <Briefcase size={14} className="text-indigo-600" /> Requested Work Role
+                      </span>
+                      <input
+                        type="text"
+                        value={currentForm.candidate_requested_role}
+                        onChange={(e) => handleCurrentFormChange("candidate_requested_role", e.target.value)}
+                        placeholder="e.g. Senior Tech Lead"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+
+                    {/* KPI Card 4: Expected Joining Date */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
+                        <Calendar size={14} className="text-indigo-600" /> Expected Joining Date
+                      </span>
+                      <input
+                        type="date"
+                        value={currentForm.joining_date}
+                        onChange={(e) => handleCurrentFormChange("joining_date", e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
                       />
                     </div>
                   </div>
+                </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 mb-1 block">Client Feedback Comments</label>
+                {/* DOCUMENTS & NOTES SECTION */}
+                <div id="sec-documents" className="space-y-4">
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <FileText size={18} className="text-rose-600" />
+                        <h3 className="text-sm font-extrabold text-slate-900">Attached Documents & Media</h3>
+                      </div>
+                      <label className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
+                        <Upload size={13} />
+                        <span>Browse / Attach File</span>
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
                     <textarea
                       rows={2}
-                      value={client.client_feedback || ""}
-                      onChange={(e) => handleClientItemChange(clientIdx, "client_feedback", e.target.value)}
-                      placeholder="Client specific feedback notes..."
-                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-none resize-none"
+                      value={currentForm.interview_document_files}
+                      onChange={(e) => handleCurrentFormChange("interview_document_files", e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono text-xs"
+                      placeholder="Document names or URLs (one per line)..."
+                    />
+                  </div>
+
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <AlignLeft size={16} className="text-indigo-600" /> Special Prep Notes & Instructions
+                    </span>
+                    <textarea
+                      rows={3}
+                      value={currentForm.notes}
+                      onChange={(e) => handleCurrentFormChange("notes", e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
+                      placeholder="Enter candidate prep notes or internal evaluator instructions..."
                     />
                   </div>
                 </div>
-              ))}
-            </div>
 
-            {/* SECTION 3: SHARED OUTCOMES & DOCUMENTS */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6 shadow-sm">
-              <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-                <DollarSign size={18} className="text-amber-600" />
-                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                  Salary & Candidate Requests
-                </h4>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 mb-1 block">Salary Requested</label>
-                  <input
-                    type="text"
-                    value={currentForm.salary_requested}
-                    onChange={(e) => handleCurrentFormChange("salary_requested", e.target.value)}
-                    placeholder="e.g. 15 LPA"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none"
-                  />
+              {/* RIGHT FLOATING STICKY AI SUMMARY PANEL (3 COLS) */}
+              <div className="lg:col-span-3 space-y-5 sticky top-0 self-start">
+                
+                {/* STICKY AI DASHBOARD SCORE GAUGE CARD */}
+                <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 shadow-xl space-y-4 border border-indigo-700/50">
+                  <div className="flex items-center justify-between border-b border-indigo-700/50 pb-3">
+                    <span className="text-xs font-extrabold text-indigo-200 flex items-center gap-1.5 uppercase tracking-wider">
+                      <Sparkles size={16} className="text-cyan-400" /> AI Evaluation Index
+                    </span>
+                    <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${
+                      currentForm.ai_recommendation === "Strong Hire" || currentForm.ai_recommendation === "Selected"
+                        ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-300"
+                        : currentForm.ai_recommendation === "Hire"
+                        ? "bg-teal-500/20 border-teal-400/40 text-teal-300"
+                        : currentForm.ai_recommendation === "Hold"
+                        ? "bg-amber-500/20 border-amber-400/40 text-amber-300"
+                        : "bg-rose-500/20 border-rose-400/40 text-rose-300"
+                    }`}>
+                      {currentForm.ai_recommendation}
+                    </span>
+                  </div>
+
+                  <div className="text-center py-2 space-y-1">
+                    <div className="text-4xl font-black tracking-tight text-white">
+                      {currentForm.ai_score} <span className="text-sm font-bold text-indigo-300">/ 100</span>
+                    </div>
+                    <span className="text-[11px] text-indigo-200 font-semibold uppercase tracking-widest block">
+                      Live Weighted Score
+                    </span>
+                  </div>
+
+                  {/* LIVE METRICS SUMMARY LIST */}
+                  <div className="space-y-2 pt-2 border-t border-indigo-700/50 text-xs">
+                    <div className="flex justify-between items-center text-indigo-200">
+                      <span>Panel Interviewers:</span>
+                      <span className="font-bold text-white">{currentForm.interviewersList.length} Member(s)</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-indigo-200">
+                      <span>Client Evaluators:</span>
+                      <span className="font-bold text-white">{currentForm.clientsList.length} Member(s)</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-indigo-200">
+                      <span>AI Hiring Readiness:</span>
+                      <span className={`font-bold ${
+                        currentForm.ai_recommendation === "Strong Hire" || currentForm.ai_recommendation === "Hire"
+                          ? "text-emerald-400"
+                          : currentForm.ai_recommendation === "Hold"
+                          ? "text-amber-400"
+                          : "text-rose-400"
+                      }`}>{currentForm.ai_recommendation}</span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 mb-1 block">Final Fit Salary</label>
-                  <input
-                    type="text"
-                    value={currentForm.final_fit_salary}
-                    onChange={(e) => handleCurrentFormChange("final_fit_salary", e.target.value)}
-                    placeholder="e.g. 14 LPA"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none"
-                  />
+
+                {/* HIRING WORKFLOW STAGE PROGRESS CARD */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <span className="text-xs font-extrabold text-slate-900 block uppercase tracking-wider">
+                    Hiring Stage Tracker
+                  </span>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2 p-2 bg-emerald-50 text-emerald-700 rounded-xl font-bold border border-emerald-200">
+                      <ShieldCheck size={14} /> HR Screening (Verified)
+                    </div>
+                    <div className="flex items-center gap-2 p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold border border-indigo-200">
+                      <UserCheck size={14} /> Technical Round {currentForm.round_number || 1} (In Progress)
+                    </div>
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 text-slate-400 rounded-xl font-medium border border-slate-200">
+                      Managerial Round (Upcoming)
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 mb-1 block">Joining Date</label>
-                  <input
-                    type="date"
-                    value={currentForm.joining_date}
-                    onChange={(e) => handleCurrentFormChange("joining_date", e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none"
-                  />
-                </div>
+
               </div>
+
             </div>
 
           </div>
         )}
-
-        {/* MODAL FOOTER */}
-        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center">
-          <div className="text-xs font-bold text-slate-500">
-            Candidate <span className="text-indigo-600">{activeCandidateIndex + 1}</span> of {formsData.length}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-100 text-xs font-bold transition-all cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={loading}
-              onClick={handleSubmitAll}
-              className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-            >
-              {loading ? (
-                <span>Submitting Bulk Feedback...</span>
-              ) : (
-                <>
-                  <Save size={16} />
-                  <span>Submit All {formsData.length} Candidate Feedbacks</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
       </div>
     </div>
   );
