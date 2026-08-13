@@ -1,13 +1,18 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal } from "lucide-react";
+import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getResumes, type CandidateQueryParams } from "../utils/Api";
+import { CandidateEditModal } from "../components/CandidateEditModal";
 
 export default function CandidateDatabase() {
   const navigate = useNavigate();
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Candidate Edit Modal State
+  const [editCandidateId, setEditCandidateId] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
 
   // Pagination & Server Search/Filter State
   const [page, setPage] = useState<number>(1);
@@ -357,6 +362,16 @@ export default function CandidateDatabase() {
                     <td className="py-3.5 px-3 text-right">
                       <div className="flex items-center justify-end gap-2 text-indigo-600">
                         <button
+                          onClick={() => {
+                            setEditCandidateId(row.realId);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                          title="Edit Candidate Resume & Evaluation Details"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
                           onClick={() => navigate(`/evaluation/${row.realId}`)}
                           className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
                           title="View Candidate Full Evaluation Page"
@@ -482,6 +497,19 @@ export default function CandidateDatabase() {
           </div>
         </div>
       </div>
+
+      {/* Candidate Edit Modal Component */}
+      <CandidateEditModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditCandidateId(null);
+        }}
+        candidateId={editCandidateId}
+        onSuccess={() => {
+          fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
+        }}
+      />
     </div>
   );
 }
