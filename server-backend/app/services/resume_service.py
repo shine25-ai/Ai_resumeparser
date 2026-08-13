@@ -45,9 +45,18 @@ class ResumeService:
         self.upload_dir = Path(__file__).resolve().parent.parent / settings.UPLOAD_FOLDER
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
-    async def upload_and_process_resume(self, user_id: str, file: UploadFile, background_tasks: BackgroundTasks, resume_source: Optional[str] = None, resume_source_informer_name: Optional[str] = None) -> ResumeResponse:
+    async def upload_and_process_resume(
+        self,
+        user_id: str,
+        file: UploadFile,
+        background_tasks: BackgroundTasks,
+        resume_source: Optional[str] = None,
+        resume_source_informer_name: Optional[str] = None,
+        uploaded_by_name: Optional[str] = None,
+        uploaded_by_email: Optional[str] = None,
+    ) -> ResumeResponse:
         """
-        Validate file, save to disk, upload to AWS S3, parse resume using resume-parser-pro, and save document in MongoDB.
+        Validate file, save to disk, upload to AWS S3, parse resume using resume-parser-pro, and save document in MongoDB with uploader user info.
         """
         if not file.filename:
             raise FileUploadError("No filename provided.")
@@ -100,6 +109,9 @@ class ResumeService:
             id=resume_id,
             candidate_id=candidate_id_str,
             user_id=user_id,
+            uploaded_by_user_id=user_id,
+            uploaded_by_name=uploaded_by_name,
+            uploaded_by_email=uploaded_by_email,
             filename=unique_filename,
             original_filename=original_filename,
             file_path=file_path,

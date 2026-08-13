@@ -134,11 +134,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
         const initSkills =
           item.skill_ratings && item.skill_ratings.length > 0
             ? item.skill_ratings
-            : [
-                { skill_name: "Java", rating: 1 },
-                { skill_name: "SQL", rating: 1 },
-                { skill_name: "DATA BRICKS", rating: 1 },
-              ];
+            : [];
 
         return {
           interview_id: item.id,
@@ -154,7 +150,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
           feedbackTab: "INTERVIEWER",
           
-          rating: item.rating || 4,
+          rating: item.rating !== undefined && item.rating !== null ? item.rating : 1,
           feedback: item.feedback || "",
           strengths: item.strengths ? item.strengths.join(", ") : "",
           weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
@@ -162,7 +158,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           interviewersList: initInterviewers,
 
           client_name: item.client_name || "",
-          client_rating: item.client_rating || 4,
+          client_rating: item.client_rating !== undefined && item.client_rating !== null ? item.client_rating : 1,
           client_feedback: item.client_feedback || "",
           client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
           client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",

@@ -14,6 +14,9 @@ class ResumeDocument(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     candidate_id: Optional[str] = None
     user_id: str
+    uploaded_by_user_id: Optional[str] = None
+    uploaded_by_name: Optional[str] = None
+    uploaded_by_email: Optional[str] = None
     filename: str
     original_filename: str
     file_path: str

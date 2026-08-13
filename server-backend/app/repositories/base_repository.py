@@ -14,18 +14,25 @@ class BaseRepository:
         self.collection_name = collection_name
         self.collection: AsyncIOMotorCollection = db[collection_name]
 
-    async def create(self, document: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_doc(self, doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if doc and "_id" in doc:
+            doc["_id"] = str(doc["_id"])
+        return doc
+
+    async def create(self, document: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Insert a single document into MongoDB."""
         await self.collection.insert_one(document)
-        return document
+        return self._sanitize_doc(document)
 
     async def get_by_id(self, id_val: str) -> Optional[Dict[str, Any]]:
         """Find a single document by string 'id' field."""
-        return await self.collection.find_one({"id": id_val})
+        doc = await self.collection.find_one({"id": id_val})
+        return self._sanitize_doc(doc)
 
     async def find_one(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Find a single document matching query filter."""
-        return await self.collection.find_one(query)
+        doc = await self.collection.find_one(query)
+        return self._sanitize_doc(doc)
 
     async def find_many(
         self,
@@ -43,7 +50,8 @@ class BaseRepository:
             direction = -1 if descending else 1
             cursor = cursor.sort(sort_by, direction)
 
-        return await cursor.to_list(length=limit)
+        docs = await cursor.to_list(length=limit)
+        return [d for doc in docs if (d := self._sanitize_doc(doc)) is not None]
 
     async def count(self, query: Optional[Dict[str, Any]] = None) -> int:
         """Count total matching documents."""

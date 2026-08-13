@@ -960,3 +960,83 @@ export const deleteUser = async (userId: string): Promise<void> => {
   }
 };
 
+export const SKILLS_EVALUATIONS_URL = `${BASE_URL}/skills-evaluations`;
+
+export interface CategoryWeightagePayload {
+  category: string;
+  weightage: number;
+}
+
+export interface SkillsEvaluationPayload {
+  skill_name: string;
+  categories: CategoryWeightagePayload[];
+}
+
+export interface SkillsEvaluationResponseData {
+  id: string;
+  skill_name: string;
+  categories: CategoryWeightagePayload[];
+  created_at: string;
+  updated_at: string;
+}
+
+export const getSkillsEvaluations = async (): Promise<SkillsEvaluationResponseData[]> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(SKILLS_EVALUATIONS_URL, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch skills evaluations");
+  }
+
+  return resData.data || resData;
+};
+
+export const saveSkillsEvaluation = async (payload: SkillsEvaluationPayload): Promise<SkillsEvaluationResponseData> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(SKILLS_EVALUATIONS_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to save skills evaluation template");
+  }
+
+  return resData.data || resData;
+};
+
+export const deleteSkillsEvaluation = async (skillId: string): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${SKILLS_EVALUATIONS_URL}/${skillId}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to delete skills evaluation template");
+  }
+};
+
+

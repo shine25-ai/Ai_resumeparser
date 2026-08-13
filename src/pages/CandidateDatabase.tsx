@@ -67,6 +67,7 @@ export default function CandidateDatabase() {
         email: item.parsed_data?.email || item.email || "N/A",
         role: item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "Software Professional",
         source: item.resume_source || "N/A",
+        uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
         experience: item.parsed_data?.total_experience_years
           ? `${item.parsed_data.total_experience_years} Yrs`
           : item.parsed_data?.years_of_experience
@@ -335,9 +336,14 @@ export default function CandidateDatabase() {
                     <td className="py-3.5 px-3">
                       <div className="flex flex-col gap-1">
                         <span className="text-slate-800 font-bold">{row.role}</span>
-                        <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
-                          Source: {row.source}
-                        </span>
+                        <div className="flex flex-wrap gap-1 items-center">
+                          <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
+                            Source: {row.source}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 w-fit font-medium">
+                            Uploaded By: {row.uploadedBy}
+                          </span>
+                        </div>
                       </div>
                     </td>
                     <td className="py-3.5 px-3 text-slate-500 font-semibold">{row.experience}</td>
