@@ -74,22 +74,33 @@ async def upload_resume(
     description="Retrieve paginated list of uploaded resumes.",
 )
 async def list_resumes(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=500, description="Page size limit"),
+    skip: Optional[int] = Query(None, ge=0, description="Optional manual skip offset"),
+    search: Optional[str] = Query(None, description="Search term for name, email, role, candidate_id, source"),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
+    calculated_skip = skip if skip is not None else (page - 1) * limit
     is_admin = is_admin_or_staff(current_user)
-    return await controller.list_resumes(current_user["id"], skip=skip, limit=limit, is_admin=is_admin)
+    return await controller.list_resumes(current_user["id"], skip=calculated_skip, limit=limit, page=page, search=search, is_admin=is_admin)
 
 
 @router.get(
     "/match",
     status_code=status.HTTP_200_OK,
     summary="Match and filter resumes by criteria",
-    description="Filter user resumes by job title, experience range, location, employment type, and required skills.",
+    description="Filter user resumes by name, email, role, experience, job title, location, employment type, and required skills.",
 )
 async def match_resumes(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=500, description="Page size limit"),
+    skip: Optional[int] = Query(None, ge=0, description="Optional manual skip offset"),
+    search: Optional[str] = Query(None, description="Global search term across name, email, role, experience"),
+    name: Optional[str] = Query(None, description="Filter candidate by name"),
+    email: Optional[str] = Query(None, description="Filter candidate by email"),
+    role: Optional[str] = Query(None, description="Filter candidate by role or designation"),
+    experience: Optional[float] = Query(None, ge=0, description="Filter candidate by minimum years of experience"),
     job_title: list[str] = Query(None, description="Job title or role keyword filter"),
     min_experience: float = Query(None, ge=0, description="Minimum total years of experience"),
     max_experience: float = Query(None, ge=0, description="Maximum total years of experience"),
@@ -98,11 +109,10 @@ async def match_resumes(
     year_of_passing: list[str] = Query(None, description="Year of passing graduation filter"),
     skills: list[str] = Query(None, description="List of required skills"),
     keywords: list[str] = Query(None, description="List of keywords to search in full resume text"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
+    calculated_skip = skip if skip is not None else (page - 1) * limit
     is_admin = is_admin_or_staff(current_user)
     return await controller.filter_resumes(
         user_id=current_user["id"],
@@ -114,8 +124,14 @@ async def match_resumes(
         year_of_passing=year_of_passing,
         skills=skills,
         keywords=keywords,
-        skip=skip,
+        search=search,
+        name=name,
+        email=email,
+        role=role,
+        experience=experience,
+        skip=calculated_skip,
         limit=limit,
+        page=page,
         is_admin=is_admin,
     )
 

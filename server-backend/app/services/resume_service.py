@@ -354,12 +354,22 @@ class ResumeService:
         updated_doc = await self.resume_repo.update_resume_fields(resume_id, update_fields, hr_update=hr_update_dict)
         return ResumeResponse.model_validate(updated_doc)
 
-    async def get_user_resumes(self, user_id: str, skip: int = 0, limit: int = 100, is_admin: bool = False) -> ResumeListResponse:
-        """Fetch list of resumes belonging to user (or all resumes if admin)."""
-        resumes = await self.resume_repo.get_by_user_id(user_id, skip=skip, limit=limit, is_admin=is_admin)
-        total = await self.resume_repo.count_by_user_id(user_id, is_admin=is_admin)
+    async def get_user_resumes(
+        self,
+        user_id: str,
+        skip: int = 0,
+        limit: int = 10,
+        page: int = 1,
+        search: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> ResumeListResponse:
+        """Fetch list of resumes belonging to user (or all resumes if admin) with total_pages calculation."""
+        import math
+        resumes = await self.resume_repo.get_by_user_id(user_id, skip=skip, limit=limit, is_admin=is_admin, search=search)
+        total = await self.resume_repo.count_by_user_id(user_id, is_admin=is_admin, search=search)
         items = [ResumeResponse.model_validate(r) for r in resumes]
-        return ResumeListResponse(total=total, resumes=items)
+        total_pages = math.ceil(total / limit) if limit > 0 else 1
+        return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items)
 
     async def filter_resumes(
         self,
@@ -372,12 +382,19 @@ class ResumeService:
         year_of_passing: Optional[List[str]] = None,
         skills: Optional[List[str]] = None,
         keywords: Optional[List[str]] = None,
+        search: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        role: Optional[str] = None,
+        experience: Optional[float] = None,
         skip: int = 0,
-        limit: int = 100,
+        limit: int = 10,
+        page: int = 1,
         is_admin: bool = False,
     ) -> ResumeListResponse:
-        """Filter resumes matching criteria."""
-        resumes = await self.resume_repo.filter_resumes(
+        """Filter resumes matching criteria with backend pagination and total_pages calculation."""
+        import math
+        res_dict = await self.resume_repo.filter_resumes(
             user_id=user_id,
             job_title=job_title,
             min_experience=min_experience,
@@ -387,13 +404,20 @@ class ResumeService:
             year_of_passing=year_of_passing,
             skills=skills,
             keywords=keywords,
+            search=search,
+            name=name,
+            email=email,
+            role=role,
+            experience=experience,
             skip=skip,
             limit=limit,
             is_admin=is_admin,
         )
-        total = len(resumes)
+        resumes = res_dict.get("resumes", [])
+        total = res_dict.get("total", 0)
         items = [ResumeResponse.model_validate(r) for r in resumes]
-        return ResumeListResponse(total=total, resumes=items)
+        total_pages = math.ceil(total / limit) if limit > 0 else 1
+        return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items)
 
     async def extract_resume_text_for_ai(self, resume_id: str, user_id: str, is_admin: bool = False) -> ResumeExtractResponse:
         """Extract and format resume text for AI parsing pipeline."""

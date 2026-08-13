@@ -25,9 +25,19 @@ class ResumeController:
             status_code=status.HTTP_201_CREATED,
         )
 
-    async def list_resumes(self, user_id: str, skip: int = 0, limit: int = 100, is_admin: bool = False) -> JSONResponse:
+    async def list_resumes(
+        self,
+        user_id: str,
+        skip: int = 0,
+        limit: int = 10,
+        page: int = 1,
+        search: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> JSONResponse:
         """Process request to list uploaded resumes."""
-        resume_list_response = await self.resume_service.get_user_resumes(user_id, skip=skip, limit=limit, is_admin=is_admin)
+        resume_list_response = await self.resume_service.get_user_resumes(
+            user_id, skip=skip, limit=limit, page=page, search=search, is_admin=is_admin
+        )
         return success_response(
             data=resume_list_response.model_dump(),
             message="Resumes retrieved successfully.",
@@ -44,8 +54,14 @@ class ResumeController:
         year_of_passing: list[str] = None,
         skills: list[str] = None,
         keywords: list[str] = None,
+        search: str = None,
+        name: str = None,
+        email: str = None,
+        role: str = None,
+        experience: float = None,
         skip: int = 0,
-        limit: int = 100,
+        limit: int = 10,
+        page: int = 1,
         is_admin: bool = False,
     ) -> JSONResponse:
         """Process request to filter resumes based on criteria."""
@@ -59,8 +75,14 @@ class ResumeController:
             year_of_passing=year_of_passing,
             skills=skills,
             keywords=keywords,
+            search=search,
+            name=name,
+            email=email,
+            role=role,
+            experience=experience,
             skip=skip,
             limit=limit,
+            page=page,
             is_admin=is_admin,
         )
         return success_response(

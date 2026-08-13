@@ -72,6 +72,9 @@ class ResumeListResponse(BaseModel):
     """List of user resumes response."""
 
     total: int
+    page: int = 1
+    limit: int = 10
+    total_pages: int = 1
     resumes: List[ResumeResponse]
 
     model_config = ConfigDict(from_attributes=True)
