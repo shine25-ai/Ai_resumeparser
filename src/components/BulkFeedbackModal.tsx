@@ -150,7 +150,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
           feedbackTab: "INTERVIEWER",
           
-          rating: item.rating || 4,
+          rating: item.rating !== undefined && item.rating !== null ? item.rating : 1,
           feedback: item.feedback || "",
           strengths: item.strengths ? item.strengths.join(", ") : "",
           weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
@@ -158,7 +158,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           interviewersList: initInterviewers,
 
           client_name: item.client_name || "",
-          client_rating: item.client_rating || 4,
+          client_rating: item.client_rating !== undefined && item.client_rating !== null ? item.client_rating : 1,
           client_feedback: item.client_feedback || "",
           client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
           client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",

@@ -638,6 +638,10 @@ class InterviewService:
                 if not candidate_email:
                     raise HTTPException(status_code=400, detail="Candidate email is missing. Please enter candidate email.")
 
+                cand_addrs = [a.strip() for a in candidate_email.replace(";", ",").split(",") if a.strip()]
+                if not cand_addrs:
+                    raise HTTPException(status_code=400, detail="Candidate email is invalid or empty.")
+
                 cand_template = None
                 if payload.template_id:
                     cand_template = await template_service.get_template(payload.template_id)
@@ -670,7 +674,7 @@ class InterviewService:
                 msg_cand = EmailMessage()
                 msg_cand["Subject"] = cand_subject
                 msg_cand["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
-                msg_cand["To"] = candidate_email.strip()
+                msg_cand["To"] = ", ".join(cand_addrs)
                 msg_cand.set_content("Please enable HTML to view this email.")
                 msg_cand.add_alternative(cand_final_html, subtype='html')
 
@@ -682,14 +686,18 @@ class InterviewService:
                         server.starttls()
 
                 server.login(config_model.smtp_username, password)
-                server.send_message(msg_cand, to_addrs=[candidate_email.strip()])
+                server.send_message(msg_cand, to_addrs=cand_addrs)
                 server.quit()
-                sent_recipients.append(f"Candidate ({candidate_email.strip()})")
+                sent_recipients.append(f"Candidate ({', '.join(cand_addrs)})")
 
             # 2. SEND TO INTERVIEWER
             if payload.send_to_interviewer:
                 if not interviewer_email:
                     raise HTTPException(status_code=400, detail="Interviewer email is missing. Please enter interviewer email.")
+
+                int_addrs = [a.strip() for a in interviewer_email.replace(";", ",").split(",") if a.strip()]
+                if not int_addrs:
+                    raise HTTPException(status_code=400, detail="Interviewer email is invalid or empty.")
 
                 interviewer_template = next((t for t in all_templates if "Interviewer" in t.name), None)
 
@@ -726,7 +734,7 @@ class InterviewService:
                 msg_int = EmailMessage()
                 msg_int["Subject"] = int_subject
                 msg_int["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
-                msg_int["To"] = interviewer_email.strip()
+                msg_int["To"] = ", ".join(int_addrs)
                 msg_int.set_content("Please enable HTML to view this email.")
                 msg_int.add_alternative(int_final_html, subtype='html')
 
@@ -738,9 +746,9 @@ class InterviewService:
                         server.starttls()
 
                 server.login(config_model.smtp_username, password)
-                server.send_message(msg_int, to_addrs=[interviewer_email.strip()])
+                server.send_message(msg_int, to_addrs=int_addrs)
                 server.quit()
-                sent_recipients.append(f"Interviewer ({interviewer_email.strip()})")
+                sent_recipients.append(f"Interviewer ({', '.join(int_addrs)})")
 
             if not sent_recipients:
                 raise HTTPException(status_code=400, detail="No email recipients selected.")

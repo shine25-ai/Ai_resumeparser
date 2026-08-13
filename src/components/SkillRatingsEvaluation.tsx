@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Star, Plus, Trash2, Cpu, CheckCircle2, Award, Sparkles } from "lucide-react";
 import type { SkillRatingItem, CategoryScoreItem } from "../types/interview";
-import { getSkillsEvaluations, saveSkillsEvaluation } from "../utils/Api";
+import { getSkillsEvaluations, saveSkillsEvaluation, deleteSkillsEvaluation } from "../utils/Api";
 
 interface SkillRatingsEvaluationProps {
   skillRatings: SkillRatingItem[];
@@ -24,27 +24,41 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   const [newSkillName, setNewSkillName] = useState("");
   const [skillTemplates, setSkillTemplates] = useState<any[]>([]);
   const [selectedSkillIndex, setSelectedSkillIndex] = useState<number>(0);
+  const [hasInitialized, setHasInitialized] = useState<boolean>(false);
 
 
   // Input state for adding new evaluation categories manually
   const [newCatName, setNewCatName] = useState("");
   const [newCatWeight, setNewCatWeight] = useState<number>(20);
 
+  // Suggestion list state & dropdown visibility
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   // Fetch all templates from the database on mount
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
         const data = await getSkillsEvaluations();
-        setSkillTemplates(data);
-        if (data && data.length > 0 && (!skillRatings || skillRatings.length === 0)) {
-          onChangeSkills(data.map((t: any) => ({ skill_name: t.skill_name, rating: 1 })));
-        }
+        setSkillTemplates(data || []);
+        setHasInitialized(true);
       } catch (err) {
         console.error("Failed to load skills evaluations templates:", err);
       }
     };
     fetchTemplates();
   }, []);
+
+  // Filter existing skills from database templates based on user input (e.g. "JA" -> "JAVA")
+  const filteredSuggestions = React.useMemo(() => {
+    if (!newSkillName.trim()) return [];
+    const query = newSkillName.trim().toLowerCase();
+    const existingSkillNames = skillRatings.map((s) => s.skill_name.toLowerCase());
+    return skillTemplates.filter(
+      (t) =>
+        t.skill_name.toLowerCase().includes(query) &&
+        !existingSkillNames.includes(t.skill_name.toLowerCase())
+    );
+  }, [newSkillName, skillTemplates, skillRatings]);
 
   const selectedSkillName = skillRatings[selectedSkillIndex]?.skill_name || "";
 
@@ -154,9 +168,20 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     }
   };
 
-  const handleAddSkill = async () => {
-    if (!newSkillName.trim()) return;
-    const name = newSkillName.trim();
+  const handleAddSkill = async (customName?: string) => {
+    const targetName = customName || newSkillName;
+    if (!targetName.trim()) return;
+    const name = targetName.trim();
+
+    // Check if skill already added
+    const alreadyAdded = skillRatings.some(
+      (s) => s.skill_name.toLowerCase() === name.toLowerCase()
+    );
+    if (alreadyAdded) {
+      setNewSkillName("");
+      setShowSuggestions(false);
+      return;
+    }
 
     // Save to backend if template doesn't exist
     const templateExists = skillTemplates.some(
@@ -173,15 +198,38 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     // Select the newly added skill
     setSelectedSkillIndex(updated.length - 1);
     setNewSkillName("");
+    setShowSuggestions(false);
   };
 
-  const handleRemoveSkill = (index: number) => {
+  const handleSelectSuggestion = (suggestedName: string) => {
+    handleAddSkill(suggestedName);
+  };
+
+  const handleRemoveSkill = async (index: number) => {
+    const skillToRemove = skillRatings[index];
     const updated = skillRatings.filter((_, i) => i !== index);
     onChangeSkills(updated);
 
     // Adjust selected index
     if (selectedSkillIndex >= updated.length) {
       setSelectedSkillIndex(Math.max(0, updated.length - 1));
+    }
+
+    // Delete matching template from database if present
+    if (skillToRemove) {
+      const template = skillTemplates.find(
+        (t) => t.skill_name.toLowerCase() === skillToRemove.skill_name.toLowerCase()
+      );
+      if (template && (template.id || template._id)) {
+        try {
+          await deleteSkillsEvaluation(template.id || template._id);
+          setSkillTemplates((prev) =>
+            prev.filter((t) => (t.id || t._id) !== (template.id || template._id))
+          );
+        } catch (err) {
+          console.error("Failed to delete skill evaluation template from DB:", err);
+        }
+      }
     }
   };
 
@@ -300,18 +348,47 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
             </h4>
           </div>
           {!readOnly && (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newSkillName}
-                onChange={(e) => setNewSkillName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSkill())}
-                placeholder="Add skill (e.g. Spring Boot, Docker)"
-                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48"
-              />
+            <div className="flex items-center gap-2 relative">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={newSkillName}
+                  onChange={(e) => {
+                    setNewSkillName(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => {
+                    // Slight delay to allow clicking on a suggestion item
+                    setTimeout(() => setShowSuggestions(false), 200);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSkill())}
+                  placeholder="Type skill (e.g. Java, Python)"
+                  className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-52"
+                />
+
+                {showSuggestions && filteredSuggestions.length > 0 && (
+                  <ul className="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto py-1 text-xs font-medium text-slate-800">
+                    {filteredSuggestions.map((template) => (
+                      <li
+                        key={template.id || template._id || template.skill_name}
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // prevent input blur before click resolves
+                          handleSelectSuggestion(template.skill_name);
+                        }}
+                        className="px-3 py-1.5 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer flex items-center justify-between transition-colors"
+                      >
+                        <span className="font-bold uppercase tracking-wider">{template.skill_name}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Database Skill</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               <button
                 type="button"
-                onClick={handleAddSkill}
+                onClick={() => handleAddSkill()}
                 className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
               >
                 <Plus size={13} /> Add Skill
@@ -372,7 +449,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                   </div>
                 </div>
 
-                {!readOnly && skillRatings.length > 1 && (
+                {!readOnly && skillRatings.length > 0 && (
                   <button
                     type="button"
                     onClick={(e) => {

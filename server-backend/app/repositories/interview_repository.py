@@ -4,6 +4,7 @@ Interview repository for MongoDB database queries regarding Interview entities.
 
 from typing import Any, Dict, List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 from app.repositories.base_repository import BaseRepository
 from app.utils.constants import INTERVIEWS_COLLECTION
 from app.utils.enums import InterviewStatus, InterviewType
