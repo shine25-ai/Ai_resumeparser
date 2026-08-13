@@ -34,23 +34,66 @@ class ResumeRepository(BaseRepository):
             
         return None
 
-    async def get_by_user_id(self, user_id: Optional[str] = None, skip: int = 0, limit: int = 100, is_admin: bool = False) -> List[Dict[str, Any]]:
+    async def get_by_user_id(
+        self,
+        user_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+        is_admin: bool = False,
+        search: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Fetch list of resumes belonging to user (or all resumes if is_admin or user_id is None)."""
+        import re
         from loguru import logger
         query: Dict[str, Any] = {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}
         if user_id and not is_admin:
             query["user_id"] = user_id
+
+        if search and search.strip():
+            s_regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
+            search_or = [
+                {"parsed_data.name": {"$regex": s_regex}},
+                {"parsed_data.full_name": {"$regex": s_regex}},
+                {"parsed_data.email": {"$regex": s_regex}},
+                {"email": {"$regex": s_regex}},
+                {"parsed_data.designation": {"$regex": s_regex}},
+                {"parsed_data.role": {"$regex": s_regex}},
+                {"candidate_id": {"$regex": s_regex}},
+                {"original_filename": {"$regex": s_regex}},
+                {"extracted_text": {"$regex": s_regex}},
+                {"resume_source": {"$regex": s_regex}},
+            ]
+            query = {"$and": [query, {"$or": search_or}]}
+
         logger.info(f"[GET_BY_USER_ID] Executing MongoDB query: {query}, skip={skip}, limit={limit}, is_admin={is_admin}")
         results = await self.find_many(query=query, skip=skip, limit=limit, sort_by="upload_date", descending=True)
         logger.info(f"[GET_BY_USER_ID] Query returned {len(results)} resume document(s)")
         return results
 
-    async def count_by_user_id(self, user_id: Optional[str] = None, is_admin: bool = False) -> int:
+    async def count_by_user_id(self, user_id: Optional[str] = None, is_admin: bool = False, search: Optional[str] = None) -> int:
         """Count total resumes (or all resumes if is_admin or user_id is None)."""
+        import re
         from loguru import logger
         query: Dict[str, Any] = {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}
         if user_id and not is_admin:
             query["user_id"] = user_id
+
+        if search and search.strip():
+            s_regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
+            search_or = [
+                {"parsed_data.name": {"$regex": s_regex}},
+                {"parsed_data.full_name": {"$regex": s_regex}},
+                {"parsed_data.email": {"$regex": s_regex}},
+                {"email": {"$regex": s_regex}},
+                {"parsed_data.designation": {"$regex": s_regex}},
+                {"parsed_data.role": {"$regex": s_regex}},
+                {"candidate_id": {"$regex": s_regex}},
+                {"original_filename": {"$regex": s_regex}},
+                {"extracted_text": {"$regex": s_regex}},
+                {"resume_source": {"$regex": s_regex}},
+            ]
+            query = {"$and": [query, {"$or": search_or}]}
+
         count_val = await self.count(query=query)
         logger.info(f"[COUNT_BY_USER_ID] Count query: {query} -> Total: {count_val}")
         return count_val
@@ -66,16 +109,75 @@ class ResumeRepository(BaseRepository):
         year_of_passing: Optional[List[str]] = None,
         skills: Optional[List[str]] = None,
         keywords: Optional[List[str]] = None,
+        search: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        role: Optional[str] = None,
+        experience: Optional[float] = None,
         skip: int = 0,
         limit: int = 100,
         is_admin: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Filter resumes based on multiple criteria matching parsed_data fields."""
+    ) -> Dict[str, Any]:
+        """Filter resumes based on multiple criteria matching parsed_data fields and return (results, total)."""
         import re
 
         and_conditions: List[Dict[str, Any]] = [{"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}]
         if user_id and not is_admin:
             and_conditions.append({"user_id": user_id})
+
+        # Global search filter across name, email, role, candidate_id, source, text
+        if search and search.strip():
+            s_regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
+            and_conditions.append({
+                "$or": [
+                    {"parsed_data.name": {"$regex": s_regex}},
+                    {"parsed_data.full_name": {"$regex": s_regex}},
+                    {"parsed_data.email": {"$regex": s_regex}},
+                    {"email": {"$regex": s_regex}},
+                    {"parsed_data.designation": {"$regex": s_regex}},
+                    {"parsed_data.role": {"$regex": s_regex}},
+                    {"candidate_id": {"$regex": s_regex}},
+                    {"original_filename": {"$regex": s_regex}},
+                    {"extracted_text": {"$regex": s_regex}},
+                    {"resume_source": {"$regex": s_regex}},
+                ]
+            })
+
+        # Specific Field Searches: Name, Email, Role, Experience
+        if name and name.strip():
+            n_regex = re.compile(re.escape(name.strip()), re.IGNORECASE)
+            and_conditions.append({
+                "$or": [
+                    {"parsed_data.name": {"$regex": n_regex}},
+                    {"parsed_data.full_name": {"$regex": n_regex}},
+                ]
+            })
+
+        if email and email.strip():
+            e_regex = re.compile(re.escape(email.strip()), re.IGNORECASE)
+            and_conditions.append({
+                "$or": [
+                    {"parsed_data.email": {"$regex": e_regex}},
+                    {"email": {"$regex": e_regex}},
+                ]
+            })
+
+        if role and role.strip():
+            r_regex = re.compile(re.escape(role.strip()), re.IGNORECASE)
+            and_conditions.append({
+                "$or": [
+                    {"parsed_data.designation": {"$regex": r_regex}},
+                    {"parsed_data.role": {"$regex": r_regex}},
+                ]
+            })
+
+        if experience is not None:
+            and_conditions.append({
+                "$or": [
+                    {"parsed_data.total_experience_years": {"$gte": experience}},
+                    {"parsed_data.years_of_experience": {"$gte": experience}},
+                ]
+            })
 
         if job_title and any(j.strip() for j in job_title):
             jt_queries = []
@@ -184,14 +286,13 @@ class ResumeRepository(BaseRepository):
                 and_conditions.append({"$or": keyword_queries})
 
         from loguru import logger
-        logger.info(f"[FILTER_RESUMES] Params received -> user_id: {user_id}, job_title: {job_title}, min_exp: {min_experience}, max_exp: {max_experience}, location: {location}, emp_type: {employment_type}, skills: {skills}, keywords: {keywords}")
+        logger.info(f"[FILTER_RESUMES] Params received -> user_id: {user_id}, search: {search}, name: {name}, email: {email}, role: {role}, exp: {experience}")
 
         final_query = {"$and": and_conditions} if len(and_conditions) > 1 else and_conditions[0]
-        logger.info(f"[FILTER_RESUMES] Compiled MongoDB query: {final_query}")
-
         results = await self.find_many(query=final_query, skip=skip, limit=limit, sort_by="upload_date", descending=True)
-        logger.info(f"[FILTER_RESUMES] Returned {len(results)} matching resume document(s)")
-        return results
+        total_count = await self.count(query=final_query)
+        logger.info(f"[FILTER_RESUMES] Returned {len(results)} matching resume document(s), total={total_count}")
+        return {"resumes": results, "total": total_count}
 
     async def find_by_user_and_filename(self, user_id: str, original_filename: str) -> Optional[Dict[str, Any]]:
         """Check if user has already uploaded a file with the same original filename."""

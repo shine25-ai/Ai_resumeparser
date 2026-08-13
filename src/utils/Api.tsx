@@ -158,9 +158,62 @@ export const loginUser = async (credentials: LoginPayload): Promise<AuthSuccessR
   };
 };
 
-export const getResumes = async (skip: number = 0, limit: number = 100) => {
+export interface CandidateQueryParams {
+  page?: number;
+  limit?: number;
+  skip?: number;
+  search?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  experience?: number;
+  min_experience?: number;
+  max_experience?: number;
+}
+
+export interface PaginatedResumesResponse {
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  resumes: any[];
+}
+
+export const getResumes = async (params: CandidateQueryParams | number = 1, limitParam: number = 10): Promise<PaginatedResumesResponse> => {
   const token = localStorage.getItem("access_token") || "";
-  const response = await fetch(`${RESUME_LIST}?skip=${skip}&limit=${limit}`, {
+  let page = 1;
+  let limit = limitParam;
+  let search = "";
+  let name = "";
+  let email = "";
+  let role = "";
+  let experience: number | undefined = undefined;
+
+  if (typeof params === "object" && params !== null) {
+    page = params.page || 1;
+    limit = params.limit || limitParam;
+    search = params.search || "";
+    name = params.name || "";
+    email = params.email || "";
+    role = params.role || "";
+    experience = params.experience;
+  } else if (typeof params === "number") {
+    page = params;
+  }
+
+  const queryParts: string[] = [
+    `page=${page}`,
+    `limit=${limit}`,
+  ];
+  if (search && search.trim()) queryParts.push(`search=${encodeURIComponent(search.trim())}`);
+  if (name && name.trim()) queryParts.push(`name=${encodeURIComponent(name.trim())}`);
+  if (email && email.trim()) queryParts.push(`email=${encodeURIComponent(email.trim())}`);
+  if (role && role.trim()) queryParts.push(`role=${encodeURIComponent(role.trim())}`);
+  if (experience !== undefined) queryParts.push(`experience=${experience}`);
+
+  const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
+
+  const response = await fetch(`${RESUME_LIST}${queryString}`, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -175,7 +228,24 @@ export const getResumes = async (skip: number = 0, limit: number = 100) => {
     throw new Error(resData.detail || "Failed to fetch resumes list");
   }
 
-  return resData.data || resData;
+  const dataPayload = resData.data || resData;
+  const resumesList = Array.isArray(dataPayload.resumes)
+    ? dataPayload.resumes
+    : Array.isArray(dataPayload)
+      ? dataPayload
+      : [];
+  const totalVal = typeof dataPayload.total === "number" ? dataPayload.total : resumesList.length;
+  const totalPagesVal = typeof dataPayload.total_pages === "number"
+    ? dataPayload.total_pages
+    : Math.ceil(totalVal / limit) || 1;
+
+  return {
+    total: totalVal,
+    page: dataPayload.page || page,
+    limit: dataPayload.limit || limit,
+    total_pages: totalPagesVal,
+    resumes: resumesList,
+  };
 };
 
 export interface MatchFilterParams {
