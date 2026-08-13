@@ -134,11 +134,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
         const initSkills =
           item.skill_ratings && item.skill_ratings.length > 0
             ? item.skill_ratings
-            : [
-                { skill_name: "Java", rating: 1 },
-                { skill_name: "SQL", rating: 1 },
-                { skill_name: "DATA BRICKS", rating: 1 },
-              ];
+            : [];
 
         return {
           interview_id: item.id,

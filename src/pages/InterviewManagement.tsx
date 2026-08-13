@@ -404,11 +404,7 @@ export default function InterviewManagement() {
 
   const [feedbackInterviewersList, setFeedbackInterviewersList] = useState<InterviewerItem[]>([]);
   const [feedbackClientsList, setFeedbackClientsList] = useState<ClientFeedbackItem[]>([]);
-  const [feedbackSkillRatings, setFeedbackSkillRatings] = useState<any[]>([
-    { skill_name: "Java", rating: 1 },
-    { skill_name: "SQL", rating: 1 },
-    { skill_name: "DATA BRICKS", rating: 1 },
-  ]);
+  const [feedbackSkillRatings, setFeedbackSkillRatings] = useState<any[]>([]);
   const [feedbackCategoryScores, setFeedbackCategoryScores] = useState<any[]>([]);
   const [feedbackAiScore, setFeedbackAiScore] = useState<number>(20);
   const [feedbackAiRecommendation, setFeedbackAiRecommendation] = useState<string>("Hold");
@@ -975,11 +971,7 @@ export default function InterviewManagement() {
     setFeedbackSkillRatings(
       item.skill_ratings && item.skill_ratings.length > 0
         ? item.skill_ratings
-        : [
-            { skill_name: "Java", rating: 1 },
-            { skill_name: "SQL", rating: 1 },
-            { skill_name: "DATA BRICKS", rating: 1 },
-          ]
+        : []
     );
     setFeedbackCategoryScores(item.category_scores || []);
     setFeedbackAiScore(item.ai_score || 20);

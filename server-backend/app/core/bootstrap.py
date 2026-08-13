@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from loguru import logger
 from app.core.config import settings
 from app.core.security import hash_password
-from app.utils.constants import ROLES_COLLECTION, USERS_COLLECTION
+from app.utils.constants import ROLES_COLLECTION, USERS_COLLECTION, SKILLS_EVALUATION_COLLECTION
 from app.utils.helpers import generate_uuid, utc_now
 
 
@@ -74,6 +74,55 @@ async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:
             logger.info(f"Bootstrapped system role: {default_role['name']} ({default_role['slug']})")
 
 
+async def bootstrap_default_skills(db: AsyncIOMotorDatabase) -> None:
+    """Idempotently bootstrap default skills evaluations templates."""
+    collection = db[SKILLS_EVALUATION_COLLECTION]
+    count = await collection.count_documents({})
+    if count == 0:
+        default_templates = [
+            {
+                "skill_name": "Java",
+                "categories": [
+                    {"category": "Core Java & OOP", "weightage": 25},
+                    {"category": "Spring Framework / Boot", "weightage": 25},
+                    {"category": "Data Structures & Collections", "weightage": 20},
+                    {"category": "Concurrency & Multithreading", "weightage": 15},
+                    {"category": "Database & SQL", "weightage": 15}
+                ]
+            },
+            {
+                "skill_name": "Python",
+                "categories": [
+                    {"category": "Python Syntax & Scripting", "weightage": 30},
+                    {"category": "Web Frameworks (FastAPI/Django)", "weightage": 25},
+                    {"category": "Database & SQL", "weightage": 15},
+                    {"category": "Data Analysis & Libraries (Pandas/NumPy)", "weightage": 20},
+                    {"category": "Testing & Debugging", "weightage": 10}
+                ]
+            },
+            {
+                "skill_name": "Angular",
+                "categories": [
+                    {"category": "TypeScript & ES6", "weightage": 25},
+                    {"category": "Angular Core (Components, Directives, Pipes)", "weightage": 25},
+                    {"category": "State Management & RxJS", "weightage": 20},
+                    {"category": "Routing & API Integration", "weightage": 15},
+                    {"category": "HTML5, CSS3 & Responsive Design", "weightage": 15}
+                ]
+            }
+        ]
+        for template in default_templates:
+            doc = {
+                "id": generate_uuid(),
+                "skill_name": template["skill_name"],
+                "categories": template["categories"],
+                "created_at": utc_now().isoformat(),
+                "updated_at": utc_now().isoformat()
+            }
+            await collection.insert_one(doc)
+            logger.info(f"Bootstrapped default skill evaluation template: {template['skill_name']}")
+
+
 async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
     """
     Check if default administrator exists in MongoDB users collection.
@@ -81,6 +130,7 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
     This operation is strictly idempotent.
     """
     await bootstrap_default_roles(db)
+    await bootstrap_default_skills(db)
 
     users_collection = db[USERS_COLLECTION]
 
@@ -91,6 +141,8 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
         await db[RESUME_LOGS_COLLECTION].create_index([("email", 1)])
         await db[RESUMES_COLLECTION].create_index([("parsed_data.email", 1)])
         await db[ROLES_COLLECTION].create_index([("slug", 1)], unique=True)
+        # Create index for skills evaluation skill_name
+        await db[SKILLS_EVALUATION_COLLECTION].create_index([("skill_name", 1)], unique=True)
         logger.info(f"Initialized MongoDB collections '{RESUME_LOGS_COLLECTION}', '{RESUMES_COLLECTION}', and '{ROLES_COLLECTION}' with indexes.")
     except Exception as idx_err:
         logger.warning(f"Index initialization note: {idx_err}")

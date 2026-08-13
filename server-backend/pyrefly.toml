@@ -1,0 +1,3 @@
+# Point Pyrefly to the virtual environment's Python interpreter
+# so it resolves packages installed in the venv (FastAPI, Motor, etc.)
+python-interpreter-path = "./venv/Scripts/python.exe"
