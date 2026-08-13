@@ -1609,69 +1609,75 @@ export default function InterviewManagement() {
 
                     {/* Actions */}
                     <td className="py-4 px-0 text-right">
-                      <div className="flex items-center justify-end gap-1.5 text-indigo-600">
-                        {/* Send Interview Email Button */}
-                        <button
-                          onClick={() => handleOpenSendMail(row)}
-                          title="Send Email to Candidate & Interviewer"
-                          className="p-1.5 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-indigo-600"
-                        >
-                          <Mail size={14} />
-                        </button>
+                      <div className="flex flex-col items-end gap-1.5 text-indigo-600">
+                        {/* Row 1: 4 buttons */}
+                        <div className="flex items-center gap-1.5">
+                          {/* Send Interview Email Button */}
+                          <button
+                            onClick={() => handleOpenSendMail(row)}
+                            title="Send Email to Candidate & Interviewer"
+                            className="p-1.5 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-indigo-600"
+                          >
+                            <Mail size={14} />
+                          </button>
 
-                        {/* View Candidate Full History Button */}
-                        <button
-                          onClick={() => handleOpenDetails(row)}
-                          title="View Candidate Full Details & All Rounds History"
-                          className="p-1.5 hover:bg-sky-50 hover:text-sky-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-sky-600"
-                        >
-                          <Eye size={14} />
-                        </button>
+                          {/* View Candidate Full History Button */}
+                          <button
+                            onClick={() => handleOpenDetails(row)}
+                            title="View Candidate Full Details & All Rounds History"
+                            className="p-1.5 hover:bg-sky-50 hover:text-sky-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-sky-600"
+                          >
+                            <Eye size={14} />
+                          </button>
 
-                        {/* Open Single Feedback Modal */}
-                        <button
-                          onClick={() => handleOpenFeedback(row)}
-                          title="Submit Single Candidate Feedback"
-                          className="p-1.5 hover:bg-amber-50 hover:text-amber-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-amber-600"
-                        >
-                          <Star size={14} />
-                        </button>
+                          {/* Open Single Feedback Modal */}
+                          <button
+                            onClick={() => handleOpenFeedback(row)}
+                            title="Submit Single Candidate Feedback"
+                            className="p-1.5 hover:bg-amber-50 hover:text-amber-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-amber-600"
+                          >
+                            <Star size={14} />
+                          </button>
 
-                        {/* Edit Button */}
-                        <button
-                          onClick={() => handleOpenEdit(row)}
-                          title="Edit Interview"
-                          className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 cursor-pointer text-slate-700"
-                        >
-                          <Edit2 size={14} />
-                        </button>
+                          {/* Edit Button */}
+                          <button
+                            onClick={() => handleOpenEdit(row)}
+                            title="Edit Interview"
+                            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 cursor-pointer text-slate-700"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                        </div>
 
-                        {/* Reschedule Button */}
-                        <button
-                          onClick={() => handleOpenReschedule(row)}
-                          title="Reschedule Date & Time"
-                          className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors border border-slate-200 cursor-pointer text-amber-600"
-                        >
-                          <Calendar size={14} />
-                        </button>
+                        {/* Row 2: 3-4 buttons */}
+                        <div className="flex items-center gap-1.5">
+                          {/* Reschedule Button */}
+                          <button
+                            onClick={() => handleOpenReschedule(row)}
+                            title="Reschedule Date & Time"
+                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors border border-slate-200 cursor-pointer text-amber-600"
+                          >
+                            <Calendar size={14} />
+                          </button>
 
-                        {/* Schedule Next Round Button */}
-                        <button
-                          onClick={() => handleOpenNextRound(row)}
-                          title="Schedule Next Round"
-                          className="p-1.5 hover:bg-purple-50 hover:text-purple-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-purple-600"
-                        >
-                          <Layers size={14} />
-                        </button>
+                          {/* Schedule Next Round Button */}
+                          <button
+                            onClick={() => handleOpenNextRound(row)}
+                            title="Schedule Next Round"
+                            className="p-1.5 hover:bg-purple-50 hover:text-purple-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-purple-600"
+                          >
+                            <Layers size={14} />
+                          </button>
 
-                        {/* Delete Button */}
-                        <button
-                          onClick={() => handleOpenDelete(row)}
-                          title="Delete Interview"
-                          className="p-1.5 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-rose-600"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => handleOpenDelete(row)}
+                            title="Delete Interview"
+                            className="p-1.5 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-rose-600"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
