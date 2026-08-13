@@ -19,8 +19,8 @@ router = APIRouter(prefix="/api/v1/resumes", tags=["Resumes"])
 
 def is_admin_or_staff(user: dict) -> bool:
     """
-    Check if the user has staff privileges (Admin, HR Manager, Interviewer, or permission access)
-    to query candidate resumes across the repository.
+    Check if the user has staff privileges (Admin, HR Manager, Interviewer, Recruiter,
+    or permission access) to query candidate resumes across the repository.
     """
     if not user:
         return False
@@ -28,11 +28,15 @@ def is_admin_or_staff(user: dict) -> bool:
     if isinstance(role, str):
         role = role.lower()
 
-    if role in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter"]:
+    if role in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter", "hr"]:
         return True
 
     permissions = user.get("permissions", [])
-    if any(p in permissions for p in ["database", "evaluation", "jd-match", "upload"]):
+    if any(p in permissions for p in ["database", "evaluation", "jd-match", "upload", "interviews", "dashboard", "analytics"]):
+        return True
+
+    # Any active registered user in the platform can view shared candidate repository unless guest
+    if user.get("is_active", True) and role not in ["restricted", "guest"]:
         return True
 
     return False
