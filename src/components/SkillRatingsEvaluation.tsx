@@ -24,8 +24,6 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   const [newSkillName, setNewSkillName] = useState("");
   const [skillTemplates, setSkillTemplates] = useState<any[]>([]);
   const [selectedSkillIndex, setSelectedSkillIndex] = useState<number>(0);
-  const [hasInitialized, setHasInitialized] = useState<boolean>(false);
-
 
   // Input state for adding new evaluation categories manually
   const [newCatName, setNewCatName] = useState("");
@@ -40,7 +38,6 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
       try {
         const data = await getSkillsEvaluations();
         setSkillTemplates(data || []);
-        setHasInitialized(true);
       } catch (err) {
         console.error("Failed to load skills evaluations templates:", err);
       }
