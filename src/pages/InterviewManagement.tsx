@@ -25,6 +25,23 @@ const formatTimeTo12Hour = (timeStr?: string) => {
   return `${hours12}:${minutesStr} ${period}`;
 };
 
+const getMatchedUserId = (
+  userId?: string,
+  name?: string,
+  email?: string,
+  usersList: UserProfile[] = []
+): string => {
+  if (!usersList || usersList.length === 0) return userId || (name || email ? "custom" : "");
+  const matched = usersList.find(
+    (u) =>
+      (userId && (u.id === userId || (u as any)._id === userId)) ||
+      (email && u.email && u.email.trim().toLowerCase() === email.trim().toLowerCase()) ||
+      (name && u.full_name && u.full_name.trim().toLowerCase() === name.trim().toLowerCase())
+  );
+  if (matched) return matched.id || (matched as any)._id;
+  return name || email ? "custom" : "";
+};
+
 export default function InterviewManagement() {
   const [activeTab, setActiveTab] = useState<string>("All");
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
@@ -244,6 +261,54 @@ export default function InterviewManagement() {
 
   const handleScheduleClientChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
     setScheduleClientsList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: val };
+      }
+      return updated;
+    });
+  };
+
+  // Multi Interviewer Panel State for Next Round Modal
+  const [nextRoundInterviewersList, setNextRoundInterviewersList] = useState<InterviewerItem[]>([
+    { interviewer_name: "", interviewer_email: "" },
+  ]);
+
+  // Multi Client Panel State for Next Round Modal
+  const [nextRoundClientsList, setNextRoundClientsList] = useState<ClientFeedbackItem[]>([
+    { client_name: "", client_email: "" },
+  ]);
+
+  const handleAddNextRoundInterviewer = () => {
+    setNextRoundInterviewersList((prev) => [...prev, { interviewer_name: "", interviewer_email: "" }]);
+  };
+
+  const handleRemoveNextRoundInterviewer = (index: number) => {
+    if (nextRoundInterviewersList.length <= 1) return;
+    setNextRoundInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleNextRoundInterviewerChange = (index: number, field: keyof InterviewerItem, val: any) => {
+    setNextRoundInterviewersList((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: val };
+      }
+      return updated;
+    });
+  };
+
+  const handleAddNextRoundClient = () => {
+    setNextRoundClientsList((prev) => [...prev, { client_name: "", client_email: "" }]);
+  };
+
+  const handleRemoveNextRoundClient = (index: number) => {
+    if (nextRoundClientsList.length <= 1) return;
+    setNextRoundClientsList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleNextRoundClientChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
+    setNextRoundClientsList((prev) => {
       const updated = [...prev];
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
@@ -1163,17 +1228,19 @@ export default function InterviewManagement() {
 
   // Schedule Next Round Handlers
   const handleOpenNextRound = async (item: InterviewItem) => {
-    // Validation: Query backend API to check if candidate already has an assigned interview in database
+    setSelectedInterview(item);
+
+    // Validation: Query backend API to check if candidate already has a DIFFERENT assigned active interview in database
     try {
       const statusRes = await checkCandidateActiveInterviewStatus(item.candidate_id, item.candidate_name);
-      if (statusRes && statusRes.has_active_interview) {
+      if (statusRes && statusRes.has_active_interview && statusRes.interview_id !== item.id) {
+        alert(statusRes.message || "Candidate already has an active pending interview session.");
         return;
       }
     } catch (err) {
       console.warn("Failed to check active interview status from backend:", err);
     }
 
-    setSelectedInterview(item);
     const docsJoined = item.interview_document_files && Array.isArray(item.interview_document_files)
       ? item.interview_document_files.join("\n")
       : "";
@@ -1188,6 +1255,18 @@ export default function InterviewManagement() {
     } catch (e) {
       console.warn("Failed to fetch next round number:", e);
     }
+
+    const initInts =
+      item.interviewers && item.interviewers.length > 0
+        ? item.interviewers.map((i) => ({ interviewer_name: i.interviewer_name || "", interviewer_email: i.interviewer_email || "" }))
+        : [{ interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "" }];
+    setNextRoundInterviewersList(initInts);
+
+    const initClients =
+      item.clients && item.clients.length > 0
+        ? item.clients.map((c) => ({ client_name: c.client_name || "", client_email: c.client_email || "" }))
+        : [{ client_name: item.client_name || "", client_email: item.client_email || "" }];
+    setNextRoundClientsList(initClients);
 
     setNextRoundForm({
       candidate_id: item.candidate_id || "",
@@ -1204,8 +1283,8 @@ export default function InterviewManagement() {
       scheduled_time: "10:00",
       timezone: item.timezone || "Asia/Kolkata",
       duration_minutes: item.duration_minutes || 60,
-      interviewer_name: "",
-      interviewer_email: "",
+      interviewer_name: initInts[0]?.interviewer_name || "",
+      interviewer_email: initInts[0]?.interviewer_email || "",
       meeting_platform: "Google Meet",
       meeting_link: "",
       location: item.location || "",
@@ -1218,7 +1297,7 @@ export default function InterviewManagement() {
       final_fit_salary: item.final_fit_salary || "",
       joining_date: item.joining_date || "",
       interview_document_files: docsJoined,
-      client_name: item.client_name || "",
+      client_name: initClients[0]?.client_name || "",
       client_rating: item.client_rating || 0,
       client_feedback: item.client_feedback || "",
       client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
@@ -1247,19 +1326,12 @@ export default function InterviewManagement() {
 
   const handleNextRoundSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nextRoundForm.candidate_name || !nextRoundForm.job_title || !nextRoundForm.interviewer_name) {
+    const primaryInterviewer: InterviewerItem = nextRoundInterviewersList[0] || { interviewer_name: "Interviewer", interviewer_email: "" };
+    const primaryClient: ClientFeedbackItem = nextRoundClientsList[0] || { client_name: "Client Evaluator", client_email: "" };
+
+    if (!nextRoundForm.candidate_name || !nextRoundForm.job_title || !primaryInterviewer.interviewer_name) {
       alert("Please fill candidate name, job title, and interviewer name for the next round.");
       return;
-    }
-
-    // Validation: Query backend API to check if candidate already has an assigned interview in database
-    try {
-      const statusRes = await checkCandidateActiveInterviewStatus(nextRoundForm.candidate_id, nextRoundForm.candidate_name);
-      if (statusRes && statusRes.has_active_interview) {
-        return;
-      }
-    } catch (err) {
-      console.warn("Failed to check active interview status from backend:", err);
     }
 
     try {
@@ -1271,6 +1343,7 @@ export default function InterviewManagement() {
       await createInterview({
         candidate_id: nextRoundForm.candidate_id,
         candidate_name: nextRoundForm.candidate_name,
+        candidate_email: nextRoundForm.candidate_email || undefined,
         resume_id: nextRoundForm.resume_id || undefined,
         job_id: nextRoundForm.job_id || undefined,
         job_title: nextRoundForm.job_title,
@@ -1282,8 +1355,8 @@ export default function InterviewManagement() {
         scheduled_time: nextRoundForm.scheduled_time,
         timezone: nextRoundForm.timezone,
         duration_minutes: Number(nextRoundForm.duration_minutes),
-        interviewer_name: nextRoundForm.interviewer_name,
-        interviewer_email: nextRoundForm.interviewer_email || undefined,
+        interviewer_name: primaryInterviewer.interviewer_name || "Interviewer",
+        interviewer_email: primaryInterviewer.interviewer_email || undefined,
         meeting_platform: nextRoundForm.meeting_platform,
         meeting_link: nextRoundForm.meeting_link || undefined,
         location: nextRoundForm.interview_location || nextRoundForm.location || undefined,
@@ -1296,7 +1369,10 @@ export default function InterviewManagement() {
         final_fit_salary: nextRoundForm.final_fit_salary || undefined,
         joining_date: nextRoundForm.joining_date || undefined,
         interview_document_files: docFilesArray,
-        client_name: nextRoundForm.client_name || undefined,
+        client_name: primaryClient.client_name || undefined,
+        client_email: primaryClient.client_email || undefined,
+        interviewers: nextRoundInterviewersList,
+        clients: nextRoundClientsList,
         client_rating: nextRoundForm.client_rating ? Number(nextRoundForm.client_rating) : undefined,
         client_feedback: nextRoundForm.client_feedback || undefined,
         client_strengths: nextRoundForm.client_strengths ? nextRoundForm.client_strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
@@ -2019,7 +2095,7 @@ export default function InterviewManagement() {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div>
                             <select
-                              value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                              value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 if (val === "custom" || !val) {
@@ -2106,7 +2182,7 @@ export default function InterviewManagement() {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div>
                             <select
-                              value={client.client_id || (client.client_name ? "custom" : "")}
+                              value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 if (val === "custom" || !val) {
@@ -4287,37 +4363,184 @@ export default function InterviewManagement() {
                 </div>
               </div>
 
-              {/* SECTION 3: INTERVIEWER ASSIGNMENT & MEETING LOCATION */}
-              <div className="bg-indigo-50/40 border border-indigo-200 rounded-2xl p-4 space-y-3 shadow-xs">
+              {/* SECTION 3: INTERVIEWER & CLIENT PANEL ASSIGNMENT & MEETING LOCATION */}
+              <div className="bg-indigo-50/40 border border-indigo-200 rounded-2xl p-4 space-y-4 shadow-xs">
                 <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs border-b border-indigo-200 pb-2">
                   <UserCheck size={15} />
-                  <span>Assign Interviewer & Meeting Platform</span>
+                  <span>Panel Stakeholders, Interviewers & Meeting Location</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Interviewer Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Sarah Connor / Tech Lead"
-                      value={nextRoundForm.interviewer_name}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, interviewer_name: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
+                {/* Multi-Interviewer Panel Section */}
+                <div className="bg-white border border-purple-200 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-purple-100 pb-2">
+                    <div className="flex items-center gap-2 text-purple-900 font-bold text-xs">
+                      <UserCheck size={14} className="text-purple-600" />
+                      <span>Interviewer Panel Selection ({nextRoundInterviewersList.length})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddNextRoundInterviewer}
+                      className="flex items-center gap-1 bg-purple-100 hover:bg-purple-200 text-purple-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <Plus size={13} /> Add Interviewer
+                    </button>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Mail size={12} className="text-indigo-600" /> Interviewer Email
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="interviewer@company.com"
-                      value={nextRoundForm.interviewer_email}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, interviewer_email: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
+                  {nextRoundInterviewersList.map((interviewer, idx) => (
+                    <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-[11px] font-bold text-purple-900 uppercase">
+                          Interviewer #{idx + 1}
+                        </label>
+                        {nextRoundInterviewersList.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNextRoundInterviewer(idx)}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <select
+                            value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === "custom" || !val) {
+                                handleNextRoundInterviewerChange(idx, "interviewer_id", undefined);
+                              } else {
+                                const u = systemUsers.find((user) => user.id === val);
+                                if (u) {
+                                  handleNextRoundInterviewerChange(idx, "interviewer_id", u.id);
+                                  handleNextRoundInterviewerChange(idx, "interviewer_name", u.full_name);
+                                  handleNextRoundInterviewerChange(idx, "interviewer_email", u.email);
+                                }
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-purple-500 cursor-pointer"
+                          >
+                            <option value="">-- Choose User --</option>
+                            {systemUsers.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.full_name} ({u.role || u.email})
+                              </option>
+                            ))}
+                            <option value="custom">+ External / Custom</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Interviewer Name *"
+                            value={interviewer.interviewer_name}
+                            onChange={(e) => handleNextRoundInterviewerChange(idx, "interviewer_name", e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-purple-500 font-medium"
+                            required={idx === 0}
+                          />
+                        </div>
+
+                        <div>
+                          <input
+                            type="email"
+                            placeholder="interviewer@company.com"
+                            value={interviewer.interviewer_email || ""}
+                            onChange={(e) => handleNextRoundInterviewerChange(idx, "interviewer_email", e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-purple-500 font-medium"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Multi-Client Panel Section */}
+                <div className="bg-white border border-teal-200 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-teal-100 pb-2">
+                    <div className="flex items-center gap-2 text-teal-800 font-bold text-xs">
+                      <Building2 size={14} className="text-teal-600" />
+                      <span>Client Evaluator Panel Selection ({nextRoundClientsList.length})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddNextRoundClient}
+                      className="flex items-center gap-1 bg-teal-100 hover:bg-teal-200 text-teal-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <Plus size={13} /> Add Client
+                    </button>
                   </div>
+
+                  {nextRoundClientsList.map((client, idx) => (
+                    <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-[11px] font-bold text-teal-900 uppercase">
+                          Client Evaluator #{idx + 1}
+                        </label>
+                        {nextRoundClientsList.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNextRoundClient(idx)}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <select
+                            value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === "custom" || !val) {
+                                handleNextRoundClientChange(idx, "client_id", undefined);
+                              } else {
+                                const u = systemUsers.find((user) => user.id === val);
+                                if (u) {
+                                  handleNextRoundClientChange(idx, "client_id", u.id);
+                                  handleNextRoundClientChange(idx, "client_name", u.full_name);
+                                  handleNextRoundClientChange(idx, "client_email", u.email);
+                                }
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
+                          >
+                            <option value="">-- Choose User --</option>
+                            {systemUsers.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.full_name} ({u.role || u.email})
+                              </option>
+                            ))}
+                            <option value="custom">+ External / Custom</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Client Name / Company"
+                            value={client.client_name}
+                            onChange={(e) => handleNextRoundClientChange(idx, "client_name", e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                          />
+                        </div>
+
+                        <div>
+                          <input
+                            type="email"
+                            placeholder="client@company.com"
+                            value={client.client_email || ""}
+                            onChange={(e) => handleNextRoundClientChange(idx, "client_email", e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

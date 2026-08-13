@@ -9,9 +9,39 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
 from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.core.security import decode_jwt_token
-from app.utils.constants import USERS_COLLECTION
+from app.utils.constants import USERS_COLLECTION, ROLES_COLLECTION
 
 security_bearer = HTTPBearer(auto_error=False)
+
+
+async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict:
+    """Enrich user object with permissions resolved from ROLES_COLLECTION or standard role defaults."""
+    if not user:
+        return user
+
+    role_identifier = user.get("role", "user")
+    permissions = user.get("permissions")
+
+    if permissions is None or len(permissions) == 0:
+        permissions_list = []
+        if role_identifier:
+            role_slug = str(role_identifier).strip().lower()
+            role_doc = await db[ROLES_COLLECTION].find_one({"slug": role_slug})
+            if not role_doc:
+                role_doc = await db[ROLES_COLLECTION].find_one({"$or": [{"id": role_identifier}, {"name": role_identifier}]})
+
+            if role_doc and role_doc.get("permissions"):
+                permissions_list = role_doc.get("permissions", [])
+            elif role_slug in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter", "hr"]:
+                permissions_list = [
+                    "dashboard", "upload", "database", "evaluation",
+                    "jd-match", "interviews", "interview-dashboard",
+                    "client-feedback", "analytics", "settings", "role-management"
+                ]
+
+        user["permissions"] = permissions_list
+
+    return user
 
 
 async def get_current_user(
@@ -40,7 +70,7 @@ async def get_current_user(
     if not user:
         raise AuthenticationError("Authenticated user no longer exists.")
 
-    return user
+    return await _enrich_user_permissions(user, db)
 
 
 async def get_current_user_optional(
@@ -59,7 +89,7 @@ async def get_current_user_optional(
                 users_collection = db[USERS_COLLECTION]
                 user = await users_collection.find_one({"id": user_id})
                 if user:
-                    return user
+                    return await _enrich_user_permissions(user, db)
         except Exception:
             pass
 
@@ -67,9 +97,9 @@ async def get_current_user_optional(
     users_collection = db[USERS_COLLECTION]
     default_user = await users_collection.find_one({})
     if default_user:
-        return default_user
+        return await _enrich_user_permissions(default_user, db)
 
-    return {"id": "guest_user", "email": "guest@example.com", "role": "user", "is_active": True}
+    return {"id": "guest_user", "email": "guest@example.com", "role": "user", "is_active": True, "permissions": []}
 
 
 async def get_current_active_user_optional(
