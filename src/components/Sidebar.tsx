@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
-  LayoutDashboard, UploadCloud, Users, CheckCircle, Settings, Briefcase,
+  LayoutDashboard, UploadCloud, Users, Settings, Briefcase,
   Calendar, Video, MessageSquare, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield
 } from "lucide-react";
 
@@ -42,7 +42,6 @@ export function Sidebar() {
     { name: "Dashboard", path: "/", perm: "dashboard", icon: <LayoutDashboard size={20} /> },
     { name: "Upload Resume", path: "/upload", perm: "upload", icon: <UploadCloud size={20} /> },
     { name: "Candidate Database", path: "/database", perm: "database", icon: <Users size={20} /> },
-    { name: "Evaluation", path: "/evaluation", perm: "evaluation", icon: <CheckCircle size={20} /> },
     { name: "JD Matching", path: "/jd-match", perm: "jd-match", icon: <Briefcase size={20} /> },
     { name: "Interviews", path: "/interviews", perm: "interviews", icon: <Calendar size={20} /> },
     { name: "Interview Dashboard", path: "/interview-dashboard", perm: "interview-dashboard", icon: <Video size={20} /> },
@@ -66,9 +65,8 @@ export function Sidebar() {
     <aside
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`fixed top-0 left-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out shadow-lg ${
-        isExpanded ? "w-64" : "w-20"
-      }`}
+      className={`fixed top-0 left-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out shadow-lg ${isExpanded ? "w-64" : "w-20"
+        }`}
     >
       {/* Header Logo */}
       <div className="p-4 flex items-center justify-between border-b border-slate-200 h-16 shrink-0">
@@ -106,10 +104,9 @@ export function Sidebar() {
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 relative group cursor-pointer ${
-                isActive
-                  ? "bg-indigo-50 text-indigo-600 border border-indigo-200/80 shadow-sm font-semibold"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              `flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 relative group cursor-pointer ${isActive
+                ? "bg-indigo-50 text-indigo-600 border border-indigo-200/80 shadow-sm font-semibold"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`
             }
           >
@@ -158,10 +155,9 @@ export function Sidebar() {
           <NavLink
             to="/settings"
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors cursor-pointer group relative ${
-                isActive
-                  ? "bg-indigo-50 text-indigo-600 border border-indigo-200/80 font-semibold"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors cursor-pointer group relative ${isActive
+                ? "bg-indigo-50 text-indigo-600 border border-indigo-200/80 font-semibold"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`
             }
           >
