@@ -3,9 +3,11 @@ Interview service handling interview scheduling, rescheduling, feedback, filteri
 """
 
 import smtplib
+import uuid
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from loguru import logger
 from app.core.exceptions import NotFoundError
 from app.models.interview import InterviewDocument
@@ -22,18 +24,40 @@ from app.schemas.interview import (
     InterviewUpdateRequest,
     SendInterviewEmailRequest,
 )
+from app.services.s3_service import S3Service
 from app.services.settings_service import SettingsService
 from app.services.template_service import TemplateService
 from app.utils.encryption import decrypt_password
 from app.utils.enums import InterviewStatus, InterviewType
 from app.utils.helpers import utc_now
+from app.utils.validators import validate_uploaded_file
 
 
 class InterviewService:
     """Service handling interview business logic."""
 
-    def __init__(self, interview_repo: InterviewRepository):
+    def __init__(self, interview_repo: InterviewRepository, s3_service: Optional[S3Service] = None):
         self.interview_repo = interview_repo
+        self.s3_service = s3_service or S3Service()
+
+    async def upload_interview_document(self, file: UploadFile) -> dict:
+        """Upload an interview document file to AWS S3 and return the public URL."""
+        content = await validate_uploaded_file(file)
+        ext = Path(file.filename or "file").suffix
+        safe_filename = file.filename or f"document{ext}"
+        unique_filename = f"{uuid.uuid4().hex[:12]}_{safe_filename}"
+        s3_url = self.s3_service.upload_file(
+            file_content=content,
+            filename=unique_filename,
+            content_type=file.content_type or "application/octet-stream",
+            folder="interview_documents",
+        )
+        logger.info(f"Uploaded interview document to S3: {s3_url}")
+        return {
+            "s3_url": s3_url,
+            "filename": unique_filename,
+            "original_filename": safe_filename,
+        }
 
     async def create_interview(self, payload: InterviewCreateRequest, created_by: Optional[str] = None) -> InterviewResponse:
         """Schedule a new interview document."""
@@ -311,6 +335,7 @@ class InterviewService:
             final_fit_salary=payload.final_fit_salary,
             joining_date=payload.joining_date,
             interview_document_files=payload.interview_document_files,
+            interview_feedback_files=payload.interview_feedback_files,
             interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
             clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
             skill_ratings=[s.model_dump() for s in payload.skill_ratings] if payload.skill_ratings else None,

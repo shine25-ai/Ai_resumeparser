@@ -8,6 +8,7 @@ import {
 import {
   bulkSubmitInterviewFeedback,
   getUsers,
+  uploadInterviewDocument,
   type InterviewItem,
   type BulkFeedbackItemPayload,
   type InterviewerItem,
@@ -324,21 +325,37 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
     });
   };
 
-  // Document Upload Handler
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Document Upload Handler (Uploads directly to AWS S3)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const fileNames = Array.from(files).map((f) => f.name).join("\n");
-    setFormsData((prev) => {
-      const updated = [...prev];
-      const form = updated[activeCandidateIndex];
-      if (form) {
-        form.interview_document_files = form.interview_document_files
-          ? `${form.interview_document_files}\n${fileNames}`
-          : fileNames;
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        const res = await uploadInterviewDocument(file);
+        if (res?.s3_url) {
+          uploadedUrls.push(res.s3_url);
+        }
       }
-      return updated;
-    });
+      if (uploadedUrls.length > 0) {
+        const urlsJoined = uploadedUrls.join("\n");
+        setFormsData((prev) => {
+          const updated = [...prev];
+          const form = updated[activeCandidateIndex];
+          if (form) {
+            form.interview_document_files = form.interview_document_files
+              ? `${form.interview_document_files}\n${urlsJoined}`
+              : urlsJoined;
+          }
+          return updated;
+        });
+      }
+    } catch (err: any) {
+      console.error("Failed to upload document to S3:", err);
+      alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const handleSubmitAll = async () => {

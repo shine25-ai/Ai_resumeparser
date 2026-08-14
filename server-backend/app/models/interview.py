@@ -61,6 +61,7 @@ class InterviewDocument(BaseModel):
 
     # Documents Attached
     interview_document_files: List[str] = Field(default_factory=list)
+    interview_feedback_files: List[str] = Field(default_factory=list)
 
     # Status
     status: InterviewStatus = InterviewStatus.PENDING

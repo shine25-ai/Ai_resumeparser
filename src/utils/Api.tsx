@@ -526,6 +526,29 @@ export const createInterview = async (payload: CreateInterviewPayload) => {
   return resData.data || resData;
 };
 
+export const uploadInterviewDocument = async (file: File) => {
+  const token = localStorage.getItem("access_token") || "";
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${INTERVIEWS_URL}/upload-document`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to upload document to S3");
+  }
+
+  return resData.data || resData;
+};
+
 export const batchCreateInterviews = async (payload: BatchCreateInterviewPayload) => {
   const token = localStorage.getItem("access_token") || "";
   const response = await fetch(`${INTERVIEWS_URL}/batch`, {

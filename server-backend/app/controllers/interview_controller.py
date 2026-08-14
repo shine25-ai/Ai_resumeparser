@@ -3,7 +3,7 @@ Interview controller handling HTTP requests for interview scheduling, filtering,
 """
 
 from typing import Optional
-from fastapi import status
+from fastapi import UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.schemas.interview import (
@@ -25,6 +25,15 @@ class InterviewController:
 
     def __init__(self, interview_service: InterviewService):
         self.interview_service = interview_service
+
+    async def upload_interview_document(self, file: UploadFile) -> JSONResponse:
+        """Upload interview document file to AWS S3."""
+        res = await self.interview_service.upload_interview_document(file)
+        return success_response(
+            data=res,
+            message="Document uploaded to S3 successfully.",
+            status_code=status.HTTP_201_CREATED,
+        )
 
     async def create_interview(self, payload: InterviewCreateRequest, user_id: str) -> JSONResponse:
         """Schedule a new interview."""

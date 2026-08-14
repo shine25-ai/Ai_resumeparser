@@ -176,6 +176,7 @@ class InterviewRepository(BaseRepository):
         final_fit_salary: Optional[str] = None,
         joining_date: Optional[str] = None,
         interview_document_files: Optional[List[str]] = None,
+        interview_feedback_files: Optional[List[str]] = None,
         interviewers: Optional[List[Dict[str, Any]]] = None,
         clients: Optional[List[Dict[str, Any]]] = None,
         skill_ratings: Optional[List[Dict[str, Any]]] = None,
@@ -253,6 +254,8 @@ class InterviewRepository(BaseRepository):
             update_data["joining_date"] = joining_date
         if interview_document_files is not None:
             update_data["interview_document_files"] = interview_document_files
+        if interview_feedback_files is not None:
+            update_data["interview_feedback_files"] = interview_feedback_files
 
         if hr_call_verification is not None:
             update_data["hr_call_verification"] = hr_call_verification

@@ -3,7 +3,7 @@ Interview routes for scheduling, filtering, updating, feedback submission, and d
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.controllers.interview_controller import InterviewController
@@ -30,6 +30,20 @@ def get_interview_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -
     interview_repo = InterviewRepository(db)
     interview_service = InterviewService(interview_repo)
     return InterviewController(interview_service)
+
+
+@router.post(
+    "/upload-document",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload interview document to S3",
+    description="Upload an interview document attachment directly to AWS S3 bucket and return access URL.",
+)
+async def upload_interview_document(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_active_user),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.upload_interview_document(file)
 
 
 @router.post(

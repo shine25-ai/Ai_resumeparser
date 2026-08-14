@@ -232,6 +232,7 @@ class InterviewUpdateRequest(BaseModel):
     final_fit_salary: Optional[str] = None
     joining_date: Optional[str] = None
     interview_document_files: Optional[List[str]] = None
+    interview_feedback_files: Optional[List[str]] = None
     recommendation: Optional[str] = None
 
     # Interviewer / Round Feedback
@@ -316,6 +317,7 @@ class InterviewFeedbackRequest(BaseModel):
     final_fit_salary: Optional[str] = None
     joining_date: Optional[str] = None
     interview_document_files: List[str] = Field(default_factory=list)
+    interview_feedback_files: List[str] = Field(default_factory=list)
     hr_call_verification: Optional[str] = None
     location: Optional[str] = None
     interview_location: Optional[str] = None
@@ -380,6 +382,7 @@ class InterviewResponse(BaseModel):
     final_fit_salary: Optional[str] = None
     joining_date: Optional[str] = None
     interview_document_files: List[str] = Field(default_factory=list)
+    interview_feedback_files: List[str] = Field(default_factory=list)
 
     status: InterviewStatus
 
@@ -457,6 +460,7 @@ class CandidateFullHistoryResponse(BaseModel):
     final_fit_salary: Optional[str] = None
     joining_date: Optional[str] = None
     interview_document_files: List[str] = Field(default_factory=list)
+    interview_feedback_files: List[str] = Field(default_factory=list)
     total_rounds: int
     rounds: List[InterviewResponse]
 

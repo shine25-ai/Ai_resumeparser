@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
-  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, MAIL_TEMPLATES_URL,
+  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, MAIL_TEMPLATES_URL,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
@@ -399,6 +399,7 @@ export default function InterviewManagement() {
     final_fit_salary: "",
     joining_date: "",
     interview_document_files: "",
+    interview_feedback_files: "",
     notes: "",
   });
 
@@ -494,37 +495,156 @@ export default function InterviewManagement() {
 
   const navTabs = ["All", "Technical", "HR", "Managerial", "Culture Fit", "Final Round", "Initial Screening"];
 
-  // File Upload Handlers for Modals
-  const handleScheduleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // File Upload State & Handlers for Modals (Uploads directly to S3)
+  const [isUploadingScheduleFile, setIsUploadingScheduleFile] = useState(false);
+  const [isUploadingEditFile, setIsUploadingEditFile] = useState(false);
+  const [isUploadingFeedbackFile, setIsUploadingFeedbackFile] = useState(false);
+  const [isUploadingNextRoundFile, setIsUploadingNextRoundFile] = useState(false);
+
+  const handleNextRoundFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = scheduleForm.interview_document_files
-        ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setScheduleForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingNextRoundFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = nextRoundForm.interview_document_files
+            ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setNextRoundForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingNextRoundFile(false);
+        e.target.value = "";
+      }
     }
   };
 
-  const handleEditFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleScheduleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = editForm.interview_document_files
-        ? editForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setEditForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingScheduleFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = scheduleForm.interview_document_files
+            ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setScheduleForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingScheduleFile(false);
+        e.target.value = "";
+      }
     }
   };
 
-  const handleFeedbackFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = feedbackForm.interview_document_files
-        ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setFeedbackForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingEditFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = editForm.interview_document_files
+            ? editForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setEditForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingEditFile(false);
+        e.target.value = "";
+      }
+    }
+  };
+
+  const handleFeedbackFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      setIsUploadingFeedbackFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = feedbackForm.interview_document_files
+            ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setFeedbackForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingFeedbackFile(false);
+        e.target.value = "";
+      }
+    }
+  };
+
+  const [isUploadingFeedbackReportFile, setIsUploadingFeedbackReportFile] = useState(false);
+
+  const handleFeedbackReportFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      setIsUploadingFeedbackReportFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = feedbackForm.interview_feedback_files
+            ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setFeedbackForm((prev) => ({ ...prev, interview_feedback_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload feedback report to S3:", err);
+        alert(`Failed to upload feedback document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingFeedbackReportFile(false);
+        e.target.value = "";
+      }
     }
   };
 
@@ -998,6 +1118,7 @@ export default function InterviewManagement() {
       final_fit_salary: item.final_fit_salary || "",
       joining_date: item.joining_date || "",
       interview_document_files: item.interview_document_files ? item.interview_document_files.join("\n") : "",
+      interview_feedback_files: item.interview_feedback_files ? item.interview_feedback_files.join("\n") : "",
       notes: item.notes || "",
     });
     setIsFeedbackOpen(true);
@@ -1018,6 +1139,9 @@ export default function InterviewManagement() {
       setActionLoading(true);
       const docFilesArray = feedbackForm.interview_document_files
         ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+        : [];
+      const feedbackReportFilesArray = feedbackForm.interview_feedback_files
+        ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
         : [];
 
       await submitInterviewFeedback(selectedInterview.id, {
@@ -1047,6 +1171,7 @@ export default function InterviewManagement() {
         final_fit_salary: feedbackForm.final_fit_salary || undefined,
         joining_date: feedbackForm.joining_date || undefined,
         interview_document_files: docFilesArray,
+        interview_feedback_files: feedbackReportFilesArray,
         notes: feedbackForm.notes || undefined,
       });
 
@@ -1233,10 +1358,6 @@ export default function InterviewManagement() {
       console.warn("Failed to check active interview status from backend:", err);
     }
 
-    const docsJoined = item.interview_document_files && Array.isArray(item.interview_document_files)
-      ? item.interview_document_files.join("\n")
-      : "";
-
     const defaultType = "TECHNICAL" as InterviewTypeEnum;
     let nextRoundNum = (item.round_number || 1) + 1;
     try {
@@ -1288,7 +1409,7 @@ export default function InterviewManagement() {
       salary_requested: item.salary_requested || "",
       final_fit_salary: item.final_fit_salary || "",
       joining_date: item.joining_date || "",
-      interview_document_files: docsJoined,
+      interview_document_files: "",
       client_name: initClients[0]?.client_name || "",
       client_rating: item.client_rating || 0,
       client_feedback: item.client_feedback || "",
@@ -2297,11 +2418,72 @@ export default function InterviewManagement() {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-bold text-slate-700">Interview Document Files (URLs/filenames)</label>
-                      <label className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[11px] px-2.5 py-0.5 rounded-lg cursor-pointer font-bold transition-all">
-                        Attach Files
-                        <input type="file" multiple onChange={handleScheduleFileUpload} className="hidden" />
+                      <label className={`bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[11px] px-2.5 py-0.5 rounded-lg cursor-pointer font-bold transition-all inline-flex items-center gap-1 ${isUploadingScheduleFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingScheduleFile ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin text-emerald-700" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={12} />
+                            <span>Attach Files</span>
+                          </>
+                        )}
+                        <input type="file" multiple onChange={handleScheduleFileUpload} disabled={isUploadingScheduleFile} className="hidden" />
                       </label>
                     </div>
+                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const attachedList = scheduleForm.interview_document_files
+                        ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                      if (attachedList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2.5 mt-1">
+                          {attachedList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-emerald-200 rounded-xl px-3 py-1.5 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={14} className="text-emerald-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                      setScheduleForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
                     <textarea
                       rows={2}
                       value={scheduleForm.interview_document_files}
@@ -3021,13 +3203,23 @@ export default function InterviewManagement() {
                         <label className="text-slate-700 font-semibold flex items-center gap-1">
                           <FileText size={12} className="text-rose-600" /> Attached Document Files
                         </label>
-                        <label className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                          <Upload size={13} />
-                          <span>Browse / Attach</span>
+                        <label className={`inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingEditFile ? "opacity-60 pointer-events-none" : ""}`}>
+                          {isUploadingEditFile ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin text-slate-600" />
+                              <span>Uploading to S3...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={13} />
+                              <span>Browse / Attach</span>
+                            </>
+                          )}
                           <input
                             type="file"
                             multiple
                             onChange={handleEditFileUpload}
+                            disabled={isUploadingEditFile}
                             className="hidden"
                           />
                         </label>
@@ -4061,30 +4253,181 @@ export default function InterviewManagement() {
 
                   {/* DOCUMENTS & NOTES SECTION */}
                   <div id="sec-documents" className="space-y-4">
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                    {/* CARD 1: SESSION & CANDIDATE ATTACHED DOCUMENTS */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2">
                           <FileText size={18} className="text-rose-600" />
-                          <h3 className="text-sm font-extrabold text-slate-900">Attached Documents & Media</h3>
+                          <h3 className="text-sm font-extrabold text-slate-900">Session & Candidate Attached Documents</h3>
                         </div>
-                        <label className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                          <Upload size={13} />
-                          <span>Browse / Attach File</span>
+                        <label className={`inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackFile ? "opacity-60 pointer-events-none" : ""}`}>
+                          {isUploadingFeedbackFile ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin text-indigo-600" />
+                              <span>Uploading to S3...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={13} />
+                              <span>Browse / Attach File</span>
+                            </>
+                          )}
                           <input
                             type="file"
                             multiple
                             onChange={handleFeedbackFileUpload}
+                            disabled={isUploadingFeedbackFile}
                             className="hidden"
                           />
                         </label>
                       </div>
 
+                      {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                      {(() => {
+                        const attachedList = feedbackForm.interview_document_files
+                          ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                          : [];
+                        if (attachedList.length === 0) return null;
+                        return (
+                          <div className="space-y-1.5 mb-2 mt-1">
+                            {attachedList.map((fileStr, idx) => {
+                              const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                              const rawName = fileStr.split("/").pop() || fileStr;
+                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                              return (
+                                <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText size={15} className="text-rose-600 shrink-0" />
+                                    <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                      {displayName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {isUrl && (
+                                      <a
+                                        href={fileStr}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                      >
+                                        <Eye size={13} />
+                                        <span>View</span>
+                                      </a>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                        setFeedbackForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                      }}
+                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                      title="Remove attachment"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
                       <textarea
                         rows={2}
                         value={feedbackForm.interview_document_files}
                         onChange={(e) => setFeedbackForm({ ...feedbackForm, interview_document_files: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono text-xs"
-                        placeholder="Document names or URLs (one per line)..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono placeholder-slate-400"
+                        placeholder="Document names or S3 URLs (one per line)... Attach files using button above."
+                      />
+                    </div>
+
+                    {/* CARD 2: NEW INTERVIEW FEEDBACK & EVALUATION REPORTS ATTACHMENT FIELD */}
+                    <div className="bg-amber-50/40 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between border-b border-amber-200 pb-3">
+                        <div className="flex items-center gap-2 text-amber-900">
+                          <ShieldCheck size={18} className="text-amber-600" />
+                          <h3 className="text-sm font-extrabold">Interview Feedback & Round Assessment Reports</h3>
+                        </div>
+                        <label className={`inline-flex items-center gap-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackReportFile ? "opacity-60 pointer-events-none" : ""}`}>
+                          {isUploadingFeedbackReportFile ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin text-amber-700" />
+                              <span>Uploading to S3...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={13} />
+                              <span>Browse / Attach Feedback File</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            multiple
+                            onChange={handleFeedbackReportFileUpload}
+                            disabled={isUploadingFeedbackReportFile}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {/* FEEDBACK REPORT FILES CARDS WITH VIEW BUTTON */}
+                      {(() => {
+                        const feedbackReportList = feedbackForm.interview_feedback_files
+                          ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                          : [];
+                        if (feedbackReportList.length === 0) return null;
+                        return (
+                          <div className="space-y-1.5 mb-2 mt-1">
+                            {feedbackReportList.map((fileStr, idx) => {
+                              const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                              const rawName = fileStr.split("/").pop() || fileStr;
+                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                              return (
+                                <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-amber-200/90 rounded-xl px-3.5 py-2 shadow-2xs">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText size={15} className="text-amber-600 shrink-0" />
+                                    <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                      {displayName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {isUrl && (
+                                      <a
+                                        href={fileStr}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                      >
+                                        <Eye size={13} />
+                                        <span>View</span>
+                                      </a>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = feedbackReportList.filter((_, i) => i !== idx).join("\n");
+                                        setFeedbackForm((prev) => ({ ...prev, interview_feedback_files: updated }));
+                                      }}
+                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                      title="Remove attachment"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      <textarea
+                        rows={2}
+                        value={feedbackForm.interview_feedback_files}
+                        onChange={(e) => setFeedbackForm({ ...feedbackForm, interview_feedback_files: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 focus:outline-none font-mono placeholder-slate-400"
+                        placeholder="Feedback evaluation files or S3 URLs for this round (one per line)..."
                       />
                     </div>
 
@@ -4637,13 +4980,88 @@ export default function InterviewManagement() {
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Attached Document Files</label>
-                    <input
-                      type="text"
-                      placeholder="Document names/URLs..."
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-700 font-semibold flex items-center gap-1">
+                        <FileText size={12} className="text-purple-600" /> Attached Round Documents
+                      </label>
+                      <label className={`inline-flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingNextRoundFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingNextRoundFile ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-purple-600" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={13} />
+                            <span>Browse / Attach</span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleNextRoundFileUpload}
+                          disabled={isUploadingNextRoundFile}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const attachedList = nextRoundForm.interview_document_files
+                        ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                      if (attachedList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2.5 mt-1">
+                          {attachedList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-purple-200/90 rounded-xl px-3 py-1.5 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={14} className="text-purple-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                      setNextRoundForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    <textarea
+                      rows={2}
                       value={nextRoundForm.interview_document_files}
                       onChange={(e) => setNextRoundForm({ ...nextRoundForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-mono text-[11px]"
+                      placeholder="Document names or S3 URLs (one per line)... Attach files for this round."
                     />
                   </div>
                 </div>
