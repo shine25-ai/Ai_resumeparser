@@ -22,36 +22,8 @@ DEFAULT_SYSTEM_ROLES = [
         ],
         "is_system": True,
     },
-    {
-        "name": "HR Manager",
-        "slug": "hr_manager",
-        "description": "HR Manager with full access to talent recruitment, candidate evaluation, and analytics.",
-        "permissions": [
-            "dashboard", "upload", "database", "evaluation",
-            "jd-match", "interviews", "interview-dashboard",
-            "client-feedback", "analytics"
-        ],
-        "is_system": True,
-    },
-    {
-        "name": "Interviewer",
-        "slug": "interviewer",
-        "description": "Interviewer with access to assigned candidate interviews, feedback, and video recording.",
-        "permissions": [
-            "dashboard", "interviews", "interview-dashboard", "client-feedback"
-        ],
-        "is_system": True,
-    },
-    {
-        "name": "User",
-        "slug": "user",
-        "description": "Standard user with access to resume upload, candidate database, and basic evaluation.",
-        "permissions": [
-            "dashboard", "upload", "database", "evaluation"
-        ],
-        "is_system": True,
-    },
 ]
+
 
 
 async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:

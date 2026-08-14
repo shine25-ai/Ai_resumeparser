@@ -20,46 +20,25 @@ class UserService:
         self.role_repo = role_repo
 
     async def _attach_role_permissions(self, user_dict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """Enrich user document with permissions derived from assigned role."""
+        """Enrich user document with permissions derived strictly from ROLES_COLLECTION in MongoDB."""
         if not user_dict:
             return {}
 
         role_identifier = str(user_dict.get("role", "user")).strip().lower()
+        permissions = []
 
-        all_system_permissions = [
-            "dashboard", "upload", "database", "evaluation",
-            "jd-match", "interviews", "interview-dashboard",
-            "client-feedback", "analytics", "settings", "role-management"
-        ]
+        if self.role_repo:
+            role_doc = await self.role_repo.get_by_slug(role_identifier)
+            if role_doc and "permissions" in role_doc:
+                permissions = role_doc.get("permissions", [])
 
-        if role_identifier in ["admin", "superadmin"]:
-            permissions = all_system_permissions
-        else:
-            permissions = []
-            if self.role_repo:
-                role_doc = await self.role_repo.get_by_slug(role_identifier)
-                if role_doc and role_doc.get("permissions") is not None:
-                    permissions = role_doc.get("permissions", [])
-
-            if not permissions:
-                # Default fallback permissions
-                if role_identifier in ["hr_manager", "hr"]:
-                    permissions = [
-                        "dashboard", "upload", "database", "evaluation",
-                        "jd-match", "interviews", "interview-dashboard",
-                        "client-feedback", "analytics"
-                    ]
-                elif role_identifier in ["interviewer", "recruiter"]:
-                    permissions = [
-                        "dashboard", "upload", "database", "evaluation",
-                        "jd-match", "interviews", "interview-dashboard"
-                    ]
-                else:
-                    permissions = ["dashboard", "upload", "database", "evaluation", "jd-match", "interviews"]
+        if not permissions and user_dict.get("permissions"):
+            permissions = user_dict.get("permissions", [])
 
         user_dict_copy = dict(user_dict)
         user_dict_copy["permissions"] = permissions
         return user_dict_copy
+
 
 
     async def create_user(self, payload: UserCreate) -> UserResponse:
