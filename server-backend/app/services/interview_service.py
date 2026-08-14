@@ -215,21 +215,35 @@ class InterviewService:
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
-        status: Optional[InterviewStatus] = None,
-        interview_type: Optional[InterviewType] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
+        page: int = 1,
+        limit: int = 10,
+        skip: Optional[int] = None,
     ) -> InterviewListResponse:
-        """Filter and list interviews matching parameters."""
+        """Filter and list interviews matching parameters with pagination."""
+        import math
+
+        if skip is None:
+            skip = (page - 1) * limit if page >= 1 else 0
+
         interviews = await self.interview_repo.filter_interviews(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
             date_from=date_from,
             date_to=date_to,
             skip=skip,
@@ -239,9 +253,25 @@ class InterviewService:
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
             status=status,
+            interview_type=interview_type,
+            job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
         )
         items = [InterviewResponse.model_validate(i) for i in interviews]
-        return InterviewListResponse(total=total, interviews=items)
+        total_pages = math.ceil(total / limit) if limit > 0 else 1
+
+        return InterviewListResponse(
+            total=total,
+            interviews=items,
+            page=page,
+            limit=limit,
+            total_pages=total_pages,
+        )
 
     async def update_interview(
         self,

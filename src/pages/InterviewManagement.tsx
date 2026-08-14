@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
@@ -49,6 +50,20 @@ export default function InterviewManagement() {
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Pagination & Server Search/Filter State
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Specific Filters State
+  const [nameFilter, setNameFilter] = useState<string>("");
+  const [emailFilter, setEmailFilter] = useState<string>("");
+  const [scheduledDateFilter, setScheduledDateFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
 
   // Bulk Selection & Modal State
   const [selectedInterviewIds, setSelectedInterviewIds] = useState<string[]>([]);
@@ -658,19 +673,46 @@ export default function InterviewManagement() {
     }
   };
 
-  // Fetch interviews & candidates list
-  const fetchAllData = async () => {
+  // Fetch interviews & candidates list from backend with search, filters & pagination
+  const fetchAllData = async (
+    targetPage = page,
+    targetLimit = limit,
+    targetSearch = searchTerm,
+    targetName = nameFilter,
+    targetEmail = emailFilter,
+    targetDate = scheduledDateFilter,
+    targetType = typeFilter,
+    targetStatus = statusFilter,
+    targetTab = activeTab
+  ) => {
     setLoading(true);
     setError(null);
     try {
+      const activeType = targetType !== "All" ? targetType : (targetTab !== "All" ? targetTab : undefined);
+      const activeStatus = targetStatus !== "All" ? targetStatus : undefined;
+
       const [interviewData, resumesData, usersData] = await Promise.all([
-        getInterviews(),
+        getInterviews({
+          page: targetPage,
+          limit: targetLimit,
+          search: targetSearch.trim() || undefined,
+          name: targetName.trim() || undefined,
+          email: targetEmail.trim() || undefined,
+          scheduled_date: targetDate.trim() || undefined,
+          interview_type: activeType,
+          status: activeStatus,
+        }),
         getResumes().catch(() => []),
         getUsers().catch(() => []),
       ]);
 
-      const items = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || [];
+      const items = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || interviewData?.data?.interviews || [];
+      const total = typeof interviewData?.total === "number" ? interviewData.total : (interviewData?.data?.total || items.length);
+      const computedTotalPages = typeof interviewData?.total_pages === "number" ? interviewData.total_pages : (interviewData?.data?.total_pages || Math.ceil(total / targetLimit) || 1);
+
       setInterviews(items);
+      setTotalCount(total);
+      setTotalPages(computedTotalPages);
 
       const resumes = Array.isArray(resumesData) ? resumesData : resumesData?.resumes || [];
       setCandidatesList(resumes);
@@ -685,9 +727,24 @@ export default function InterviewManagement() {
     }
   };
 
+  const location = useLocation();
+
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, activeTab);
+
+    if (location.state && location.state.scheduleCandidate) {
+      const cand = location.state.scheduleCandidate;
+      setScheduleForm((prev) => ({
+        ...prev,
+        candidate_id: cand.candidate_id || "",
+        candidate_name: cand.candidate_name || "",
+        candidate_email: cand.candidate_email || "",
+        resume_id: cand.resume_id || "",
+        job_title: cand.job_title || "",
+      }));
+      setIsScheduleOpen(true);
+    }
+  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, activeTab, location.state]);
 
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
@@ -1562,6 +1619,142 @@ export default function InterviewManagement() {
 
       {/* Main Table Card Wrapper */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-6">
+        {/* SERVER SEARCH & FILTERS BAR */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+            {/* Global Search Box */}
+            <div className="relative w-full md:w-80">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search candidate, email, title, interviewer..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium placeholder-slate-400 shadow-2xs"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setPage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Clear Filters Button */}
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              {(searchTerm || nameFilter || emailFilter || scheduledDateFilter || typeFilter !== "All" || statusFilter !== "All") && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setNameFilter("");
+                    setEmailFilter("");
+                    setScheduledDateFilter("");
+                    setTypeFilter("All");
+                    setStatusFilter("All");
+                    setPage(1);
+                  }}
+                  className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 font-semibold px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-50 transition-colors cursor-pointer"
+                >
+                  <X size={12} /> Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Specific Field Filters Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-slate-200/80 text-xs">
+            {/* Candidate Name Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Name</label>
+              <input
+                type="text"
+                placeholder="Filter by name..."
+                value={nameFilter}
+                onChange={(e) => {
+                  setNameFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            {/* Candidate Email Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Email</label>
+              <input
+                type="text"
+                placeholder="candidate@gmail.com"
+                value={emailFilter}
+                onChange={(e) => {
+                  setEmailFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            {/* Scheduled Date Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Scheduled Date</label>
+              <input
+                type="date"
+                value={scheduledDateFilter}
+                onChange={(e) => {
+                  setScheduledDateFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              />
+            </div>
+
+            {/* Interview Type Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Interview Type</label>
+              <select
+                value={typeFilter}
+                onChange={(e) => {
+                  setTypeFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              >
+                <option value="All">All Types</option>
+                <option value="HR_SCREENING">HR Screening</option>
+                <option value="TECHNICAL">Technical R1 / R2</option>
+                <option value="MANAGERIAL">Managerial</option>
+                <option value="CULTURE_FIT">Culture Fit</option>
+                <option value="FINAL_ROUND">Final Round</option>
+              </select>
+            </div>
+
+            {/* Interview Status Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Status Filter</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              >
+                <option value="All">All Statuses</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="RESCHEDULED">Rescheduled</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+          </div>
+        </div>
         {/* Navigation Filter Tabs Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-4 overflow-x-auto gap-4">
           <div className="flex items-center gap-6 overflow-x-auto">
@@ -1821,6 +2014,84 @@ export default function InterviewManagement() {
             </table>
           </div>
         )}
+
+        {/* Backend Server Pagination Footer Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-200 text-xs text-slate-600">
+          <div className="flex items-center gap-4">
+            <span>
+              Showing <strong className="font-semibold text-slate-800">{totalCount > 0 ? (page - 1) * limit + 1 : 0}</strong> to{" "}
+              <strong className="font-semibold text-slate-800">{Math.min(page * limit, totalCount)}</strong> of{" "}
+              <strong className="font-semibold text-slate-900">{totalCount}</strong> interviews
+            </span>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-medium">Rows per page:</span>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  const newLimit = Number(e.target.value);
+                  setLimit(newLimit);
+                  setPage(1);
+                }}
+                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="mr-2 text-slate-500 font-medium">
+              Page <strong className="font-semibold text-slate-800">{page}</strong> of{" "}
+              <strong className="font-semibold text-slate-800">{totalPages}</strong>
+            </span>
+
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer text-slate-700"
+              title="Previous Page"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {/* Page number buttons */}
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let pageNum = i + 1;
+              if (totalPages > 5 && page > 3) {
+                pageNum = page - 3 + i;
+                if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+              }
+              if (pageNum <= 0) return null;
+
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    page === pageNum
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+
+            <button
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer text-slate-700"
+              title="Next Page"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* SCHEDULE INTERVIEW MODAL (EXACT 2x2 COLORFUL CARD UI) */}

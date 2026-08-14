@@ -437,6 +437,9 @@ class InterviewListResponse(BaseModel):
 
     total: int
     interviews: List[InterviewResponse]
+    page: Optional[int] = 1
+    limit: Optional[int] = 10
+    total_pages: Optional[int] = 1
 
     model_config = ConfigDict(from_attributes=True)
 

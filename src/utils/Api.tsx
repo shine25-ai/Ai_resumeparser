@@ -467,8 +467,13 @@ export const getInterviews = async (params: {
   status?: string;
   interview_type?: string;
   job_title?: string;
+  name?: string;
+  email?: string;
+  scheduled_date?: string;
+  search?: string;
   date_from?: string;
   date_to?: string;
+  page?: number;
   skip?: number;
   limit?: number;
 } = {}) => {
@@ -480,8 +485,13 @@ export const getInterviews = async (params: {
   if (params.status) queryParts.push(`status=${encodeURIComponent(params.status)}`);
   if (params.interview_type) queryParts.push(`interview_type=${encodeURIComponent(params.interview_type)}`);
   if (params.job_title) queryParts.push(`job_title=${encodeURIComponent(params.job_title)}`);
+  if (params.name) queryParts.push(`name=${encodeURIComponent(params.name)}`);
+  if (params.email) queryParts.push(`email=${encodeURIComponent(params.email)}`);
+  if (params.scheduled_date) queryParts.push(`scheduled_date=${encodeURIComponent(params.scheduled_date)}`);
+  if (params.search) queryParts.push(`search=${encodeURIComponent(params.search)}`);
   if (params.date_from) queryParts.push(`date_from=${encodeURIComponent(params.date_from)}`);
   if (params.date_to) queryParts.push(`date_to=${encodeURIComponent(params.date_to)}`);
+  if (params.page !== undefined) queryParts.push(`page=${params.page}`);
   if (params.skip !== undefined) queryParts.push(`skip=${params.skip}`);
   if (params.limit !== undefined) queryParts.push(`limit=${params.limit}`);
 

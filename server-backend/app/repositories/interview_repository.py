@@ -52,19 +52,20 @@ class InterviewRepository(BaseRepository):
         }
         return await self.find_many(query=query, limit=10)
 
-    async def filter_interviews(
+    def _build_filter_query(
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
-        status: Optional[InterviewStatus] = None,
-        interview_type: Optional[InterviewType] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """Filter interviews based on query parameters."""
+    ) -> Dict[str, Any]:
         import re
 
         and_conditions: List[Dict[str, Any]] = []
@@ -76,14 +77,39 @@ class InterviewRepository(BaseRepository):
             and_conditions.append({"interviewer_id": interviewer_id})
 
         if status:
-            and_conditions.append({"status": status.value if hasattr(status, "value") else status})
+            val = status.value if hasattr(status, "value") else str(status)
+            if val and val.upper() != "ALL":
+                and_conditions.append({"status": val})
 
         if interview_type:
-            and_conditions.append({"interview_type": interview_type.value if hasattr(interview_type, "value") else interview_type})
+            val = interview_type.value if hasattr(interview_type, "value") else str(interview_type)
+            if val and val.upper() != "ALL":
+                # Matches exact type or case-insensitive enum format
+                and_conditions.append({"interview_type": {"$regex": f"^{re.escape(val)}$", "$options": "i"}})
 
         if job_title and job_title.strip():
-            jt_regex = re.compile(re.escape(job_title.strip()), re.IGNORECASE)
-            and_conditions.append({"job_title": {"$regex": jt_regex}})
+            and_conditions.append({"job_title": {"$regex": re.escape(job_title.strip()), "$options": "i"}})
+
+        if name and name.strip():
+            and_conditions.append({"candidate_name": {"$regex": re.escape(name.strip()), "$options": "i"}})
+
+        if email and email.strip():
+            and_conditions.append({"candidate_email": {"$regex": re.escape(email.strip()), "$options": "i"}})
+
+        if scheduled_date and scheduled_date.strip():
+            and_conditions.append({"scheduled_date": {"$regex": re.escape(scheduled_date.strip()), "$options": "i"}})
+
+        if search and search.strip():
+            s_regex = {"$regex": re.escape(search.strip()), "$options": "i"}
+            and_conditions.append({
+                "$or": [
+                    {"candidate_name": s_regex},
+                    {"candidate_email": s_regex},
+                    {"job_title": s_regex},
+                    {"interviewer_name": s_regex},
+                    {"interview_type": s_regex},
+                ]
+            })
 
         if date_from or date_to:
             date_cond: Dict[str, Any] = {}
@@ -93,7 +119,38 @@ class InterviewRepository(BaseRepository):
                 date_cond["$lte"] = date_to
             and_conditions.append({"scheduled_date": date_cond})
 
-        query = {"$and": and_conditions} if and_conditions else {}
+        return {"$and": and_conditions} if and_conditions else {}
+
+    async def filter_interviews(
+        self,
+        candidate_id: Optional[str] = None,
+        interviewer_id: Optional[str] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
+        job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Filter interviews based on query parameters."""
+        query = self._build_filter_query(
+            candidate_id=candidate_id,
+            interviewer_id=interviewer_id,
+            status=status,
+            interview_type=interview_type,
+            job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
         return await self.find_many(
             query=query,
@@ -107,18 +164,30 @@ class InterviewRepository(BaseRepository):
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
-        status: Optional[InterviewStatus] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
+        job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
     ) -> int:
         """Count total interviews matching criteria."""
-        and_conditions: List[Dict[str, Any]] = []
-        if candidate_id:
-            and_conditions.append({"candidate_id": candidate_id})
-        if interviewer_id:
-            and_conditions.append({"interviewer_id": interviewer_id})
-        if status:
-            and_conditions.append({"status": status.value if hasattr(status, "value") else status})
-
-        query = {"$and": and_conditions} if and_conditions else {}
+        query = self._build_filter_query(
+            candidate_id=candidate_id,
+            interviewer_id=interviewer_id,
+            status=status,
+            interview_type=interview_type,
+            job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
         return await self.count(query=query)
 
     async def reschedule_interview(

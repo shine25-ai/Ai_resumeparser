@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3 } from "lucide-react";
+import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getResumes, type CandidateQueryParams } from "../utils/Api";
 import { CandidateEditModal } from "../components/CandidateEditModal";
@@ -363,10 +363,29 @@ export default function CandidateDatabase() {
                       <div className="flex items-center justify-end gap-2 text-indigo-600">
                         <button
                           onClick={() => {
+                            navigate("/interviews", {
+                              state: {
+                                scheduleCandidate: {
+                                  candidate_id: row.realId || row.id,
+                                  candidate_name: row.candidateName,
+                                  candidate_email: row.email !== "N/A" ? row.email : "",
+                                  resume_id: row.realId || row.id,
+                                  job_title: row.targetRole !== "N/A" ? row.targetRole : "",
+                                },
+                              },
+                            });
+                          }}
+                          className="p-1.5 hover:bg-indigo-50 rounded-md transition-colors border border-slate-200 text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                          title="Assign / Schedule New Interview Session"
+                        >
+                          <Calendar size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
                             setEditCandidateId(row.realId);
                             setIsEditModalOpen(true);
                           }}
-                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
                           title="Edit Candidate Resume & Evaluation Details"
                         >
                           <Edit3 size={14} />

@@ -2,7 +2,7 @@
 Interview controller handling HTTP requests for interview scheduling, filtering, updating, feedback, and deletion.
 """
 
-from typing import Optional
+from typing import Any, Optional
 from fastapi import UploadFile, status
 from fastapi.responses import JSONResponse
 
@@ -65,13 +65,18 @@ class InterviewController:
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
-        status: Optional[InterviewStatus] = None,
-        interview_type: Optional[InterviewType] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
+        page: int = 1,
+        limit: int = 10,
+        skip: Optional[int] = None,
     ) -> JSONResponse:
         """List and filter interviews."""
         res = await self.interview_service.filter_interviews(
@@ -80,10 +85,15 @@ class InterviewController:
             status=status,
             interview_type=interview_type,
             job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
             date_from=date_from,
             date_to=date_to,
-            skip=skip,
+            page=page,
             limit=limit,
+            skip=skip,
         )
         return success_response(
             data=res.model_dump(),
