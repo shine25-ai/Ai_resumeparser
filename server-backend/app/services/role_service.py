@@ -24,10 +24,12 @@ class RoleService:
 
     async def create_role(self, payload: RoleCreate) -> RoleResponse:
         """Create a new custom role."""
-        slug = payload.slug or self._generate_slug(payload.name)
+        raw_slug = payload.slug.strip() if payload.slug else payload.name
+        slug = self._generate_slug(raw_slug)
         existing = await self.role_repo.get_by_slug(slug)
         if existing:
             raise ConflictError(f"Role with slug '{slug}' already exists.")
+
 
         role_doc = RoleDocument(
             name=payload.name.strip(),

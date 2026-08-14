@@ -2,7 +2,7 @@
 User management service handling user profile operations, CRUD management, role assignments, and admin user listings.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import hash_password
 from app.models.user import UserDocument
@@ -19,28 +19,48 @@ class UserService:
         self.user_repo = user_repo
         self.role_repo = role_repo
 
-    async def _attach_role_permissions(self, user_dict: dict) -> dict:
+    async def _attach_role_permissions(self, user_dict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Enrich user document with permissions derived from assigned role."""
         if not user_dict:
-            return user_dict
+            return {}
 
-        role_slug = user_dict.get("role", "user")
-        permissions = []
+        role_identifier = str(user_dict.get("role", "user")).strip().lower()
 
-        if self.role_repo:
-            role_doc = await self.role_repo.get_by_slug(role_slug)
-            if role_doc:
-                permissions = role_doc.get("permissions", [])
-            elif role_slug == "admin":
-                permissions = [
-                    "dashboard", "upload", "database", "evaluation",
-                    "jd-match", "interviews", "interview-dashboard",
-                    "client-feedback", "analytics", "settings", "role-management"
-                ]
+        all_system_permissions = [
+            "dashboard", "upload", "database", "evaluation",
+            "jd-match", "interviews", "interview-dashboard",
+            "client-feedback", "analytics", "settings", "role-management"
+        ]
+
+        if role_identifier in ["admin", "superadmin"]:
+            permissions = all_system_permissions
+        else:
+            permissions = []
+            if self.role_repo:
+                role_doc = await self.role_repo.get_by_slug(role_identifier)
+                if role_doc and role_doc.get("permissions") is not None:
+                    permissions = role_doc.get("permissions", [])
+
+            if not permissions:
+                # Default fallback permissions
+                if role_identifier in ["hr_manager", "hr"]:
+                    permissions = [
+                        "dashboard", "upload", "database", "evaluation",
+                        "jd-match", "interviews", "interview-dashboard",
+                        "client-feedback", "analytics"
+                    ]
+                elif role_identifier in ["interviewer", "recruiter"]:
+                    permissions = [
+                        "dashboard", "upload", "database", "evaluation",
+                        "jd-match", "interviews", "interview-dashboard"
+                    ]
+                else:
+                    permissions = ["dashboard", "upload", "database", "evaluation", "jd-match", "interviews"]
 
         user_dict_copy = dict(user_dict)
         user_dict_copy["permissions"] = permissions
         return user_dict_copy
+
 
     async def create_user(self, payload: UserCreate) -> UserResponse:
         """Create a new user document (Admin operation)."""

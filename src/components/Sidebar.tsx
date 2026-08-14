@@ -52,14 +52,16 @@ export function Sidebar() {
   // Dynamic role-based filtering:
   // If user is admin or permissions array is missing/empty, show all default items.
   // Otherwise filter strictly by user.permissions.
+  const userRoleLower = user?.role?.toLowerCase() || "";
   const visibleNavItems = navItems.filter((item) => {
     if (!user) return true;
-    if (user.role === "admin") return true;
+    if (userRoleLower === "admin" || userRoleLower === "superadmin") return true;
     if (!user.permissions || user.permissions.length === 0) return true;
     return user.permissions.includes(item.perm);
   });
 
-  const canAccessSettings = !user || user.role === "admin" || !user.permissions || user.permissions.includes("settings");
+  const canAccessSettings = !user || userRoleLower === "admin" || userRoleLower === "superadmin" || !user.permissions || user.permissions.includes("settings");
+
 
   return (
     <aside

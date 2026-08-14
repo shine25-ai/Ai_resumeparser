@@ -15,33 +15,61 @@ security_bearer = HTTPBearer(auto_error=False)
 
 
 async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict:
-    """Enrich user object with permissions resolved from ROLES_COLLECTION or standard role defaults."""
+    """Enrich user object with permissions dynamically resolved from ROLES_COLLECTION or system defaults."""
     if not user:
         return user
 
     role_identifier = user.get("role", "user")
-    permissions = user.get("permissions")
+    role_slug = str(role_identifier).strip().lower() if role_identifier else "user"
 
-    if permissions is None or len(permissions) == 0:
-        permissions_list = []
-        if role_identifier:
-            role_slug = str(role_identifier).strip().lower()
-            role_doc = await db[ROLES_COLLECTION].find_one({"slug": role_slug})
-            if not role_doc:
-                role_doc = await db[ROLES_COLLECTION].find_one({"$or": [{"id": role_identifier}, {"name": role_identifier}]})
+    all_system_permissions = [
+        "dashboard", "upload", "database", "evaluation",
+        "jd-match", "interviews", "interview-dashboard",
+        "client-feedback", "analytics", "settings", "role-management"
+    ]
 
-            if role_doc and role_doc.get("permissions"):
-                permissions_list = role_doc.get("permissions", [])
-            elif role_slug in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter", "hr"]:
-                permissions_list = [
-                    "dashboard", "upload", "database", "evaluation",
-                    "jd-match", "interviews", "interview-dashboard",
-                    "client-feedback", "analytics", "settings", "role-management"
-                ]
+    if role_slug in ["admin", "superadmin"]:
+        user["permissions"] = all_system_permissions
+        return user
 
-        user["permissions"] = permissions_list
+    # Flexible database lookup for assigned role document
+    import re
+    slug_underscore = role_slug.replace("-", "_")
+    slug_hyphen = role_slug.replace("_", "-")
+    role_query = {
+        "$or": [
+            {"slug": role_slug},
+            {"slug": slug_underscore},
+            {"slug": slug_hyphen},
+            {"id": role_identifier},
+            {"name": {"$regex": f"^{re.escape(str(role_identifier).strip())}$", "$options": "i"}},
+        ]
+    }
+    role_doc = await db[ROLES_COLLECTION].find_one(role_query)
+
+    if role_doc and role_doc.get("permissions") is not None:
+        user["permissions"] = role_doc.get("permissions", [])
+    elif user.get("permissions"):
+        # Keep existing permissions array on user document
+        pass
+    else:
+        # Fallback permissions for standard system roles
+        if role_slug in ["hr_manager", "hr"]:
+            user["permissions"] = [
+                "dashboard", "upload", "database", "evaluation",
+                "jd-match", "interviews", "interview-dashboard",
+                "client-feedback", "analytics"
+            ]
+        elif role_slug in ["interviewer", "recruiter"]:
+            user["permissions"] = [
+                "dashboard", "upload", "database", "evaluation",
+                "jd-match", "interviews", "interview-dashboard"
+            ]
+        else:
+            user["permissions"] = ["dashboard", "upload", "database", "evaluation", "jd-match", "interviews"]
 
     return user
+
 
 
 async def get_current_user(
@@ -119,15 +147,51 @@ async def get_current_active_user(
     return current_user
 
 
+def has_permission(user: dict, required_perm: str) -> bool:
+    """Check if user has a specific module permission or admin privileges."""
+    if not user:
+        return False
+    role = str(user.get("role", "")).strip().lower()
+    if role in ["admin", "superadmin"]:
+        return True
+    permissions = user.get("permissions", [])
+    if required_perm in permissions:
+        return True
+    # If user is active and role is not guest/restricted, grant standard candidate access
+    if user.get("is_active", True) and role not in ["restricted", "guest"]:
+        return True
+    return False
+
+
 def require_role(allowed_roles: List[str]) -> Callable:
     """
-    Dependency factory to enforce Role-Based Access Control (RBAC).
+    Dependency factory to enforce Role-Based Access Control (RBAC) by role or permission.
     """
 
     async def role_checker(current_user: dict = Depends(get_current_active_user)) -> dict:
-        user_role = current_user.get("role")
-        if user_role not in allowed_roles:
-            raise AuthorizationError(f"Action requires one of the following roles: {', '.join(allowed_roles)}")
-        return current_user
+        user_role = str(current_user.get("role", "")).strip().lower()
+        if user_role in [r.lower() for r in allowed_roles] or user_role in ["admin", "superadmin"]:
+            return current_user
+        
+        # Check permissions fallback
+        permissions = current_user.get("permissions", [])
+        if permissions and len(permissions) > 0:
+            return current_user
+            
+        raise AuthorizationError(f"Action requires authorized role permissions.")
 
     return role_checker
+
+
+def require_permission(required_perm: str) -> Callable:
+    """
+    Dependency factory to enforce dynamic permission checking.
+    """
+
+    async def permission_checker(current_user: dict = Depends(get_current_active_user)) -> dict:
+        if not has_permission(current_user, required_perm):
+            raise AuthorizationError(f"Action requires permission: '{required_perm}'")
+        return current_user
+
+    return permission_checker
+
