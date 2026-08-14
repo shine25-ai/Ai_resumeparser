@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
-  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, MAIL_TEMPLATES_URL,
+  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, MAIL_TEMPLATES_URL,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
@@ -50,6 +51,20 @@ export default function InterviewManagement() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Pagination & Server Search/Filter State
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Specific Filters State
+  const [nameFilter, setNameFilter] = useState<string>("");
+  const [emailFilter, setEmailFilter] = useState<string>("");
+  const [scheduledDateFilter, setScheduledDateFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+
   // Bulk Selection & Modal State
   const [selectedInterviewIds, setSelectedInterviewIds] = useState<string[]>([]);
   const [isBulkFeedbackOpen, setIsBulkFeedbackOpen] = useState<boolean>(false);
@@ -88,11 +103,21 @@ export default function InterviewManagement() {
 
   // Send Email Modal Multiple Recipients States
   const [interviewerMailRecipients, setInterviewerMailRecipients] = useState<
-    Array<{ send: boolean; name: string; email: string }>
+    Array<{ name: string; email: string; send: boolean }>
   >([]);
   const [clientMailRecipients, setClientMailRecipients] = useState<
-    Array<{ send: boolean; name: string; email: string }>
+    Array<{ name: string; email: string; send: boolean }>
   >([]);
+
+  // Floating Toast Notification State
+  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+  const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
+    setToastMessage({ type, text });
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+  };
 
   const handleAddInterviewerMailRecipient = () => {
     setInterviewerMailRecipients((prev) => [
@@ -399,6 +424,7 @@ export default function InterviewManagement() {
     final_fit_salary: "",
     joining_date: "",
     interview_document_files: "",
+    interview_feedback_files: "",
     notes: "",
   });
 
@@ -494,53 +520,199 @@ export default function InterviewManagement() {
 
   const navTabs = ["All", "Technical", "HR", "Managerial", "Culture Fit", "Final Round", "Initial Screening"];
 
-  // File Upload Handlers for Modals
-  const handleScheduleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // File Upload State & Handlers for Modals (Uploads directly to S3)
+  const [isUploadingScheduleFile, setIsUploadingScheduleFile] = useState(false);
+  const [isUploadingEditFile, setIsUploadingEditFile] = useState(false);
+  const [isUploadingFeedbackFile, setIsUploadingFeedbackFile] = useState(false);
+  const [isUploadingNextRoundFile, setIsUploadingNextRoundFile] = useState(false);
+
+  const handleNextRoundFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = scheduleForm.interview_document_files
-        ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setScheduleForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingNextRoundFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = nextRoundForm.interview_document_files
+            ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setNextRoundForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingNextRoundFile(false);
+        e.target.value = "";
+      }
     }
   };
 
-  const handleEditFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleScheduleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = editForm.interview_document_files
-        ? editForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setEditForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingScheduleFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = scheduleForm.interview_document_files
+            ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setScheduleForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingScheduleFile(false);
+        e.target.value = "";
+      }
     }
   };
 
-  const handleFeedbackFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = feedbackForm.interview_document_files
-        ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setFeedbackForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingEditFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = editForm.interview_document_files
+            ? editForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setEditForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingEditFile(false);
+        e.target.value = "";
+      }
     }
   };
 
-  // Fetch interviews & candidates list
-  const fetchAllData = async () => {
+  const handleFeedbackFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      setIsUploadingFeedbackFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = feedbackForm.interview_document_files
+            ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setFeedbackForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload document to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingFeedbackFile(false);
+        e.target.value = "";
+      }
+    }
+  };
+
+  const [isUploadingFeedbackReportFile, setIsUploadingFeedbackReportFile] = useState(false);
+
+  const handleFeedbackReportFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      setIsUploadingFeedbackReportFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = feedbackForm.interview_feedback_files
+            ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setFeedbackForm((prev) => ({ ...prev, interview_feedback_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload feedback report to S3:", err);
+        alert(`Failed to upload feedback document to S3: ${err.message || "Upload error"}`);
+      } finally {
+        setIsUploadingFeedbackReportFile(false);
+        e.target.value = "";
+      }
+    }
+  };
+
+  // Fetch interviews & candidates list from backend with search, filters & pagination
+  const fetchAllData = async (
+    targetPage = page,
+    targetLimit = limit,
+    targetSearch = searchTerm,
+    targetName = nameFilter,
+    targetEmail = emailFilter,
+    targetDate = scheduledDateFilter,
+    targetType = typeFilter,
+    targetStatus = statusFilter,
+    targetTab = activeTab
+  ) => {
     setLoading(true);
     setError(null);
     try {
+      const activeType = targetType !== "All" ? targetType : (targetTab !== "All" ? targetTab : undefined);
+      const activeStatus = targetStatus !== "All" ? targetStatus : undefined;
+
       const [interviewData, resumesData, usersData] = await Promise.all([
-        getInterviews(),
+        getInterviews({
+          page: targetPage,
+          limit: targetLimit,
+          search: targetSearch.trim() || undefined,
+          name: targetName.trim() || undefined,
+          email: targetEmail.trim() || undefined,
+          scheduled_date: targetDate.trim() || undefined,
+          interview_type: activeType,
+          status: activeStatus,
+        }),
         getResumes().catch(() => []),
         getUsers().catch(() => []),
       ]);
 
-      const items = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || [];
+      const items = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || interviewData?.data?.interviews || [];
+      const total = typeof interviewData?.total === "number" ? interviewData.total : (interviewData?.data?.total || items.length);
+      const computedTotalPages = typeof interviewData?.total_pages === "number" ? interviewData.total_pages : (interviewData?.data?.total_pages || Math.ceil(total / targetLimit) || 1);
+
       setInterviews(items);
+      setTotalCount(total);
+      setTotalPages(computedTotalPages);
 
       const resumes = Array.isArray(resumesData) ? resumesData : resumesData?.resumes || [];
       setCandidatesList(resumes);
@@ -555,9 +727,24 @@ export default function InterviewManagement() {
     }
   };
 
+  const location = useLocation();
+
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, activeTab);
+
+    if (location.state && location.state.scheduleCandidate) {
+      const cand = location.state.scheduleCandidate;
+      setScheduleForm((prev) => ({
+        ...prev,
+        candidate_id: cand.candidate_id || "",
+        candidate_name: cand.candidate_name || "",
+        candidate_email: cand.candidate_email || "",
+        resume_id: cand.resume_id || "",
+        job_title: cand.job_title || "",
+      }));
+      setIsScheduleOpen(true);
+    }
+  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, activeTab, location.state]);
 
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
@@ -998,6 +1185,7 @@ export default function InterviewManagement() {
       final_fit_salary: item.final_fit_salary || "",
       joining_date: item.joining_date || "",
       interview_document_files: item.interview_document_files ? item.interview_document_files.join("\n") : "",
+      interview_feedback_files: item.interview_feedback_files ? item.interview_feedback_files.join("\n") : "",
       notes: item.notes || "",
     });
     setIsFeedbackOpen(true);
@@ -1018,6 +1206,9 @@ export default function InterviewManagement() {
       setActionLoading(true);
       const docFilesArray = feedbackForm.interview_document_files
         ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+        : [];
+      const feedbackReportFilesArray = feedbackForm.interview_feedback_files
+        ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
         : [];
 
       await submitInterviewFeedback(selectedInterview.id, {
@@ -1047,6 +1238,7 @@ export default function InterviewManagement() {
         final_fit_salary: feedbackForm.final_fit_salary || undefined,
         joining_date: feedbackForm.joining_date || undefined,
         interview_document_files: docFilesArray,
+        interview_feedback_files: feedbackReportFilesArray,
         notes: feedbackForm.notes || undefined,
       });
 
@@ -1204,12 +1396,14 @@ export default function InterviewManagement() {
         custom_notes: sendMailForm.custom_notes || undefined,
       });
 
-      setSendMailStatus({ type: "success", text: res.message || "Interview email notifications dispatched successfully!" });
+      const successMsg = res.message || `Interview notification email successfully sent to ${selectedInterview.candidate_name}!`;
+      setSendMailStatus({ type: "success", text: successMsg });
+      showToast(successMsg, "success");
       fetchAllData();
       setTimeout(() => {
         setIsSendMailOpen(false);
         setSendMailStatus(null);
-      }, 1800);
+      }, 1500);
     } catch (err: any) {
       console.error("Failed to send interview email:", err);
       setSendMailStatus({ type: "error", text: err.message || "Failed to send interview email." });
@@ -1233,10 +1427,6 @@ export default function InterviewManagement() {
       console.warn("Failed to check active interview status from backend:", err);
     }
 
-    const docsJoined = item.interview_document_files && Array.isArray(item.interview_document_files)
-      ? item.interview_document_files.join("\n")
-      : "";
-
     const defaultType = "TECHNICAL" as InterviewTypeEnum;
     let nextRoundNum = (item.round_number || 1) + 1;
     try {
@@ -1250,14 +1440,14 @@ export default function InterviewManagement() {
 
     const initInts =
       item.interviewers && item.interviewers.length > 0
-        ? item.interviewers.map((i) => ({ interviewer_name: i.interviewer_name || "", interviewer_email: i.interviewer_email || "" }))
-        : [{ interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "" }];
+        ? item.interviewers.map((i) => ({ interviewer_id: i.interviewer_id, interviewer_name: i.interviewer_name || "", interviewer_email: i.interviewer_email || "" }))
+        : [{ interviewer_id: item.interviewer_id, interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "" }];
     setNextRoundInterviewersList(initInts);
 
     const initClients =
       item.clients && item.clients.length > 0
-        ? item.clients.map((c) => ({ client_name: c.client_name || "", client_email: c.client_email || "" }))
-        : [{ client_name: item.client_name || "", client_email: item.client_email || "" }];
+        ? item.clients.map((c) => ({ client_id: c.client_id, client_name: c.client_name || "", client_email: c.client_email || "" }))
+        : [{ client_id: item.client_id, client_name: item.client_name || "", client_email: item.client_email || "" }];
     setNextRoundClientsList(initClients);
 
     setNextRoundForm({
@@ -1288,7 +1478,7 @@ export default function InterviewManagement() {
       salary_requested: item.salary_requested || "",
       final_fit_salary: item.final_fit_salary || "",
       joining_date: item.joining_date || "",
-      interview_document_files: docsJoined,
+      interview_document_files: "",
       client_name: initClients[0]?.client_name || "",
       client_rating: item.client_rating || 0,
       client_feedback: item.client_feedback || "",
@@ -1347,6 +1537,7 @@ export default function InterviewManagement() {
         scheduled_time: nextRoundForm.scheduled_time,
         timezone: nextRoundForm.timezone,
         duration_minutes: Number(nextRoundForm.duration_minutes),
+        interviewer_id: primaryInterviewer.interviewer_id || undefined,
         interviewer_name: primaryInterviewer.interviewer_name || "Interviewer",
         interviewer_email: primaryInterviewer.interviewer_email || undefined,
         meeting_platform: nextRoundForm.meeting_platform,
@@ -1361,6 +1552,7 @@ export default function InterviewManagement() {
         final_fit_salary: nextRoundForm.final_fit_salary || undefined,
         joining_date: nextRoundForm.joining_date || undefined,
         interview_document_files: docFilesArray,
+        client_id: primaryClient.client_id || undefined,
         client_name: primaryClient.client_name || undefined,
         client_email: primaryClient.client_email || undefined,
         interviewers: nextRoundInterviewersList,
@@ -1427,6 +1619,142 @@ export default function InterviewManagement() {
 
       {/* Main Table Card Wrapper */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-6">
+        {/* SERVER SEARCH & FILTERS BAR */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+            {/* Global Search Box */}
+            <div className="relative w-full md:w-80">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search candidate, email, title, interviewer..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium placeholder-slate-400 shadow-2xs"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setPage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Clear Filters Button */}
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              {(searchTerm || nameFilter || emailFilter || scheduledDateFilter || typeFilter !== "All" || statusFilter !== "All") && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setNameFilter("");
+                    setEmailFilter("");
+                    setScheduledDateFilter("");
+                    setTypeFilter("All");
+                    setStatusFilter("All");
+                    setPage(1);
+                  }}
+                  className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 font-semibold px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-50 transition-colors cursor-pointer"
+                >
+                  <X size={12} /> Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Specific Field Filters Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-slate-200/80 text-xs">
+            {/* Candidate Name Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Name</label>
+              <input
+                type="text"
+                placeholder="Filter by name..."
+                value={nameFilter}
+                onChange={(e) => {
+                  setNameFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            {/* Candidate Email Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Email</label>
+              <input
+                type="text"
+                placeholder="candidate@gmail.com"
+                value={emailFilter}
+                onChange={(e) => {
+                  setEmailFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            {/* Scheduled Date Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Scheduled Date</label>
+              <input
+                type="date"
+                value={scheduledDateFilter}
+                onChange={(e) => {
+                  setScheduledDateFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              />
+            </div>
+
+            {/* Interview Type Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Interview Type</label>
+              <select
+                value={typeFilter}
+                onChange={(e) => {
+                  setTypeFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              >
+                <option value="All">All Types</option>
+                <option value="HR_SCREENING">HR Screening</option>
+                <option value="TECHNICAL">Technical R1 / R2</option>
+                <option value="MANAGERIAL">Managerial</option>
+                <option value="CULTURE_FIT">Culture Fit</option>
+                <option value="FINAL_ROUND">Final Round</option>
+              </select>
+            </div>
+
+            {/* Interview Status Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Status Filter</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              >
+                <option value="All">All Statuses</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="RESCHEDULED">Rescheduled</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+          </div>
+        </div>
         {/* Navigation Filter Tabs Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-4 overflow-x-auto gap-4">
           <div className="flex items-center gap-6 overflow-x-auto">
@@ -1686,6 +2014,84 @@ export default function InterviewManagement() {
             </table>
           </div>
         )}
+
+        {/* Backend Server Pagination Footer Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-200 text-xs text-slate-600">
+          <div className="flex items-center gap-4">
+            <span>
+              Showing <strong className="font-semibold text-slate-800">{totalCount > 0 ? (page - 1) * limit + 1 : 0}</strong> to{" "}
+              <strong className="font-semibold text-slate-800">{Math.min(page * limit, totalCount)}</strong> of{" "}
+              <strong className="font-semibold text-slate-900">{totalCount}</strong> interviews
+            </span>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-medium">Rows per page:</span>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  const newLimit = Number(e.target.value);
+                  setLimit(newLimit);
+                  setPage(1);
+                }}
+                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="mr-2 text-slate-500 font-medium">
+              Page <strong className="font-semibold text-slate-800">{page}</strong> of{" "}
+              <strong className="font-semibold text-slate-800">{totalPages}</strong>
+            </span>
+
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer text-slate-700"
+              title="Previous Page"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {/* Page number buttons */}
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let pageNum = i + 1;
+              if (totalPages > 5 && page > 3) {
+                pageNum = page - 3 + i;
+                if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+              }
+              if (pageNum <= 0) return null;
+
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    page === pageNum
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+
+            <button
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer text-slate-700"
+              title="Next Page"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* SCHEDULE INTERVIEW MODAL (EXACT 2x2 COLORFUL CARD UI) */}
@@ -2297,18 +2703,73 @@ export default function InterviewManagement() {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-bold text-slate-700">Interview Document Files (URLs/filenames)</label>
-                      <label className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[11px] px-2.5 py-0.5 rounded-lg cursor-pointer font-bold transition-all">
-                        Attach Files
-                        <input type="file" multiple onChange={handleScheduleFileUpload} className="hidden" />
+                      <label className={`bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[11px] px-2.5 py-0.5 rounded-lg cursor-pointer font-bold transition-all inline-flex items-center gap-1 ${isUploadingScheduleFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingScheduleFile ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin text-emerald-700" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={12} />
+                            <span>Attach Files</span>
+                          </>
+                        )}
+                        <input type="file" multiple onChange={handleScheduleFileUpload} disabled={isUploadingScheduleFile} className="hidden" />
                       </label>
                     </div>
-                    <textarea
-                      rows={2}
-                      value={scheduleForm.interview_document_files}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono text-xs shadow-2xs"
-                      placeholder="One per line or click Attach Files..."
-                    />
+                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const attachedList = scheduleForm.interview_document_files
+                        ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                      if (attachedList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2.5 mt-1">
+                          {attachedList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-emerald-200 rounded-xl px-3 py-1.5 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={14} className="text-emerald-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                      setScheduleForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Attached files chips are displayed above, no raw link textarea */}
                   </div>
 
                   <div>
@@ -3021,13 +3482,23 @@ export default function InterviewManagement() {
                         <label className="text-slate-700 font-semibold flex items-center gap-1">
                           <FileText size={12} className="text-rose-600" /> Attached Document Files
                         </label>
-                        <label className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                          <Upload size={13} />
-                          <span>Browse / Attach</span>
+                        <label className={`inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingEditFile ? "opacity-60 pointer-events-none" : ""}`}>
+                          {isUploadingEditFile ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin text-slate-600" />
+                              <span>Uploading to S3...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={13} />
+                              <span>Browse / Attach</span>
+                            </>
+                          )}
                           <input
                             type="file"
                             multiple
                             onChange={handleEditFileUpload}
+                            disabled={isUploadingEditFile}
                             className="hidden"
                           />
                         </label>
@@ -3588,7 +4059,7 @@ export default function InterviewManagement() {
                               <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
                                 <select
-                                  value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                                  value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val === "custom" || !val) {
@@ -3816,7 +4287,7 @@ export default function InterviewManagement() {
                               <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
                                 <select
-                                  value={client.client_id || (client.client_name ? "custom" : "")}
+                                  value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val === "custom" || !val) {
@@ -3991,6 +4462,10 @@ export default function InterviewManagement() {
                         setFeedbackAiScore(score);
                         setFeedbackAiRecommendation(rec);
                       }}
+                      currentRoundNumber={selectedInterview?.round_number}
+                      currentInterviewType={selectedInterview?.interview_type}
+                      hrCallVerification={selectedInterview?.hr_call_verification}
+                      allRounds={interviews.filter((i) => i.candidate_id === selectedInterview?.candidate_id)}
                     />
                   </div>
 
@@ -4061,31 +4536,170 @@ export default function InterviewManagement() {
 
                   {/* DOCUMENTS & NOTES SECTION */}
                   <div id="sec-documents" className="space-y-4">
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                    {/* CARD 1: SESSION & CANDIDATE ATTACHED DOCUMENTS */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2">
                           <FileText size={18} className="text-rose-600" />
-                          <h3 className="text-sm font-extrabold text-slate-900">Attached Documents & Media</h3>
+                          <h3 className="text-sm font-extrabold text-slate-900">Session & Candidate Attached Documents</h3>
                         </div>
-                        <label className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                          <Upload size={13} />
-                          <span>Browse / Attach File</span>
+                        <label className={`inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackFile ? "opacity-60 pointer-events-none" : ""}`}>
+                          {isUploadingFeedbackFile ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin text-indigo-600" />
+                              <span>Uploading to S3...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={13} />
+                              <span>Browse / Attach File</span>
+                            </>
+                          )}
                           <input
                             type="file"
                             multiple
                             onChange={handleFeedbackFileUpload}
+                            disabled={isUploadingFeedbackFile}
                             className="hidden"
                           />
                         </label>
                       </div>
 
-                      <textarea
-                        rows={2}
-                        value={feedbackForm.interview_document_files}
-                        onChange={(e) => setFeedbackForm({ ...feedbackForm, interview_document_files: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono text-xs"
-                        placeholder="Document names or URLs (one per line)..."
-                      />
+                      {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                      {(() => {
+                        const attachedList = feedbackForm.interview_document_files
+                          ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                          : [];
+                        if (attachedList.length === 0) return null;
+                        return (
+                          <div className="space-y-1.5 mb-2 mt-1">
+                            {attachedList.map((fileStr, idx) => {
+                              const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                              const rawName = fileStr.split("/").pop() || fileStr;
+                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                              return (
+                                <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText size={15} className="text-rose-600 shrink-0" />
+                                    <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                      {displayName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {isUrl && (
+                                      <a
+                                        href={fileStr}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                      >
+                                        <Eye size={13} />
+                                        <span>View</span>
+                                      </a>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                        setFeedbackForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                      }}
+                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                      title="Remove attachment"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Attached files chips are displayed above, no raw link textarea */}
+                    </div>
+
+                    {/* CARD 2: NEW INTERVIEW FEEDBACK & EVALUATION REPORTS ATTACHMENT FIELD */}
+                    <div className="bg-amber-50/40 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between border-b border-amber-200 pb-3">
+                        <div className="flex items-center gap-2 text-amber-900">
+                          <ShieldCheck size={18} className="text-amber-600" />
+                          <h3 className="text-sm font-extrabold">Interview Feedback & Round Assessment Reports</h3>
+                        </div>
+                        <label className={`inline-flex items-center gap-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackReportFile ? "opacity-60 pointer-events-none" : ""}`}>
+                          {isUploadingFeedbackReportFile ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin text-amber-700" />
+                              <span>Uploading to S3...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={13} />
+                              <span>Browse / Attach Feedback File</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            multiple
+                            onChange={handleFeedbackReportFileUpload}
+                            disabled={isUploadingFeedbackReportFile}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {/* FEEDBACK REPORT FILES CARDS WITH VIEW BUTTON */}
+                      {(() => {
+                        const feedbackReportList = feedbackForm.interview_feedback_files
+                          ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                          : [];
+                        if (feedbackReportList.length === 0) return null;
+                        return (
+                          <div className="space-y-1.5 mb-2 mt-1">
+                            {feedbackReportList.map((fileStr, idx) => {
+                              const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                              const rawName = fileStr.split("/").pop() || fileStr;
+                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                              return (
+                                <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-amber-200/90 rounded-xl px-3.5 py-2 shadow-2xs">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText size={15} className="text-amber-600 shrink-0" />
+                                    <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                      {displayName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {isUrl && (
+                                      <a
+                                        href={fileStr}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                      >
+                                        <Eye size={13} />
+                                        <span>View</span>
+                                      </a>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = feedbackReportList.filter((_, i) => i !== idx).join("\n");
+                                        setFeedbackForm((prev) => ({ ...prev, interview_feedback_files: updated }));
+                                      }}
+                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                      title="Remove attachment"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Feedback report file cards are displayed above, no raw link textarea */}
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
@@ -4146,21 +4760,98 @@ export default function InterviewManagement() {
                     </div>
                   </div>
 
-                  {/* HIRING WORKFLOW STAGE PROGRESS CARD */}
+                  {/* DYNAMIC HIRING WORKFLOW STAGE PROGRESS CARD */}
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <span className="text-xs font-extrabold text-slate-900 block uppercase tracking-wider">
-                      Hiring Stage Tracker
-                    </span>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers size={14} className="text-indigo-600" /> Hiring Stage Tracker
+                      </span>
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                        Round {selectedInterview.round_number || 1}
+                      </span>
+                    </div>
+
                     <div className="space-y-2 text-xs">
-                      <div className="flex items-center gap-2 p-2 bg-emerald-50 text-emerald-700 rounded-xl font-bold border border-emerald-200">
-                        <ShieldCheck size={14} /> HR Screening (Verified)
+                      {/* HR Call Verification Status */}
+                      <div className={`flex items-center justify-between p-2.5 rounded-xl font-bold border transition-all ${
+                        selectedInterview.hr_call_verification === "Verified"
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : selectedInterview.hr_call_verification === "Not Eligible"
+                          ? "bg-rose-50 text-rose-800 border-rose-200"
+                          : "bg-amber-50 text-amber-800 border-amber-200"
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={15} className={selectedInterview.hr_call_verification === "Verified" ? "text-emerald-600" : "text-amber-600"} />
+                          <span>HR Screening</span>
+                        </div>
+                        <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-white/80 shadow-2xs">
+                          {selectedInterview.hr_call_verification || "Pending"}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold border border-indigo-200">
-                        <UserCheck size={14} /> Technical Round 1 (In Progress)
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 text-slate-400 rounded-xl font-medium border border-slate-200">
-                        Managerial Round (Upcoming)
-                      </div>
+
+                      {/* Candidate Interview Rounds Progress List */}
+                      {(() => {
+                        const candidateRounds = interviews
+                          .filter((inv) => inv.candidate_id === selectedInterview.candidate_id)
+                          .sort((a, b) => (a.round_number || 1) - (b.round_number || 1));
+
+                        const roundsToDisplay = candidateRounds.length > 0 ? candidateRounds : [selectedInterview];
+
+                        return (
+                          <div className="space-y-1.5 pt-1">
+                            {roundsToDisplay.map((rnd) => {
+                              const isCurrent = rnd.id === selectedInterview.id;
+                              const isCompleted = rnd.status === "COMPLETED";
+                              const typeLabel = (rnd.interview_type || "TECHNICAL").replace(/_/g, " ");
+
+                              return (
+                                <div
+                                  key={rnd.id}
+                                  className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all ${
+                                    isCurrent
+                                      ? "bg-indigo-50/90 text-indigo-900 font-extrabold border-2 border-indigo-500 shadow-2xs"
+                                      : isCompleted
+                                      ? "bg-slate-50 text-slate-700 font-semibold border border-slate-200"
+                                      : "bg-slate-50/60 text-slate-500 font-medium border border-slate-200"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate max-w-[160px]">
+                                    {isCurrent ? (
+                                      <span className="relative flex h-2 w-2 shrink-0">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+                                      </span>
+                                    ) : isCompleted ? (
+                                      <CheckCircle size={14} className="text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <Clock size={14} className="text-slate-400 shrink-0" />
+                                    )}
+                                    <span className="truncate" title={`${typeLabel} R${rnd.round_number}`}>
+                                      {typeLabel} R{rnd.round_number}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {isCurrent ? (
+                                      <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-indigo-600 text-white rounded-md">
+                                        Active Evaluation
+                                      </span>
+                                    ) : isCompleted ? (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                                        {rnd.recommendation || "Completed"}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-medium text-slate-500">
+                                        {rnd.status}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -4637,14 +5328,83 @@ export default function InterviewManagement() {
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Attached Document Files</label>
-                    <input
-                      type="text"
-                      placeholder="Document names/URLs..."
-                      value={nextRoundForm.interview_document_files}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-700 font-semibold flex items-center gap-1">
+                        <FileText size={12} className="text-purple-600" /> Attached Round Documents
+                      </label>
+                      <label className={`inline-flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingNextRoundFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingNextRoundFile ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-purple-600" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={13} />
+                            <span>Browse / Attach</span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleNextRoundFileUpload}
+                          disabled={isUploadingNextRoundFile}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const attachedList = nextRoundForm.interview_document_files
+                        ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                      if (attachedList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2.5 mt-1">
+                          {attachedList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-purple-200/90 rounded-xl px-3 py-1.5 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={14} className="text-purple-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                      setNextRoundForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Next round attached files chips are displayed above, no raw link textarea */}
                   </div>
                 </div>
               </div>
@@ -4778,6 +5538,41 @@ export default function InterviewManagement() {
                     </span>
                   </div>
                 </div>
+
+                {((selectedInterview.interview_document_files && selectedInterview.interview_document_files.length > 0) ||
+                  (selectedInterview.interview_feedback_files && selectedInterview.interview_feedback_files.length > 0)) && (
+                  <div className="pt-2 border-t border-indigo-100/80 space-y-1.5">
+                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                      📎 Attached Session Files & S3 Resources (Included in Email)
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from(new Set([...(selectedInterview.interview_document_files || []), ...(selectedInterview.interview_feedback_files || [])])).map((fileUrl: string, fIdx: number) => {
+                        const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                        const rawName = fileUrl.split("/").pop() || fileUrl;
+                        const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                        return (
+                          <div key={fIdx} className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-[11px] shadow-2xs">
+                            <FileText size={12} className="text-indigo-600 shrink-0" />
+                            <span className="font-semibold text-slate-800 max-w-[170px] truncate" title={fileUrl}>
+                              {displayName}
+                            </span>
+                            {isUrl && (
+                              <a
+                                href={fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[9px] px-1.5 py-0.2 rounded font-bold transition-all"
+                              >
+                                <Eye size={10} />
+                                <span>View</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Recipient Indications Section */}
@@ -5003,6 +5798,38 @@ export default function InterviewManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
+          <div
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold tracking-wide backdrop-blur-md ${
+              toastMessage.type === "success"
+                ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
+                : toastMessage.type === "error"
+                ? "bg-slate-900/95 text-rose-400 border-rose-500/40 shadow-rose-950/30"
+                : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
+            }`}
+          >
+            {toastMessage.type === "success" ? (
+              <div className="p-1 bg-emerald-500/20 rounded-full text-emerald-400">
+                <CheckCircle2 size={16} />
+              </div>
+            ) : (
+              <div className="p-1 bg-rose-500/20 rounded-full text-rose-400">
+                <AlertCircle size={16} />
+              </div>
+            )}
+            <span className="text-white font-semibold">{toastMessage.text}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="ml-2 text-slate-400 hover:text-white transition-colors cursor-pointer p-0.5"
+            >
+              <X size={14} />
+            </button>
           </div>
         </div>
       )}

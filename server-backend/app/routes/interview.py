@@ -3,7 +3,7 @@ Interview routes for scheduling, filtering, updating, feedback submission, and d
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.controllers.interview_controller import InterviewController
@@ -30,6 +30,20 @@ def get_interview_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -
     interview_repo = InterviewRepository(db)
     interview_service = InterviewService(interview_repo)
     return InterviewController(interview_service)
+
+
+@router.post(
+    "/upload-document",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload interview document to S3",
+    description="Upload an interview document attachment directly to AWS S3 bucket and return access URL.",
+)
+async def upload_interview_document(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_active_user),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.upload_interview_document(file)
 
 
 @router.post(
@@ -126,13 +140,18 @@ async def get_candidate_history(
 async def list_interviews(
     candidate_id: Optional[str] = Query(None, description="Filter by Candidate ID"),
     interviewer_id: Optional[str] = Query(None, description="Filter by Interviewer ID"),
-    status_val: Optional[InterviewStatus] = Query(None, alias="status", description="Filter by Interview Status"),
-    interview_type: Optional[InterviewType] = Query(None, description="Filter by Interview Type"),
+    status_val: Optional[str] = Query(None, alias="status", description="Filter by Interview Status"),
+    interview_type: Optional[str] = Query(None, description="Filter by Interview Type"),
     job_title: Optional[str] = Query(None, description="Filter by Job Title"),
+    name: Optional[str] = Query(None, description="Filter by Candidate Name"),
+    email: Optional[str] = Query(None, description="Filter by Candidate Email"),
+    scheduled_date: Optional[str] = Query(None, description="Filter by Scheduled Date (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="Global search query"),
     date_from: Optional[str] = Query(None, description="Filter scheduled_date >= date_from (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Filter scheduled_date <= date_to (YYYY-MM-DD)"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    limit: int = Query(10, ge=1, le=500, description="Items per page"),
+    skip: Optional[int] = Query(None, ge=0),
     current_user: dict = Depends(get_current_active_user_optional),
     controller: InterviewController = Depends(get_interview_controller),
 ):
@@ -142,10 +161,15 @@ async def list_interviews(
         status=status_val,
         interview_type=interview_type,
         job_title=job_title,
+        name=name,
+        email=email,
+        scheduled_date=scheduled_date,
+        search=search,
         date_from=date_from,
         date_to=date_to,
-        skip=skip,
+        page=page,
         limit=limit,
+        skip=skip,
     )
 
 

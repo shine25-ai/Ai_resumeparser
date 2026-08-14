@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   Filter, Search, RefreshCw, UserCheck, X, Calendar, CheckSquare, Square, FileText, CheckCircle,
   Briefcase, Clock, MapPin, ShieldCheck, Layers, AlignLeft, Sparkles, Video, Hash,
-  Upload, Building2, AlertCircle, UserX, Plus, Trash2
+  Upload, Building2, AlertCircle, UserX, Plus, Trash2, Loader2, Eye
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
+import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -177,15 +177,35 @@ export default function JDMatch() {
     });
   };
 
-  // Handle local document file selection/upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+
+  // Handle document file upload to AWS S3
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const fileNames = Array.from(e.target.files).map((f) => f.name);
-      const existing = interviewForm.interview_document_files
-        ? interviewForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-      const combined = Array.from(new Set([...existing, ...fileNames])).join("\n");
-      setInterviewForm((prev) => ({ ...prev, interview_document_files: combined }));
+      const files = Array.from(e.target.files);
+      setIsUploadingFile(true);
+      try {
+        const uploadedUrls: string[] = [];
+        for (const file of files) {
+          const res = await uploadInterviewDocument(file);
+          if (res?.s3_url) {
+            uploadedUrls.push(res.s3_url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          const existing = interviewForm.interview_document_files
+            ? interviewForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+          setInterviewForm((prev) => ({ ...prev, interview_document_files: combined }));
+        }
+      } catch (err: any) {
+        console.error("Failed to upload file to S3:", err);
+        alert(`Failed to upload document to S3: ${err.message || "Unknown error"}`);
+      } finally {
+        setIsUploadingFile(false);
+        e.target.value = "";
+      }
     }
   };
 
@@ -1304,25 +1324,80 @@ export default function JDMatch() {
                         <FileText size={12} className="text-rose-600" /> Attached Document Files (URLs or Uploaded filenames)
                       </label>
                       {/* FILE UPLOAD BUTTON */}
-                      <label className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                        <Upload size={13} />
-                        <span>Browse / Attach Files</span>
+                      <label className={`inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingFile ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-rose-600" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={13} />
+                            <span>Browse / Attach Files</span>
+                          </>
+                        )}
                         <input
                           type="file"
                           multiple
                           onChange={handleFileUpload}
+                          disabled={isUploadingFile}
                           className="hidden"
                         />
                       </label>
                     </div>
 
-                    <textarea
-                      rows={2}
-                      value={interviewForm.interview_document_files}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-[11px]"
-                      placeholder="Document names or URLs (one per line)... Use button above to attach files directly."
-                    />
+                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const attachedList = interviewForm.interview_document_files
+                        ? interviewForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                      if (attachedList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2.5 mt-1">
+                          {attachedList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-rose-200/90 rounded-xl px-3 py-1.5 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={14} className="text-rose-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                      setInterviewForm((prev) => ({ ...prev, interview_document_files: updated }));
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Attached files chips are displayed above, no raw link textarea */}
                   </div>
 
                   <div>

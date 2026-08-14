@@ -2,8 +2,8 @@
 Interview controller handling HTTP requests for interview scheduling, filtering, updating, feedback, and deletion.
 """
 
-from typing import Optional
-from fastapi import status
+from typing import Any, Optional
+from fastapi import UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.schemas.interview import (
@@ -25,6 +25,15 @@ class InterviewController:
 
     def __init__(self, interview_service: InterviewService):
         self.interview_service = interview_service
+
+    async def upload_interview_document(self, file: UploadFile) -> JSONResponse:
+        """Upload interview document file to AWS S3."""
+        res = await self.interview_service.upload_interview_document(file)
+        return success_response(
+            data=res,
+            message="Document uploaded to S3 successfully.",
+            status_code=status.HTTP_201_CREATED,
+        )
 
     async def create_interview(self, payload: InterviewCreateRequest, user_id: str) -> JSONResponse:
         """Schedule a new interview."""
@@ -56,13 +65,18 @@ class InterviewController:
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
-        status: Optional[InterviewStatus] = None,
-        interview_type: Optional[InterviewType] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
+        page: int = 1,
+        limit: int = 10,
+        skip: Optional[int] = None,
     ) -> JSONResponse:
         """List and filter interviews."""
         res = await self.interview_service.filter_interviews(
@@ -71,10 +85,15 @@ class InterviewController:
             status=status,
             interview_type=interview_type,
             job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
             date_from=date_from,
             date_to=date_to,
-            skip=skip,
+            page=page,
             limit=limit,
+            skip=skip,
         )
         return success_response(
             data=res.model_dump(),

@@ -3,9 +3,13 @@ Interview service handling interview scheduling, rescheduling, feedback, filteri
 """
 
 import smtplib
+import uuid
+import re
+import urllib.parse
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from loguru import logger
 from app.core.exceptions import NotFoundError
 from app.models.interview import InterviewDocument
@@ -22,18 +26,40 @@ from app.schemas.interview import (
     InterviewUpdateRequest,
     SendInterviewEmailRequest,
 )
+from app.services.s3_service import S3Service
 from app.services.settings_service import SettingsService
 from app.services.template_service import TemplateService
 from app.utils.encryption import decrypt_password
 from app.utils.enums import InterviewStatus, InterviewType
 from app.utils.helpers import utc_now
+from app.utils.validators import validate_uploaded_file
 
 
 class InterviewService:
     """Service handling interview business logic."""
 
-    def __init__(self, interview_repo: InterviewRepository):
+    def __init__(self, interview_repo: InterviewRepository, s3_service: Optional[S3Service] = None):
         self.interview_repo = interview_repo
+        self.s3_service = s3_service or S3Service()
+
+    async def upload_interview_document(self, file: UploadFile) -> dict:
+        """Upload an interview document file to AWS S3 and return the public URL."""
+        content = await validate_uploaded_file(file)
+        ext = Path(file.filename or "file").suffix
+        safe_filename = file.filename or f"document{ext}"
+        unique_filename = f"{uuid.uuid4().hex[:12]}_{safe_filename}"
+        s3_url = self.s3_service.upload_file(
+            file_content=content,
+            filename=unique_filename,
+            content_type=file.content_type or "application/octet-stream",
+            folder="interview_documents",
+        )
+        logger.info(f"Uploaded interview document to S3: {s3_url}")
+        return {
+            "s3_url": s3_url,
+            "filename": unique_filename,
+            "original_filename": safe_filename,
+        }
 
     async def create_interview(self, payload: InterviewCreateRequest, created_by: Optional[str] = None) -> InterviewResponse:
         """Schedule a new interview document."""
@@ -189,21 +215,35 @@ class InterviewService:
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
-        status: Optional[InterviewStatus] = None,
-        interview_type: Optional[InterviewType] = None,
+        status: Optional[Any] = None,
+        interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        scheduled_date: Optional[str] = None,
+        search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
+        page: int = 1,
+        limit: int = 10,
+        skip: Optional[int] = None,
     ) -> InterviewListResponse:
-        """Filter and list interviews matching parameters."""
+        """Filter and list interviews matching parameters with pagination."""
+        import math
+
+        if skip is None:
+            skip = (page - 1) * limit if page >= 1 else 0
+
         interviews = await self.interview_repo.filter_interviews(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
             date_from=date_from,
             date_to=date_to,
             skip=skip,
@@ -213,9 +253,25 @@ class InterviewService:
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
             status=status,
+            interview_type=interview_type,
+            job_title=job_title,
+            name=name,
+            email=email,
+            scheduled_date=scheduled_date,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
         )
         items = [InterviewResponse.model_validate(i) for i in interviews]
-        return InterviewListResponse(total=total, interviews=items)
+        total_pages = math.ceil(total / limit) if limit > 0 else 1
+
+        return InterviewListResponse(
+            total=total,
+            interviews=items,
+            page=page,
+            limit=limit,
+            total_pages=total_pages,
+        )
 
     async def update_interview(
         self,
@@ -311,6 +367,7 @@ class InterviewService:
             final_fit_salary=payload.final_fit_salary,
             joining_date=payload.joining_date,
             interview_document_files=payload.interview_document_files,
+            interview_feedback_files=payload.interview_feedback_files,
             interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
             clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
             skill_ratings=[s.model_dump() for s in payload.skill_ratings] if payload.skill_ratings else None,
@@ -397,6 +454,8 @@ class InterviewService:
         
         # Aggregate candidate info across all rounds to make sure we don't display empty/null values at top level
         candidate_name = next((d.get("candidate_name") for d in sorted_docs if d.get("candidate_name")), "Unknown")
+        candidate_email = next((d.get("candidate_email") for d in sorted_docs if d.get("candidate_email")), None)
+        resume_id = next((d.get("resume_id") for d in sorted_docs if d.get("resume_id")), None)
         job_id = next((d.get("job_id") for d in sorted_docs if d.get("job_id")), None)
         job_title = next((d.get("job_title") for d in sorted_docs if d.get("job_title")), None)
         job_location = next((d.get("job_location") for d in sorted_docs if d.get("job_location")), None)
@@ -417,17 +476,24 @@ class InterviewService:
         joining_date = next((d.get("joining_date") for d in sorted_docs if d.get("joining_date")), None)
 
         merged_files = []
+        merged_feedback_files = []
         for d in sorted_docs:
             files = d.get("interview_document_files") or []
             for f in files:
                 if f not in merged_files:
                     merged_files.append(f)
+            fb_files = d.get("interview_feedback_files") or []
+            for fb in fb_files:
+                if fb not in merged_feedback_files:
+                    merged_feedback_files.append(fb)
 
         rounds = [InterviewResponse.model_validate(doc) for doc in sorted_docs]
 
         return CandidateFullHistoryResponse(
             candidate_id=candidate_id,
             candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            resume_id=resume_id,
             job_id=job_id,
             job_title=job_title,
             job_location=job_location,
@@ -442,6 +508,7 @@ class InterviewService:
             final_fit_salary=final_fit_salary,
             joining_date=joining_date,
             interview_document_files=merged_files,
+            interview_feedback_files=merged_feedback_files,
             total_rounds=len(rounds),
             rounds=rounds,
         )
@@ -483,6 +550,10 @@ class InterviewService:
         notes_content = payload.custom_notes or existing.get("notes") or "N/A"
         meeting_link = existing.get("meeting_link") or existing.get("location") or "Will be shared shortly"
 
+        doc_files = existing.get("interview_document_files") or []
+        fb_files = existing.get("interview_feedback_files") or []
+        combined_attachment_urls = list(dict.fromkeys([f for f in (doc_files + fb_files) if f and str(f).strip()]))
+
         replacements = {
             "candidate_name": existing.get("candidate_name", ""),
             "candidate_email": candidate_email or "N/A",
@@ -522,6 +593,7 @@ class InterviewService:
                 schedule_items: List[Dict[str, str]],
                 meeting_url: str = "",
                 notes_text: Optional[str] = None,
+                attached_files: Optional[List[str]] = None,
                 sender_company: str = "Recruitment Team"
             ) -> str:
                 rows_html = ""
@@ -555,6 +627,46 @@ class InterviewService:
                       <td style="padding: 10px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9; vertical-align: top;">{meeting_url}</td>
                     </tr>
                     """
+
+                files_html = ""
+                if attached_files and len(attached_files) > 0:
+                    file_badges = ""
+                    for file_url in attached_files:
+                        if not file_url or not str(file_url).strip():
+                            continue
+                        f_str = str(file_url).strip()
+                        raw_name = f_str.split("/")[-1] if "/" in f_str else f_str
+                        disp_name = urllib.parse.unquote(raw_name)
+                        disp_name = re.sub(r'^[a-f0-9]{8,32}_', '', disp_name)
+
+                        if f_str.startswith("http://") or f_str.startswith("https://"):
+                            file_badges += f"""
+                            <a href="{f_str}" target="_blank" style="display: inline-block; background-color: #ffffff; border: 1px solid #cbd5e1; color: #4f46e5; font-weight: 700; font-size: 12px; text-decoration: none; padding: 7px 14px; border-radius: 8px; margin: 4px 6px 4px 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                              📄 {disp_name} &rarr;
+                            </a>
+                            """
+                        else:
+                            file_badges += f"""
+                            <span style="display: inline-block; background-color: #f1f5f9; border: 1px solid #cbd5e1; color: #334155; font-weight: 600; font-size: 12px; padding: 7px 14px; border-radius: 8px; margin: 4px 6px 4px 0;">
+                              📄 {disp_name}
+                            </span>
+                            """
+
+                    if file_badges:
+                        files_html = f"""
+                        <tr>
+                          <td style="padding: 0 36px 24px 36px;">
+                            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6; border-radius: 10px; padding: 16px 20px; font-size: 13px; color: #0f172a;">
+                              <div style="font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; color: #2563eb;">
+                                📎 Attached Session Files & S3 Resources ({len(attached_files)})
+                              </div>
+                              <div>
+                                {file_badges}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        """
 
                 notes_html = ""
                 if notes_text and notes_text.strip() and notes_text.strip() != "N/A":
@@ -615,6 +727,9 @@ class InterviewService:
           <!-- CTA Button -->
           {cta_html}
 
+          <!-- Attached Session Files -->
+          {files_html}
+
           <!-- Schedule Notes -->
           {notes_html}
 
@@ -668,6 +783,7 @@ class InterviewService:
                     schedule_items=cand_schedule_items,
                     meeting_url=meeting_link,
                     notes_text=notes_content,
+                    attached_files=combined_attachment_urls,
                     sender_company=config_model.sender_name or "Recruitment Team"
                 )
 
@@ -728,6 +844,7 @@ class InterviewService:
                     schedule_items=int_schedule_items,
                     meeting_url=meeting_link,
                     notes_text=notes_content,
+                    attached_files=combined_attachment_urls,
                     sender_company=config_model.sender_name or "Recruitment Team"
                 )
 

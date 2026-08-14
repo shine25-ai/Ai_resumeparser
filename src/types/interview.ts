@@ -94,6 +94,7 @@ export interface InterviewItem {
   final_fit_salary?: string;
   joining_date?: string;
   interview_document_files?: string[];
+  interview_feedback_files?: string[];
   status: InterviewStatusEnum;
   // Interviewer / Round Feedback
   rating?: number;
@@ -224,6 +225,7 @@ export interface BatchCreateInterviewPayload {
   final_fit_salary?: string;
   joining_date?: string;
   interview_document_files?: string[];
+  interview_feedback_files?: string[];
   recommendation?: string;
   client_rating?: number;
   client_feedback?: string;
@@ -276,6 +278,7 @@ export interface UpdateInterviewPayload {
   final_fit_salary?: string;
   joining_date?: string;
   interview_document_files?: string[];
+  interview_feedback_files?: string[];
   recommendation?: string;
   rating?: number;
   feedback?: string;
@@ -335,6 +338,7 @@ export interface SubmitFeedbackPayload {
   final_fit_salary?: string;
   joining_date?: string;
   interview_document_files?: string[];
+  interview_feedback_files?: string[];
 
   interviewers?: InterviewerItem[];
   clients?: ClientFeedbackItem[];
