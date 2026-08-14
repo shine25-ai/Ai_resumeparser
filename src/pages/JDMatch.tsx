@@ -1397,13 +1397,7 @@ export default function JDMatch() {
                       );
                     })()}
 
-                    <textarea
-                      rows={2}
-                      value={interviewForm.interview_document_files}
-                      onChange={(e) => setInterviewForm({ ...interviewForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-[11px]"
-                      placeholder="Document names or S3 URLs (one per line)... Attach files using button above."
-                    />
+                    {/* Attached files chips are displayed above, no raw link textarea */}
                   </div>
 
                   <div>

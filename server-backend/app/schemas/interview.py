@@ -446,6 +446,8 @@ class CandidateFullHistoryResponse(BaseModel):
 
     candidate_id: str
     candidate_name: str
+    candidate_email: Optional[str] = None
+    resume_id: Optional[str] = None
     job_id: Optional[str] = None
     job_title: Optional[str] = None
     job_location: Optional[str] = None

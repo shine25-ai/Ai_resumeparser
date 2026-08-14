@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
@@ -88,11 +88,21 @@ export default function InterviewManagement() {
 
   // Send Email Modal Multiple Recipients States
   const [interviewerMailRecipients, setInterviewerMailRecipients] = useState<
-    Array<{ send: boolean; name: string; email: string }>
+    Array<{ name: string; email: string; send: boolean }>
   >([]);
   const [clientMailRecipients, setClientMailRecipients] = useState<
-    Array<{ send: boolean; name: string; email: string }>
+    Array<{ name: string; email: string; send: boolean }>
   >([]);
+
+  // Floating Toast Notification State
+  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+  const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
+    setToastMessage({ type, text });
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+  };
 
   const handleAddInterviewerMailRecipient = () => {
     setInterviewerMailRecipients((prev) => [
@@ -1329,12 +1339,14 @@ export default function InterviewManagement() {
         custom_notes: sendMailForm.custom_notes || undefined,
       });
 
-      setSendMailStatus({ type: "success", text: res.message || "Interview email notifications dispatched successfully!" });
+      const successMsg = res.message || `Interview notification email successfully sent to ${selectedInterview.candidate_name}!`;
+      setSendMailStatus({ type: "success", text: successMsg });
+      showToast(successMsg, "success");
       fetchAllData();
       setTimeout(() => {
         setIsSendMailOpen(false);
         setSendMailStatus(null);
-      }, 1800);
+      }, 1500);
     } catch (err: any) {
       console.error("Failed to send interview email:", err);
       setSendMailStatus({ type: "error", text: err.message || "Failed to send interview email." });
@@ -1371,14 +1383,14 @@ export default function InterviewManagement() {
 
     const initInts =
       item.interviewers && item.interviewers.length > 0
-        ? item.interviewers.map((i) => ({ interviewer_name: i.interviewer_name || "", interviewer_email: i.interviewer_email || "" }))
-        : [{ interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "" }];
+        ? item.interviewers.map((i) => ({ interviewer_id: i.interviewer_id, interviewer_name: i.interviewer_name || "", interviewer_email: i.interviewer_email || "" }))
+        : [{ interviewer_id: item.interviewer_id, interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "" }];
     setNextRoundInterviewersList(initInts);
 
     const initClients =
       item.clients && item.clients.length > 0
-        ? item.clients.map((c) => ({ client_name: c.client_name || "", client_email: c.client_email || "" }))
-        : [{ client_name: item.client_name || "", client_email: item.client_email || "" }];
+        ? item.clients.map((c) => ({ client_id: c.client_id, client_name: c.client_name || "", client_email: c.client_email || "" }))
+        : [{ client_id: item.client_id, client_name: item.client_name || "", client_email: item.client_email || "" }];
     setNextRoundClientsList(initClients);
 
     setNextRoundForm({
@@ -1468,6 +1480,7 @@ export default function InterviewManagement() {
         scheduled_time: nextRoundForm.scheduled_time,
         timezone: nextRoundForm.timezone,
         duration_minutes: Number(nextRoundForm.duration_minutes),
+        interviewer_id: primaryInterviewer.interviewer_id || undefined,
         interviewer_name: primaryInterviewer.interviewer_name || "Interviewer",
         interviewer_email: primaryInterviewer.interviewer_email || undefined,
         meeting_platform: nextRoundForm.meeting_platform,
@@ -1482,6 +1495,7 @@ export default function InterviewManagement() {
         final_fit_salary: nextRoundForm.final_fit_salary || undefined,
         joining_date: nextRoundForm.joining_date || undefined,
         interview_document_files: docFilesArray,
+        client_id: primaryClient.client_id || undefined,
         client_name: primaryClient.client_name || undefined,
         client_email: primaryClient.client_email || undefined,
         interviewers: nextRoundInterviewersList,
@@ -2484,13 +2498,7 @@ export default function InterviewManagement() {
                       );
                     })()}
 
-                    <textarea
-                      rows={2}
-                      value={scheduleForm.interview_document_files}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono text-xs shadow-2xs"
-                      placeholder="One per line or click Attach Files..."
-                    />
+                    {/* Attached files chips are displayed above, no raw link textarea */}
                   </div>
 
                   <div>
@@ -3780,7 +3788,7 @@ export default function InterviewManagement() {
                               <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
                                 <select
-                                  value={interviewer.interviewer_id || (interviewer.interviewer_name ? "custom" : "")}
+                                  value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val === "custom" || !val) {
@@ -4008,7 +4016,7 @@ export default function InterviewManagement() {
                               <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
                                 <select
-                                  value={client.client_id || (client.client_name ? "custom" : "")}
+                                  value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val === "custom" || !val) {
@@ -4183,6 +4191,10 @@ export default function InterviewManagement() {
                         setFeedbackAiScore(score);
                         setFeedbackAiRecommendation(rec);
                       }}
+                      currentRoundNumber={selectedInterview?.round_number}
+                      currentInterviewType={selectedInterview?.interview_type}
+                      hrCallVerification={selectedInterview?.hr_call_verification}
+                      allRounds={interviews.filter((i) => i.candidate_id === selectedInterview?.candidate_id)}
                     />
                   </div>
 
@@ -4333,13 +4345,7 @@ export default function InterviewManagement() {
                         );
                       })()}
 
-                      <textarea
-                        rows={2}
-                        value={feedbackForm.interview_document_files}
-                        onChange={(e) => setFeedbackForm({ ...feedbackForm, interview_document_files: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono placeholder-slate-400"
-                        placeholder="Document names or S3 URLs (one per line)... Attach files using button above."
-                      />
+                      {/* Attached files chips are displayed above, no raw link textarea */}
                     </div>
 
                     {/* CARD 2: NEW INTERVIEW FEEDBACK & EVALUATION REPORTS ATTACHMENT FIELD */}
@@ -4422,13 +4428,7 @@ export default function InterviewManagement() {
                         );
                       })()}
 
-                      <textarea
-                        rows={2}
-                        value={feedbackForm.interview_feedback_files}
-                        onChange={(e) => setFeedbackForm({ ...feedbackForm, interview_feedback_files: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 focus:outline-none font-mono placeholder-slate-400"
-                        placeholder="Feedback evaluation files or S3 URLs for this round (one per line)..."
-                      />
+                      {/* Feedback report file cards are displayed above, no raw link textarea */}
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
@@ -4489,21 +4489,98 @@ export default function InterviewManagement() {
                     </div>
                   </div>
 
-                  {/* HIRING WORKFLOW STAGE PROGRESS CARD */}
+                  {/* DYNAMIC HIRING WORKFLOW STAGE PROGRESS CARD */}
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <span className="text-xs font-extrabold text-slate-900 block uppercase tracking-wider">
-                      Hiring Stage Tracker
-                    </span>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers size={14} className="text-indigo-600" /> Hiring Stage Tracker
+                      </span>
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                        Round {selectedInterview.round_number || 1}
+                      </span>
+                    </div>
+
                     <div className="space-y-2 text-xs">
-                      <div className="flex items-center gap-2 p-2 bg-emerald-50 text-emerald-700 rounded-xl font-bold border border-emerald-200">
-                        <ShieldCheck size={14} /> HR Screening (Verified)
+                      {/* HR Call Verification Status */}
+                      <div className={`flex items-center justify-between p-2.5 rounded-xl font-bold border transition-all ${
+                        selectedInterview.hr_call_verification === "Verified"
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : selectedInterview.hr_call_verification === "Not Eligible"
+                          ? "bg-rose-50 text-rose-800 border-rose-200"
+                          : "bg-amber-50 text-amber-800 border-amber-200"
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={15} className={selectedInterview.hr_call_verification === "Verified" ? "text-emerald-600" : "text-amber-600"} />
+                          <span>HR Screening</span>
+                        </div>
+                        <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-white/80 shadow-2xs">
+                          {selectedInterview.hr_call_verification || "Pending"}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold border border-indigo-200">
-                        <UserCheck size={14} /> Technical Round 1 (In Progress)
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 text-slate-400 rounded-xl font-medium border border-slate-200">
-                        Managerial Round (Upcoming)
-                      </div>
+
+                      {/* Candidate Interview Rounds Progress List */}
+                      {(() => {
+                        const candidateRounds = interviews
+                          .filter((inv) => inv.candidate_id === selectedInterview.candidate_id)
+                          .sort((a, b) => (a.round_number || 1) - (b.round_number || 1));
+
+                        const roundsToDisplay = candidateRounds.length > 0 ? candidateRounds : [selectedInterview];
+
+                        return (
+                          <div className="space-y-1.5 pt-1">
+                            {roundsToDisplay.map((rnd) => {
+                              const isCurrent = rnd.id === selectedInterview.id;
+                              const isCompleted = rnd.status === "COMPLETED";
+                              const typeLabel = (rnd.interview_type || "TECHNICAL").replace(/_/g, " ");
+
+                              return (
+                                <div
+                                  key={rnd.id}
+                                  className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all ${
+                                    isCurrent
+                                      ? "bg-indigo-50/90 text-indigo-900 font-extrabold border-2 border-indigo-500 shadow-2xs"
+                                      : isCompleted
+                                      ? "bg-slate-50 text-slate-700 font-semibold border border-slate-200"
+                                      : "bg-slate-50/60 text-slate-500 font-medium border border-slate-200"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate max-w-[160px]">
+                                    {isCurrent ? (
+                                      <span className="relative flex h-2 w-2 shrink-0">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+                                      </span>
+                                    ) : isCompleted ? (
+                                      <CheckCircle size={14} className="text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <Clock size={14} className="text-slate-400 shrink-0" />
+                                    )}
+                                    <span className="truncate" title={`${typeLabel} R${rnd.round_number}`}>
+                                      {typeLabel} R{rnd.round_number}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {isCurrent ? (
+                                      <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-indigo-600 text-white rounded-md">
+                                        Active Evaluation
+                                      </span>
+                                    ) : isCompleted ? (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                                        {rnd.recommendation || "Completed"}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-medium text-slate-500">
+                                        {rnd.status}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -5056,13 +5133,7 @@ export default function InterviewManagement() {
                       );
                     })()}
 
-                    <textarea
-                      rows={2}
-                      value={nextRoundForm.interview_document_files}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, interview_document_files: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-mono text-[11px]"
-                      placeholder="Document names or S3 URLs (one per line)... Attach files for this round."
-                    />
+                    {/* Next round attached files chips are displayed above, no raw link textarea */}
                   </div>
                 </div>
               </div>
@@ -5196,6 +5267,41 @@ export default function InterviewManagement() {
                     </span>
                   </div>
                 </div>
+
+                {((selectedInterview.interview_document_files && selectedInterview.interview_document_files.length > 0) ||
+                  (selectedInterview.interview_feedback_files && selectedInterview.interview_feedback_files.length > 0)) && (
+                  <div className="pt-2 border-t border-indigo-100/80 space-y-1.5">
+                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                      📎 Attached Session Files & S3 Resources (Included in Email)
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from(new Set([...(selectedInterview.interview_document_files || []), ...(selectedInterview.interview_feedback_files || [])])).map((fileUrl: string, fIdx: number) => {
+                        const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                        const rawName = fileUrl.split("/").pop() || fileUrl;
+                        const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                        return (
+                          <div key={fIdx} className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-[11px] shadow-2xs">
+                            <FileText size={12} className="text-indigo-600 shrink-0" />
+                            <span className="font-semibold text-slate-800 max-w-[170px] truncate" title={fileUrl}>
+                              {displayName}
+                            </span>
+                            {isUrl && (
+                              <a
+                                href={fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[9px] px-1.5 py-0.2 rounded font-bold transition-all"
+                              >
+                                <Eye size={10} />
+                                <span>View</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Recipient Indications Section */}
@@ -5421,6 +5527,38 @@ export default function InterviewManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
+          <div
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold tracking-wide backdrop-blur-md ${
+              toastMessage.type === "success"
+                ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
+                : toastMessage.type === "error"
+                ? "bg-slate-900/95 text-rose-400 border-rose-500/40 shadow-rose-950/30"
+                : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
+            }`}
+          >
+            {toastMessage.type === "success" ? (
+              <div className="p-1 bg-emerald-500/20 rounded-full text-emerald-400">
+                <CheckCircle2 size={16} />
+              </div>
+            ) : (
+              <div className="p-1 bg-rose-500/20 rounded-full text-rose-400">
+                <AlertCircle size={16} />
+              </div>
+            )}
+            <span className="text-white font-semibold">{toastMessage.text}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="ml-2 text-slate-400 hover:text-white transition-colors cursor-pointer p-0.5"
+            >
+              <X size={14} />
+            </button>
           </div>
         </div>
       )}

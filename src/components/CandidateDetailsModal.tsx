@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import {
   X, UserCheck, Calendar, MapPin, ShieldCheck, DollarSign,
-  TrendingUp, FileText, Building2, Layers, RefreshCw, AlertCircle, Video, Users
+  TrendingUp, FileText, Building2, Layers, RefreshCw, AlertCircle, Video, Users,
+  Eye
 } from "lucide-react";
 import { getCandidateInterviewHistory, type InterviewItem, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
+import { SkillRatingsEvaluation } from "./SkillRatingsEvaluation";
 
 interface CandidateDetailsModalProps {
   isOpen: boolean;
@@ -32,6 +34,8 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
       setHistoryData({
         candidate_id: fallbackInterview.candidate_id || "N/A",
         candidate_name: fallbackInterview.candidate_name,
+        candidate_email: fallbackInterview.candidate_email,
+        resume_id: fallbackInterview.resume_id,
         job_title: fallbackInterview.job_title,
         job_location: fallbackInterview.job_location,
         job_type: fallbackInterview.job_type,
@@ -45,6 +49,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
         final_fit_salary: fallbackInterview.final_fit_salary,
         joining_date: fallbackInterview.joining_date,
         interview_document_files: fallbackInterview.interview_document_files || [],
+        interview_feedback_files: fallbackInterview.interview_feedback_files || [],
         total_rounds: 1,
         rounds: [fallbackInterview],
       });
@@ -81,7 +86,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-slate-900 tracking-wide">
-                  Candidate Full Interview & Panel Evaluation Record
+                  Candidate Full Profile & All Rounds Interview Record
                 </h2>
                 {historyData?.total_rounds && (
                   <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-full">
@@ -90,7 +95,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Complete candidate profile details, panel interviewer ratings, and client evaluator reviews
+                Complete candidate details, panel ratings, client reviews, AI scores, and uploaded files per round
               </p>
             </div>
           </div>
@@ -106,7 +111,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
         {loading && (
           <div className="flex flex-col items-center justify-center py-16 space-y-3">
             <RefreshCw size={32} className="animate-spin text-indigo-600" />
-            <p className="text-sm font-semibold text-slate-600">Fetching candidate complete interview details...</p>
+            <p className="text-sm font-semibold text-slate-600">Fetching complete candidate interview history...</p>
           </div>
         )}
 
@@ -122,25 +127,40 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
             {/* CANDIDATE SUMMARY BADGE & BACKGROUND CARD */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3">
-                <div>
-                  <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Candidate Name</span>
-                  <div className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    {historyData.candidate_name || candidateName}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Candidate Details</span>
+                  <div className="text-lg font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                    <span>{historyData.candidate_name || candidateName}</span>
                     <span className="text-xs font-semibold text-slate-500">({historyData.candidate_id})</span>
+                    {historyData.candidate_email && (
+                      <span className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md font-medium">
+                        {historyData.candidate_email}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Target Job Position</span>
-                  <div className="text-sm font-bold text-slate-800">{historyData.job_title || "N/A"}</div>
-                </div>
+                {/* RESUME VIEW BUTTON */}
+                <div className="flex items-center gap-3">
+                  {historyData.resume_id && (
+                    <a
+                      href={`http://localhost:8000/api/v1/resumes/${historyData.resume_id}/file`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl shadow-xs transition-all"
+                    >
+                      <Eye size={14} />
+                      <span>View Candidate Resume</span>
+                    </a>
+                  )}
 
-                <div>
-                  <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">HR Verification</span>
                   <div>
+                    <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block mb-0.5">HR Verification</span>
                     <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full border ${
                       historyData.hr_call_verification === "Verified"
                         ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : historyData.hr_call_verification === "Not Eligible"
+                        ? "bg-rose-50 border-rose-200 text-rose-700"
                         : "bg-amber-50 border-amber-200 text-amber-700"
                     }`}>
                       <ShieldCheck size={13} />
@@ -151,7 +171,14 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
               </div>
 
               {/* DETAILS GRID */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 pt-1">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
+                    <UserCheck size={12} className="text-indigo-600" /> Target Job Title
+                  </span>
+                  <div className="font-bold text-slate-800 truncate">{historyData.job_title || "N/A"}</div>
+                </div>
+
                 <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
                   <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
                     <MapPin size={12} className="text-indigo-600" /> Location / Office
@@ -181,43 +208,75 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                 </div>
               </div>
 
-              {/* ATTACHED DOCUMENTS & REQUESTED ROLE */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                {historyData.candidate_requested_role && (
-                  <div className="bg-white p-3 rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-500 font-semibold">Candidate Requested Role</span>
-                    <div className="font-semibold text-slate-800">{historyData.candidate_requested_role}</div>
-                  </div>
-                )}
+              {/* AGGREGATED CANDIDATE FILES */}
+              {((historyData.interview_document_files && historyData.interview_document_files.length > 0) ||
+                (historyData.interview_feedback_files && historyData.interview_feedback_files.length > 0)) && (
+                <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-2">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <FileText size={14} className="text-rose-600" /> Candidate Attached Files & Assessment Reports
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {(historyData.interview_document_files || []).map((fileUrl: string, idx: number) => {
+                      const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                      const rawName = fileUrl.split("/").pop() || fileUrl;
+                      const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                      return (
+                        <div key={idx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
+                          <FileText size={13} className="text-rose-600 shrink-0" />
+                          <span className="font-semibold text-slate-800 max-w-[180px] truncate" title={fileUrl}>
+                            {displayName}
+                          </span>
+                          {isUrl && (
+                            <a
+                              href={fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] px-2 py-0.5 rounded font-bold transition-all"
+                            >
+                              <Eye size={11} />
+                              <span>View</span>
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
 
-                {historyData.interview_document_files && historyData.interview_document_files.length > 0 && (
-                  <div className="bg-white p-3 rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
-                      <FileText size={12} className="text-rose-600" /> Attached Files ({historyData.interview_document_files.length})
-                    </span>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {historyData.interview_document_files.map((fileUrl: string, idx: number) => (
-                        <a
-                          key={idx}
-                          href={fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="bg-slate-100 border border-slate-200 hover:border-indigo-500 text-indigo-600 text-[10px] px-2 py-0.5 rounded font-mono truncate max-w-[200px]"
-                        >
-                          {fileUrl}
-                        </a>
-                      ))}
-                    </div>
+                    {(historyData.interview_feedback_files || []).map((fileUrl: string, idx: number) => {
+                      const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                      const rawName = fileUrl.split("/").pop() || fileUrl;
+                      const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                      return (
+                        <div key={idx} className="flex items-center gap-2 bg-amber-50/80 border border-amber-200 rounded-lg px-2.5 py-1 text-xs">
+                          <ShieldCheck size={13} className="text-amber-600 shrink-0" />
+                          <span className="font-semibold text-slate-800 max-w-[180px] truncate" title={fileUrl}>
+                            {displayName}
+                          </span>
+                          {isUrl && (
+                            <a
+                              href={fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-[10px] px-2 py-0.5 rounded font-bold transition-all"
+                            >
+                              <Eye size={11} />
+                              <span>View Report</span>
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* INTERVIEW ROUNDS CHRONOLOGICAL TIMELINE */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm border-b border-slate-200 pb-2">
-                <Layers size={18} />
-                <span>Interview Rounds Evaluation Timeline ({historyData.rounds?.length || 0} Rounds)</span>
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <div className="flex items-center gap-2 text-indigo-700 font-bold text-sm">
+                  <Layers size={18} />
+                  <span>Interview Rounds Evaluation Timeline ({historyData.rounds?.length || 0} Rounds)</span>
+                </div>
               </div>
 
               {historyData.rounds && historyData.rounds.length > 0 ? (
@@ -264,7 +323,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
                         <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 rounded-xl shadow-xs">
-                            Round {round.round_number} ({round.interview_type})
+                            Round {round.round_number} ({(round.interview_type || "TECHNICAL").replace(/_/g, " ")})
                           </div>
                           <div className="text-slate-700 font-semibold flex items-center gap-1">
                             <Calendar size={13} className="text-indigo-600" /> {round.scheduled_date} at {round.scheduled_time} ({round.timezone})
@@ -293,6 +352,34 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                           </span>
                         </div>
                       </div>
+
+                      {/* DYNAMIC TECH & SOFT SKILL EVALUATION & CATEGORY WEIGHTED EVALUATION */}
+                      {(() => {
+                        const roundSkills = (round.skill_ratings && round.skill_ratings.length > 0)
+                          ? round.skill_ratings
+                          : (round.interviewers && round.interviewers[0]?.skill_ratings) || [];
+
+                        const roundCategories = (round.category_scores && round.category_scores.length > 0)
+                          ? round.category_scores
+                          : (round.interviewers && round.interviewers[0]?.category_scores) || [];
+
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
+                            <SkillRatingsEvaluation
+                              skillRatings={roundSkills}
+                              onChangeSkills={() => {}}
+                              categoryScores={roundCategories}
+                              onChangeCategoryScores={() => {}}
+                              aiScore={round.ai_score}
+                              readOnly={true}
+                              currentRoundNumber={round.round_number}
+                              currentInterviewType={round.interview_type}
+                              hrCallVerification={historyData?.hr_call_verification || round.hr_call_verification}
+                              allRounds={historyData?.rounds}
+                            />
+                          </div>
+                        );
+                      })()}
 
                       {/* 2-COLUMN GRID: MULTIPLE INTERVIEWERS (LEFT) & MULTIPLE CLIENTS (RIGHT) */}
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -454,6 +541,67 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                           ))}
                         </div>
                       </div>
+
+                      {/* ROUND ATTACHED FILES & FEEDBACK REPORTS */}
+                      {((round.interview_document_files && round.interview_document_files.length > 0) ||
+                        (round.interview_feedback_files && round.interview_feedback_files.length > 0)) && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <FileText size={14} className="text-indigo-600" /> Round Attached Files & Assessment Reports
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {(round.interview_document_files || []).map((fileUrl: string, fIdx: number) => {
+                              const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                              const rawName = fileUrl.split("/").pop() || fileUrl;
+                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                              return (
+                                <div key={fIdx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
+                                  <FileText size={13} className="text-indigo-600 shrink-0" />
+                                  <span className="font-semibold text-slate-800 max-w-[180px] truncate" title={fileUrl}>
+                                    {displayName}
+                                  </span>
+                                  {isUrl && (
+                                    <a
+                                      href={fileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] px-2 py-0.5 rounded font-bold transition-all"
+                                    >
+                                      <Eye size={11} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {(round.interview_feedback_files || []).map((fileUrl: string, fIdx: number) => {
+                              const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                              const rawName = fileUrl.split("/").pop() || fileUrl;
+                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                              return (
+                                <div key={fIdx} className="flex items-center gap-2 bg-amber-50/80 border border-amber-200 rounded-lg px-2.5 py-1 text-xs">
+                                  <ShieldCheck size={13} className="text-amber-600 shrink-0" />
+                                  <span className="font-semibold text-slate-800 max-w-[180px] truncate" title={fileUrl}>
+                                    {displayName}
+                                  </span>
+                                  {isUrl && (
+                                    <a
+                                      href={fileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-[10px] px-2 py-0.5 rounded font-bold transition-all"
+                                    >
+                                      <Eye size={11} />
+                                      <span>View Report</span>
+                                    </a>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })

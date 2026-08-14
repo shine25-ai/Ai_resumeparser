@@ -11,6 +11,10 @@ interface SkillRatingsEvaluationProps {
   aiScore?: number;
   onAiScoreCalculated?: (score: number, recommendation: string) => void;
   readOnly?: boolean;
+  currentRoundNumber?: number;
+  currentInterviewType?: string;
+  hrCallVerification?: string;
+  allRounds?: any[];
 }
 
 export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
@@ -20,6 +24,10 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   onChangeCategoryScores,
   onAiScoreCalculated,
   readOnly = false,
+  currentRoundNumber,
+  currentInterviewType,
+  hrCallVerification,
+  allRounds = [],
 }) => {
   const [newSkillName, setNewSkillName] = useState("");
   const [skillTemplates, setSkillTemplates] = useState<any[]>([]);
@@ -650,25 +658,80 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
       </div>
 
       {/* SECTION 3: HIRING MANAGER REVIEW & ROUND PROGRESS WORKFLOW */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-          Hiring Manager Review & Interview Workflow Progress
-        </span>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs font-bold">
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 py-1.5 px-2 rounded-lg flex items-center justify-center gap-1">
-            <CheckCircle2 size={13} /> HR Screening
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 shadow-2xs">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">
+            Hiring Manager Review & Interview Workflow Progress
+          </span>
+          {currentRoundNumber && (
+            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+              Active Evaluation: Round {currentRoundNumber} ({(currentInterviewType || "TECHNICAL").replace(/_/g, " ")})
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold pt-1">
+          {/* Stage 1: HR Call Screening */}
+          <div className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-1.5 border transition-all ${
+            hrCallVerification === "Verified"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold"
+              : hrCallVerification === "Not Eligible"
+              ? "bg-rose-50 border-rose-200 text-rose-800 font-extrabold"
+              : "bg-amber-50 border-amber-200 text-amber-800 font-semibold"
+          }`}>
+            {hrCallVerification === "Verified" ? (
+              <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+            ) : (
+              <Award size={13} className="text-amber-600 shrink-0" />
+            )}
+            <span>HR Screening ({hrCallVerification || "Pending"})</span>
           </div>
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 py-1.5 px-2 rounded-lg flex items-center justify-center gap-1">
-            <CheckCircle2 size={13} /> Technical R1
-          </div>
-          <div className="bg-indigo-50 border border-indigo-200 text-indigo-700 py-1.5 px-2 rounded-lg">
-            Technical R2
-          </div>
-          <div className="bg-white border border-slate-200 text-slate-400 py-1.5 px-2 rounded-lg">
-            Managerial Round
-          </div>
-          <div className="bg-white border border-slate-200 text-slate-400 py-1.5 px-2 rounded-lg">
-            Final Decision
+
+          {/* Stage 2...N: Dynamic Candidate Rounds */}
+          {(() => {
+            const roundsList = (allRounds && allRounds.length > 0)
+              ? [...allRounds].sort((a, b) => (a.round_number || 1) - (b.round_number || 1))
+              : currentRoundNumber
+              ? [{ round_number: currentRoundNumber, interview_type: currentInterviewType || "TECHNICAL", status: "SCHEDULED" }]
+              : [{ round_number: 1, interview_type: "TECHNICAL", status: "SCHEDULED" }];
+
+            return roundsList.map((rndItem, rIdx) => {
+              const rndNum = rndItem.round_number || (rIdx + 1);
+              const rndType = (rndItem.interview_type || "TECHNICAL").replace(/_/g, " ");
+              const isCurrent = currentRoundNumber ? rndNum === currentRoundNumber : rIdx === 0;
+              const isCompleted = rndItem.status === "COMPLETED" || (currentRoundNumber ? rndNum < currentRoundNumber : false);
+
+              return (
+                <div
+                  key={rIdx}
+                  className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-1.5 border transition-all ${
+                    isCurrent
+                      ? "bg-indigo-600 text-white font-extrabold border-indigo-700 shadow-xs"
+                      : isCompleted
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-800 font-bold"
+                      : "bg-white border-slate-200 text-slate-500 font-medium"
+                  }`}
+                >
+                  {isCompleted && <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
+                  <span>{rndType} R{rndNum}</span>
+                  {isCurrent && (
+                    <span className="bg-white/20 text-white text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-black">
+                      Active
+                    </span>
+                  )}
+                </div>
+              );
+            });
+          })()}
+
+          {/* Final Stage: Final Decision */}
+          <div className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-1.5 border font-semibold ${
+            allRounds?.some(r => r.recommendation === "Selected" || r.recommendation === "Hire" || r.recommendation === "Strong Hire")
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800 font-bold"
+              : "bg-white border-slate-200 text-slate-400"
+          }`}>
+            <Award size={13} className="shrink-0" />
+            <span>Final Decision</span>
           </div>
         </div>
       </div>
