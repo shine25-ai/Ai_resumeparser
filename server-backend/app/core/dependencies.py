@@ -15,24 +15,18 @@ security_bearer = HTTPBearer(auto_error=False)
 
 
 async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict:
-    """Enrich user object with permissions dynamically resolved from ROLES_COLLECTION or system defaults."""
+    """Enrich user object with permissions dynamically resolved from ROLES_COLLECTION in MongoDB."""
     if not user:
         return user
 
     role_identifier = user.get("role", "user")
-    role_slug = str(role_identifier).strip().lower() if role_identifier else "user"
-
-    all_system_permissions = [
-        "dashboard", "upload", "database", "evaluation",
-        "jd-match", "interviews", "interview-dashboard",
-        "client-feedback", "analytics", "settings", "role-management"
-    ]
-
-    if role_slug in ["admin", "superadmin"]:
-        user["permissions"] = all_system_permissions
+    if not role_identifier:
+        user["permissions"] = user.get("permissions", [])
         return user
 
-    # Flexible database lookup for assigned role document
+    role_slug = str(role_identifier).strip().lower()
+
+    # Dynamic database query for assigned role document from ROLES_COLLECTION in MongoDB
     import re
     slug_underscore = role_slug.replace("-", "_")
     slug_hyphen = role_slug.replace("_", "-")
@@ -47,28 +41,15 @@ async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict
     }
     role_doc = await db[ROLES_COLLECTION].find_one(role_query)
 
-    if role_doc and role_doc.get("permissions") is not None:
+    if role_doc and "permissions" in role_doc:
         user["permissions"] = role_doc.get("permissions", [])
-    elif user.get("permissions"):
-        # Keep existing permissions array on user document
-        pass
+    elif user.get("permissions") is not None:
+        user["permissions"] = user.get("permissions", [])
     else:
-        # Fallback permissions for standard system roles
-        if role_slug in ["hr_manager", "hr"]:
-            user["permissions"] = [
-                "dashboard", "upload", "database", "evaluation",
-                "jd-match", "interviews", "interview-dashboard",
-                "client-feedback", "analytics"
-            ]
-        elif role_slug in ["interviewer", "recruiter"]:
-            user["permissions"] = [
-                "dashboard", "upload", "database", "evaluation",
-                "jd-match", "interviews", "interview-dashboard"
-            ]
-        else:
-            user["permissions"] = ["dashboard", "upload", "database", "evaluation", "jd-match", "interviews"]
+        user["permissions"] = []
 
     return user
+
 
 
 
