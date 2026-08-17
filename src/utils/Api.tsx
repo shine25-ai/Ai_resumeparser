@@ -439,6 +439,8 @@ import type {
   SendInterviewEmailPayload,
   SkillRatingItem,
   CategoryScoreItem,
+  CheckConflictPayload,
+  CheckConflictResponse,
 } from "../types/interview";
 
 export type {
@@ -458,7 +460,31 @@ export type {
   SendInterviewEmailPayload,
   SkillRatingItem,
   CategoryScoreItem,
+  CheckConflictPayload,
+  CheckConflictResponse,
 };
+
+export const checkInterviewConflict = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEWS_URL}/check-conflict`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to check schedule conflict");
+  }
+
+  return resData.data || resData;
+};
+
 
 
 export const getInterviews = async (params: {

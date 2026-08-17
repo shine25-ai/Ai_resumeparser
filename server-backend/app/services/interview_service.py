@@ -18,6 +18,8 @@ from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
     CandidateFullHistoryResponse,
     InterviewBatchCreateRequest,
+    InterviewCheckConflictRequest,
+    InterviewCheckConflictResponse,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
     InterviewListResponse,
@@ -41,6 +43,26 @@ class InterviewService:
     def __init__(self, interview_repo: InterviewRepository, s3_service: Optional[S3Service] = None):
         self.interview_repo = interview_repo
         self.s3_service = s3_service or S3Service()
+
+    async def check_interview_conflict(self, payload: InterviewCheckConflictRequest) -> InterviewCheckConflictResponse:
+        """Check if any interviewer or client has a time slot conflict for the requested date and time."""
+        res = await self.interview_repo.check_schedule_conflict(
+            scheduled_date=payload.scheduled_date,
+            scheduled_time=payload.scheduled_time,
+            interviewer_id=payload.interviewer_id,
+            interviewer_name=payload.interviewer_name,
+            client_id=payload.client_id,
+            client_name=payload.client_name,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
+            exclude_interview_id=payload.exclude_interview_id,
+        )
+        return InterviewCheckConflictResponse(
+            has_conflict=res["has_conflict"],
+            conflict_type=res.get("conflict_type"),
+            conflict_message=res.get("conflict_message"),
+            conflicting_interviews=res.get("conflicting_interviews", []),
+        )
 
     async def upload_interview_document(self, file: UploadFile) -> dict:
         """Upload an interview document file to AWS S3 and return the public URL."""
@@ -74,6 +96,20 @@ class InterviewService:
                 status_code=400,
                 detail=f"Cannot schedule interview/next round. Candidate '{payload.candidate_name}' already has an active interview session (Status: {st}) that is not completed yet. Please submit feedback to complete the previous round first."
             )
+
+        # Validation: Check for interviewer/client schedule time conflict
+        conflict_res = await self.interview_repo.check_schedule_conflict(
+            scheduled_date=payload.scheduled_date,
+            scheduled_time=payload.scheduled_time,
+            interviewer_id=payload.interviewer_id,
+            interviewer_name=payload.interviewer_name,
+            client_id=payload.client_id,
+            client_name=payload.client_name,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
+        )
+        if conflict_res.get("has_conflict"):
+            raise HTTPException(status_code=400, detail=conflict_res.get("conflict_message"))
 
         interview_doc = InterviewDocument(
             candidate_id=payload.candidate_id,
@@ -133,6 +169,20 @@ class InterviewService:
         self, payload: InterviewBatchCreateRequest, created_by: Optional[str] = None
     ) -> List[InterviewResponse]:
         """Batch schedule interviews for multiple candidates globally."""
+        # Validation: Check for interviewer/client schedule time conflict
+        conflict_res = await self.interview_repo.check_schedule_conflict(
+            scheduled_date=payload.scheduled_date,
+            scheduled_time=payload.scheduled_time,
+            interviewer_id=payload.interviewer_id,
+            interviewer_name=payload.interviewer_name,
+            client_id=payload.client_id,
+            client_name=payload.client_name,
+            interviewers=[i.model_dump() for i in payload.interviewers] if payload.interviewers else None,
+            clients=[c.model_dump() for c in payload.clients] if payload.clients else None,
+        )
+        if conflict_res.get("has_conflict"):
+            raise HTTPException(status_code=400, detail=conflict_res.get("conflict_message"))
+
         created_interviews: List[InterviewResponse] = []
 
         for candidate in payload.candidates:
@@ -290,6 +340,23 @@ class InterviewService:
         if "interview_type" in update_fields and isinstance(update_fields["interview_type"], InterviewType):
             update_fields["interview_type"] = update_fields["interview_type"].value
 
+        check_date = update_fields.get("scheduled_date") or existing.get("scheduled_date")
+        check_time = update_fields.get("scheduled_time") or existing.get("scheduled_time")
+        if check_date and check_time:
+            conflict_res = await self.interview_repo.check_schedule_conflict(
+                scheduled_date=check_date,
+                scheduled_time=check_time,
+                interviewer_id=update_fields.get("interviewer_id") or existing.get("interviewer_id"),
+                interviewer_name=update_fields.get("interviewer_name") or existing.get("interviewer_name"),
+                client_id=update_fields.get("client_id") or existing.get("client_id"),
+                client_name=update_fields.get("client_name") or existing.get("client_name"),
+                interviewers=update_fields.get("interviewers") if "interviewers" in update_fields else existing.get("interviewers"),
+                clients=update_fields.get("clients") if "clients" in update_fields else existing.get("clients"),
+                exclude_interview_id=interview_id,
+            )
+            if conflict_res.get("has_conflict"):
+                raise HTTPException(status_code=400, detail=conflict_res.get("conflict_message"))
+
         update_fields["updated_by"] = updated_by
         update_fields["updated_at"] = utc_now().isoformat()
 
@@ -307,6 +374,21 @@ class InterviewService:
         existing = await self.interview_repo.get_by_id(interview_id)
         if not existing:
             raise NotFoundError("Interview not found.")
+
+        # Validation: Check for interviewer/client schedule time conflict
+        conflict_res = await self.interview_repo.check_schedule_conflict(
+            scheduled_date=payload.scheduled_date,
+            scheduled_time=payload.scheduled_time,
+            interviewer_id=existing.get("interviewer_id"),
+            interviewer_name=existing.get("interviewer_name"),
+            client_id=existing.get("client_id"),
+            client_name=existing.get("client_name"),
+            interviewers=existing.get("interviewers"),
+            clients=existing.get("clients"),
+            exclude_interview_id=interview_id,
+        )
+        if conflict_res.get("has_conflict"):
+            raise HTTPException(status_code=400, detail=conflict_res.get("conflict_message"))
 
         history_entry = {
             "previous_date": existing.get("scheduled_date"),
