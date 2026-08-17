@@ -323,7 +323,7 @@ export default function InterviewDashboard() {
         scheduled_time: scheduleForm.scheduled_time,
         duration_minutes: scheduleForm.duration_minutes,
         interviewer_id: scheduleForm.interviewer_id || undefined,
-        interviewer_name: scheduleForm.interviewer_name || undefined,
+        interviewer_name: scheduleForm.interviewer_name || "Interviewer",
         interviewer_email: scheduleForm.interviewer_email || undefined,
         client_id: scheduleForm.client_id || undefined,
         client_name: scheduleForm.client_name || undefined,
