@@ -464,15 +464,47 @@ export type {
   CheckConflictResponse,
 };
 
-export const checkInterviewConflict = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
+export const checkInterviewConflictGet = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
   const token = localStorage.getItem("access_token") || "";
-  const response = await fetch(`${INTERVIEWS_URL}/check-conflict`, {
-    method: "POST",
+
+  let invId = payload.interviewer_id;
+  let invName = payload.interviewer_name;
+  let cliId = payload.client_id;
+  let cliName = payload.client_name;
+
+  if (!invName && payload.interviewers && payload.interviewers.length > 0) {
+    const validInv = payload.interviewers.find((i) => i.interviewer_name && i.interviewer_name.trim());
+    if (validInv) {
+      invName = validInv.interviewer_name;
+      invId = invId || validInv.interviewer_id;
+    }
+  }
+
+  if (!cliName && payload.clients && payload.clients.length > 0) {
+    const validCli = payload.clients.find((c) => c.client_name && c.client_name.trim());
+    if (validCli) {
+      cliName = validCli.client_name;
+      cliId = cliId || validCli.client_id;
+    }
+  }
+
+  const queryParts: string[] = [
+    `scheduled_date=${encodeURIComponent(payload.scheduled_date)}`,
+    `scheduled_time=${encodeURIComponent(payload.scheduled_time)}`,
+  ];
+
+  if (invId) queryParts.push(`interviewer_id=${encodeURIComponent(invId)}`);
+  if (invName) queryParts.push(`interviewer_name=${encodeURIComponent(invName)}`);
+  if (cliId) queryParts.push(`client_id=${encodeURIComponent(cliId)}`);
+  if (cliName) queryParts.push(`client_name=${encodeURIComponent(cliName)}`);
+  if (payload.exclude_interview_id) queryParts.push(`exclude_interview_id=${encodeURIComponent(payload.exclude_interview_id)}`);
+
+  const response = await fetch(`${INTERVIEWS_URL}/check-conflict?${queryParts.join("&")}`, {
+    method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
   });
 
   const resData = await response.json();
@@ -483,6 +515,39 @@ export const checkInterviewConflict = async (payload: CheckConflictPayload): Pro
   }
 
   return resData.data || resData;
+};
+
+export const checkInterviewConflict = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
+  const token = localStorage.getItem("access_token") || "";
+  try {
+    const response = await fetch(`${INTERVIEWS_URL}/check-conflict`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status === 405 || response.status === 404) {
+      return await checkInterviewConflictGet(payload);
+    }
+
+    const resData = await response.json();
+    handleAuthError(response, resData);
+
+    if (!response.ok) {
+      throw new Error(resData.detail || "Failed to check schedule conflict");
+    }
+
+    return resData.data || resData;
+  } catch (err: any) {
+    try {
+      return await checkInterviewConflictGet(payload);
+    } catch {
+      throw err;
+    }
+  }
 };
 
 
