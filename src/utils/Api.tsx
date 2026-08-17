@@ -464,6 +464,94 @@ export type {
   CheckConflictResponse,
 };
 
+export const performClientSideConflictCheck = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
+  try {
+    const data = await getInterviews({ limit: 100 });
+    const items: InterviewItem[] = Array.isArray(data) ? data : (data.interviews || data.items || []);
+
+    const targetPersons = new Set<string>();
+    const addPerson = (id?: string, name?: string) => {
+      if (id && id.trim()) targetPersons.add(`id:${id.trim().toLowerCase()}`);
+      if (name && name.trim()) targetPersons.add(`name:${name.trim().toLowerCase()}`);
+    };
+
+    addPerson(payload.interviewer_id, payload.interviewer_name);
+    addPerson(payload.client_id, payload.client_name);
+
+    if (payload.interviewers) {
+      payload.interviewers.forEach((i) => addPerson(i.interviewer_id, i.interviewer_name));
+    }
+    if (payload.clients) {
+      payload.clients.forEach((c) => addPerson(c.client_id, c.client_name));
+    }
+
+    if (targetPersons.size === 0) {
+      return { has_conflict: false };
+    }
+
+    const normTime = (t?: string) => {
+      if (!t) return "";
+      const parts = t.trim().split(":");
+      if (parts.length < 2) return t.trim();
+      return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
+    };
+
+    const targetDate = payload.scheduled_date;
+    const targetTime = normTime(payload.scheduled_time);
+
+    for (const doc of items) {
+      if (payload.exclude_interview_id && doc.id === payload.exclude_interview_id) {
+        continue;
+      }
+      if (doc.status === "CANCELLED") {
+        continue;
+      }
+
+      const docDate = doc.scheduled_date;
+      const docTime = normTime(doc.scheduled_time);
+
+      if (docDate === targetDate && docTime === targetTime) {
+        const docPersons = new Set<string>();
+        const addDocPerson = (id?: string, name?: string) => {
+          if (id && id.trim()) docPersons.add(`id:${id.trim().toLowerCase()}`);
+          if (name && name.trim()) docPersons.add(`name:${name.trim().toLowerCase()}`);
+        };
+
+        addDocPerson(doc.interviewer_id, doc.interviewer_name);
+        addDocPerson(doc.client_id, doc.client_name);
+
+        if (doc.interviewers) {
+          doc.interviewers.forEach((i) => addDocPerson(i.interviewer_id, i.interviewer_name));
+        }
+        if (doc.clients) {
+          doc.clients.forEach((c) => addDocPerson(c.client_id, c.client_name));
+        }
+
+        for (const p of targetPersons) {
+          if (docPersons.has(p)) {
+            const rawName = p.startsWith("name:")
+              ? p.replace("name:", "")
+              : (doc.interviewer_name || doc.client_name || "Person");
+            const capitalized = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+
+            return {
+              has_conflict: true,
+              conflict_type: "interviewer",
+              conflict_message: `Schedule Conflict: ${capitalized} is already assigned to an interview at ${payload.scheduled_time} on ${payload.scheduled_date}.`,
+              conflicting_interviews: [doc],
+            };
+          }
+        }
+      }
+    }
+
+    return { has_conflict: false };
+  } catch (err) {
+    console.error("Client side conflict check error:", err);
+    return { has_conflict: false };
+  }
+};
+
 export const checkInterviewConflictGet = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
   const token = localStorage.getItem("access_token") || "";
 
@@ -507,11 +595,15 @@ export const checkInterviewConflictGet = async (payload: CheckConflictPayload): 
     },
   });
 
+  if (response.status === 405 || response.status === 404) {
+    return await performClientSideConflictCheck(payload);
+  }
+
   const resData = await response.json();
   handleAuthError(response, resData);
 
   if (!response.ok) {
-    throw new Error(resData.detail || "Failed to check schedule conflict");
+    return await performClientSideConflictCheck(payload);
   }
 
   return resData.data || resData;
@@ -537,15 +629,15 @@ export const checkInterviewConflict = async (payload: CheckConflictPayload): Pro
     handleAuthError(response, resData);
 
     if (!response.ok) {
-      throw new Error(resData.detail || "Failed to check schedule conflict");
+      return await checkInterviewConflictGet(payload);
     }
 
     return resData.data || resData;
-  } catch (err: any) {
+  } catch {
     try {
       return await checkInterviewConflictGet(payload);
     } catch {
-      throw err;
+      return await performClientSideConflictCheck(payload);
     }
   }
 };
