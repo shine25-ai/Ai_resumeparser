@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Calendar, Clock, CheckCircle2, UserCheck, AlertCircle, XCircle,
-  ChevronDown, Plus, Eye, MoreVertical, Search, ArrowRight, RefreshCw, X, Mail
+  Calendar, Clock, CheckCircle2, UserCheck, AlertCircle,
+  ChevronDown, Plus, Eye, MoreVertical, Search, ArrowRight, RefreshCw, X, Mail,
+  History, Star
 } from "lucide-react";
 import {
   getInterviews, createInterview, getUsers, checkInterviewConflict,
@@ -11,7 +12,7 @@ import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 
 // Helper date and time formatters
 const formatDateDisplay = (dateStr?: string) => {
-  if (!dateStr) return "May 20, 2024";
+  if (!dateStr) return "-";
   try {
     const parts = dateStr.split("-");
     if (parts.length === 3) {
@@ -34,7 +35,7 @@ const formatDateDisplay = (dateStr?: string) => {
 };
 
 const formatTime12h = (timeStr?: string) => {
-  if (!timeStr) return "10:00 AM";
+  if (!timeStr) return "-";
   const parts = timeStr.split(":");
   if (parts.length < 2) return timeStr;
   const h = parseInt(parts[0], 10);
@@ -47,12 +48,12 @@ const formatTime12h = (timeStr?: string) => {
 
 // Calculate end time string e.g. 10:00 AM + 60 mins -> 11:00 AM
 const calcEndTime12h = (timeStr?: string, durationMins: number = 60) => {
-  if (!timeStr) return "11:00 AM";
+  if (!timeStr) return "-";
   const parts = timeStr.split(":");
-  if (parts.length < 2) return "11:00 AM";
+  if (parts.length < 2) return timeStr;
   let h = parseInt(parts[0], 10);
   let m = parseInt(parts[1], 10) || 0;
-  if (isNaN(h)) return "11:00 AM";
+  if (isNaN(h)) return timeStr;
 
   const totalMinutes = h * 60 + m + (durationMins || 60);
   const newH = Math.floor(totalMinutes / 60) % 24;
@@ -88,75 +89,14 @@ const getInterviewTypeLabel = (typeStr?: string) => {
   return typeStr.replace(/_/g, " ");
 };
 
-// Mock fallback sample interviews if backend DB is empty
-const SAMPLE_INTERVIEWS: Partial<InterviewItem>[] = [
-  {
-    id: "sample-1",
-    candidate_name: "Sarah Johnson",
-    candidate_email: "sarah.j@email.com",
-    job_title: "Frontend Developer",
-    interview_type: "TECHNICAL" as InterviewTypeEnum,
-    interviewer_name: "Alex Thompson",
-    scheduled_date: "2024-05-20",
-    scheduled_time: "10:00",
-    duration_minutes: 60,
-    status: "PENDING",
-  },
-  {
-    id: "sample-2",
-    candidate_name: "Michael Chen",
-    candidate_email: "michael.c@email.com",
-    job_title: "Backend Developer",
-    interview_type: "HR" as InterviewTypeEnum,
-    interviewer_name: "Lisa Wang",
-    scheduled_date: "2024-05-20",
-    scheduled_time: "13:00",
-    duration_minutes: 60,
-    status: "PENDING",
-  },
-  {
-    id: "sample-3",
-    candidate_name: "Emily Davis",
-    candidate_email: "emily.d@email.com",
-    job_title: "UI/UX Designer",
-    interview_type: "MANAGERIAL" as InterviewTypeEnum,
-    interviewer_name: "David Brown",
-    scheduled_date: "2024-05-20",
-    scheduled_time: "15:30",
-    duration_minutes: 60,
-    status: "PENDING",
-  },
-  {
-    id: "sample-4",
-    candidate_name: "James Wilson",
-    candidate_email: "james.w@email.com",
-    job_title: "DevOps Engineer",
-    interview_type: "TECHNICAL" as InterviewTypeEnum,
-    interviewer_name: "Alex Thompson",
-    scheduled_date: "2024-05-21",
-    scheduled_time: "11:00",
-    duration_minutes: 60,
-    status: "PENDING",
-  },
-  {
-    id: "sample-5",
-    candidate_name: "Anna Martinez",
-    candidate_email: "anna.m@email.com",
-    job_title: "Product Manager",
-    interview_type: "HR" as InterviewTypeEnum,
-    interviewer_name: "Lisa Wang",
-    scheduled_date: "2024-05-21",
-    scheduled_time: "14:00",
-    duration_minutes: 60,
-    status: "PENDING",
-  },
-];
-
 export default function InterviewDashboard() {
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPeriod, setSelectedPeriod] = useState<string>("This Month");
+
+  // Archive Filter state for completed/past grid
+  const [archiveFilter, setArchiveFilter] = useState<"ALL" | "COMPLETED" | "PAST">("ALL");
 
   // Candidate Details Modal state
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
@@ -191,7 +131,7 @@ export default function InterviewDashboard() {
     candidate_id: `cand-${Date.now()}`,
     candidate_name: "",
     candidate_email: "",
-    job_title: "Software Engineer",
+    job_title: "",
     interview_type: "TECHNICAL" as InterviewTypeEnum,
     round_number: 1,
     scheduled_date: new Date().toISOString().split("T")[0],
@@ -216,14 +156,10 @@ export default function InterviewDashboard() {
       const fetchedList: InterviewItem[] = Array.isArray(data)
         ? data
         : (data.interviews || data.items || []);
-      if (fetchedList.length > 0) {
-        setInterviews(fetchedList);
-      } else {
-        setInterviews(SAMPLE_INTERVIEWS as InterviewItem[]);
-      }
+      setInterviews(fetchedList);
     } catch (err: any) {
       console.error("Dashboard fetch error:", err);
-      setInterviews(SAMPLE_INTERVIEWS as InterviewItem[]);
+      setInterviews([]);
     } finally {
       setLoading(false);
     }
@@ -234,37 +170,48 @@ export default function InterviewDashboard() {
     getUsers().then(setSystemUsers).catch(() => {});
   }, []);
 
-  // Filtered upcoming interviews
-  const filteredInterviews = interviews.filter((item) => {
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // 1. UPCOMING INTERVIEWS: scheduled_date >= todayStr & status !== COMPLETED & status !== CANCELLED
+  const upcomingInterviews = interviews.filter((item) => {
+    const isFutureOrToday = !item.scheduled_date || item.scheduled_date >= todayStr;
+    const isNotCompleted = item.status !== "COMPLETED" && item.status !== "CANCELLED";
     const nameMatch = (item.candidate_name || "").toLowerCase().includes(searchQuery.toLowerCase());
     const jobMatch = (item.job_title || "").toLowerCase().includes(searchQuery.toLowerCase());
     const interviewerMatch = (item.interviewer_name || "").toLowerCase().includes(searchQuery.toLowerCase());
-    return nameMatch || jobMatch || interviewerMatch;
+    return isFutureOrToday && isNotCompleted && (nameMatch || jobMatch || interviewerMatch);
   });
 
-  // Calculate top metric card values
-  const hasRealData = interviews.length > 0 && interviews !== (SAMPLE_INTERVIEWS as any);
-  const totalInterviewsCount = hasRealData ? interviews.length : 128;
-  const scheduledCount = hasRealData
-    ? interviews.filter((i) => (i.status as string) === "PENDING" || (i.status as string) === "SCHEDULED" || (i.status as string) === "CONFIRMED" || i.status === "RESCHEDULED").length
-    : 42;
-  const completedCount = hasRealData
-    ? interviews.filter((i) => i.status === "COMPLETED").length
-    : 64;
-  const selectedCount = hasRealData
-    ? interviews.filter((i) => i.recommendation === "Selected" || i.recommendation === "Hire" || i.recommendation === "Strong Hire" || i.client_recommendation === "Selected").length
-    : 18;
-  const rejectedCount = hasRealData
-    ? interviews.filter((i) => i.status === "CANCELLED" || i.recommendation === "No Hire" || i.recommendation === "Rejected").length
-    : 4;
+  // 2. TODAY'S SCHEDULE: scheduled_date === todayStr & status !== CANCELLED
+  const todaysSchedule = interviews.filter(
+    (item) => item.scheduled_date === todayStr && item.status !== "CANCELLED"
+  );
 
-  // Filter today's schedule items
-  const todayStr = new Date().toISOString().split("T")[0];
-  let todaysSchedule = interviews.filter((i) => i.scheduled_date === todayStr);
+  // 3. COMPLETED INTERVIEWS: status === COMPLETED
+  const completedInterviews = interviews.filter((item) => item.status === "COMPLETED");
 
-  if (todaysSchedule.length === 0 && interviews.length > 0) {
-    todaysSchedule = interviews.slice(0, 5);
-  }
+  // 4. PAST / MISSED INTERVIEWS: scheduled_date < todayStr & status !== COMPLETED
+  const pastOrMissedInterviews = interviews.filter(
+    (item) => item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED"
+  );
+
+  // Archive sessions combined (Completed + Past/Missed)
+  const archiveList = interviews.filter((item) => {
+    const isCompleted = item.status === "COMPLETED";
+    const isPast = item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED";
+    if (archiveFilter === "COMPLETED") return isCompleted;
+    if (archiveFilter === "PAST") return isPast;
+    return isCompleted || isPast;
+  });
+
+  // Calculate top metric card values dynamically
+  const totalInterviewsCount = interviews.length;
+  const scheduledCount = upcomingInterviews.length;
+  const completedCount = completedInterviews.length;
+  const pastMissedCount = pastOrMissedInterviews.length;
+  const selectedCount = interviews.filter(
+    (i) => i.recommendation === "Selected" || i.recommendation === "Hire" || i.recommendation === "Strong Hire" || i.client_recommendation === "Selected"
+  ).length;
 
   const handleOpenDetails = (item: InterviewItem) => {
     setSelectedInterview(item);
@@ -315,7 +262,7 @@ export default function InterviewDashboard() {
       await createInterview({
         candidate_id: scheduleForm.candidate_id || `cand-${Date.now()}`,
         candidate_name: scheduleForm.candidate_name || "New Candidate",
-        candidate_email: scheduleForm.candidate_email || "candidate@example.com",
+        candidate_email: scheduleForm.candidate_email || undefined,
         job_title: scheduleForm.job_title,
         interview_type: scheduleForm.interview_type,
         round_number: scheduleForm.round_number,
@@ -344,7 +291,7 @@ export default function InterviewDashboard() {
   };
 
   return (
-    <div className="bg-slate-50/60 min-h-screen p-3 sm:p-4 font-sans space-y-3 text-slate-900">
+    <div className="bg-slate-50/60 min-h-screen p-3 sm:p-4 font-sans space-y-3.5 text-slate-900">
       
       {/* HEADER BAR & TOP ACTION BUTTON */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3.5 px-4 rounded-2xl border border-slate-200/80 shadow-2xs">
@@ -406,9 +353,7 @@ export default function InterviewDashboard() {
             <div className="w-8 h-8 bg-indigo-500 text-white rounded-xl flex items-center justify-center shadow-xs shadow-indigo-500/20">
               <Calendar size={16} />
             </div>
-            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-              ↑ 18%
-            </span>
+            <span className="text-[10px] font-bold text-slate-400">Total</span>
           </div>
           <div>
             <span className="text-[11px] font-bold text-slate-500 block">Total Interviews</span>
@@ -418,18 +363,18 @@ export default function InterviewDashboard() {
           </div>
         </div>
 
-        {/* Card 2: Scheduled */}
+        {/* Card 2: Upcoming / Scheduled */}
         <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-1.5">
           <div className="flex items-center justify-between">
             <div className="w-8 h-8 bg-blue-500 text-white rounded-xl flex items-center justify-center shadow-xs shadow-blue-500/20">
               <Clock size={16} />
             </div>
-            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-              ↑ 12%
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md">
+              Upcoming
             </span>
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-500 block">Scheduled</span>
+            <span className="text-[11px] font-bold text-slate-500 block">Upcoming / Scheduled</span>
             <div className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
               {scheduledCount}
             </div>
@@ -442,8 +387,8 @@ export default function InterviewDashboard() {
             <div className="w-8 h-8 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-xs shadow-emerald-500/20">
               <CheckCircle2 size={16} />
             </div>
-            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-              ↑ 24%
+            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
+              Done
             </span>
           </div>
           <div>
@@ -454,14 +399,32 @@ export default function InterviewDashboard() {
           </div>
         </div>
 
-        {/* Card 4: Selected */}
+        {/* Card 4: Past / Missed */}
         <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-1.5">
           <div className="flex items-center justify-between">
             <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center shadow-xs shadow-amber-500/20">
+              <History size={16} />
+            </div>
+            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">
+              Passed
+            </span>
+          </div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-500 block">Past / Missed</span>
+            <div className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
+              {pastMissedCount}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 5: Selected */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-1.5 col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between">
+            <div className="w-8 h-8 bg-purple-500 text-white rounded-xl flex items-center justify-center shadow-xs shadow-purple-500/20">
               <UserCheck size={16} />
             </div>
-            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-              ↑ 20%
+            <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded-md">
+              Hired
             </span>
           </div>
           <div>
@@ -472,30 +435,12 @@ export default function InterviewDashboard() {
           </div>
         </div>
 
-        {/* Card 5: Rejected */}
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-1.5 col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between">
-            <div className="w-8 h-8 bg-rose-500 text-white rounded-xl flex items-center justify-center shadow-xs shadow-rose-500/20">
-              <XCircle size={16} />
-            </div>
-            <span className="text-[10px] font-extrabold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded-md">
-              ↓ 11%
-            </span>
-          </div>
-          <div>
-            <span className="text-[11px] font-bold text-slate-500 block">Rejected</span>
-            <div className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              {rejectedCount}
-            </div>
-          </div>
-        </div>
-
       </div>
 
-      {/* LOWER CONTENT GRID: 2 COLS LEFT (UPCOMING INTERVIEWS) & 1 COL RIGHT (TODAY'S SCHEDULE) */}
+      {/* MIDDLE CONTENT GRID: 2 COLS LEFT (UPCOMING INTERVIEWS) & 1 COL RIGHT (TODAY'S SCHEDULE) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
         
-        {/* LEFT SECTION (2 COLS WIDE): UPCOMING INTERVIEWS TABLE */}
+        {/* LEFT SECTION (2 COLS WIDE): UPCOMING INTERVIEWS TABLE (ONLY TRUE UPCOMING SESSIONS >= TODAY) */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden flex flex-col">
           
           {/* Card Header */}
@@ -504,8 +449,8 @@ export default function InterviewDashboard() {
               <h2 className="text-xs sm:text-sm font-extrabold text-slate-900 tracking-tight">
                 Upcoming Interviews
               </h2>
-              <span className="bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded-md">
-                {filteredInterviews.length} Sessions
+              <span className="bg-blue-50 border border-blue-200/70 text-blue-700 text-[10px] font-extrabold px-2 py-0.5 rounded-md">
+                {upcomingInterviews.length} Sessions
               </span>
             </div>
 
@@ -526,13 +471,13 @@ export default function InterviewDashboard() {
                 onClick={() => setSearchQuery("")}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] px-2.5 py-1 rounded-xl border border-slate-200 transition-colors shrink-0 cursor-pointer"
               >
-                View All
+                Clear
               </button>
             </div>
           </div>
 
           {/* Table Container */}
-          <div className="overflow-x-auto flex-1">
+          <div className="overflow-x-auto flex-1 min-h-[160px]">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider text-[9px]">
@@ -547,7 +492,7 @@ export default function InterviewDashboard() {
 
               <tbody className="divide-y divide-slate-100 text-xs">
                 {loading ? (
-                  Array.from({ length: 4 }).map((_, idx) => (
+                  Array.from({ length: 3 }).map((_, idx) => (
                     <tr key={idx} className="animate-pulse">
                       <td className="p-3"><div className="h-7 w-32 bg-slate-100 rounded-lg"></div></td>
                       <td className="p-3"><div className="h-4 w-24 bg-slate-100 rounded-lg"></div></td>
@@ -557,19 +502,20 @@ export default function InterviewDashboard() {
                       <td className="p-3"><div className="h-6 w-10 bg-slate-100 rounded-lg mx-auto"></div></td>
                     </tr>
                   ))
-                ) : filteredInterviews.length === 0 ? (
+                ) : upcomingInterviews.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
-                      <Calendar size={26} className="mx-auto text-slate-300 mb-1.5" />
-                      <p className="font-semibold text-xs">No upcoming interviews found</p>
+                    <td colSpan={6} className="py-10 text-center text-slate-400">
+                      <Calendar size={28} className="mx-auto text-slate-300 mb-2" />
+                      <p className="font-extrabold text-slate-700 text-xs">No upcoming interviews scheduled</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Click "+ Schedule Interview" to set up future interview slots</p>
                     </td>
                   </tr>
                 ) : (
-                  filteredInterviews.map((item, idx) => {
-                    const candidateName = item.candidate_name || "Sarah Johnson";
-                    const candidateEmail = item.candidate_email || `${candidateName.toLowerCase().replace(/\s+/g, ".")}@example.com`;
-                    const jobTitle = item.job_title || "Software Engineer";
-                    const interviewerName = item.interviewer_name || "Alex Thompson";
+                  upcomingInterviews.map((item, idx) => {
+                    const candidateName = item.candidate_name || "Unknown Candidate";
+                    const candidateEmail = item.candidate_email || "-";
+                    const jobTitle = item.job_title || "-";
+                    const interviewerName = item.interviewer_name || "-";
                     const roundLabel = getInterviewTypeLabel(item.interview_type);
                     const badgeClass = getInterviewTypeBadgeClass(item.interview_type);
                     const formattedDate = formatDateDisplay(item.scheduled_date);
@@ -589,9 +535,11 @@ export default function InterviewDashboard() {
                               <span className="font-extrabold text-slate-900 text-xs block truncate">
                                 {candidateName}
                               </span>
-                              <span className="text-[10px] text-slate-400 font-medium block truncate">
-                                {candidateEmail}
-                              </span>
+                              {candidateEmail !== "-" && (
+                                <span className="text-[10px] text-slate-400 font-medium block truncate">
+                                  {candidateEmail}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -675,7 +623,7 @@ export default function InterviewDashboard() {
 
         </div>
 
-        {/* RIGHT SECTION (1 COL WIDE): TODAY'S SCHEDULE */}
+        {/* RIGHT SECTION (1 COL WIDE): TODAY'S SCHEDULE (ONLY SESSIONS FOR TODAY) */}
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-3.5 flex flex-col justify-between space-y-3">
           <div>
             {/* Header */}
@@ -684,22 +632,23 @@ export default function InterviewDashboard() {
                 Today's Schedule
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block"></span>
               </h2>
-              <button className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[10px] font-bold px-2.5 py-0.5 rounded-lg transition-colors cursor-pointer">
-                View Calendar
-              </button>
+              <span className="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
+                {formatDateDisplay(todayStr)}
+              </span>
             </div>
 
             {/* Timeline List */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-h-[140px]">
               {todaysSchedule.length === 0 ? (
-                <div className="py-6 text-center text-slate-400 space-y-1">
-                  <Clock size={22} className="mx-auto text-slate-300" />
-                  <p className="text-xs font-semibold">No interviews scheduled for today</p>
+                <div className="py-8 text-center text-slate-400 space-y-1">
+                  <Clock size={24} className="mx-auto text-slate-300 mb-1" />
+                  <p className="text-xs font-bold text-slate-700">No interviews scheduled for today</p>
+                  <p className="text-[10px] text-slate-400">Today's date is {formatDateDisplay(todayStr)}</p>
                 </div>
               ) : (
                 todaysSchedule.map((item, idx) => {
-                  const startTime = formatTime12h(item.scheduled_time || "10:00");
-                  const endTime = calcEndTime12h(item.scheduled_time || "10:00", item.duration_minutes || 60);
+                  const startTime = formatTime12h(item.scheduled_time);
+                  const endTime = calcEndTime12h(item.scheduled_time, item.duration_minutes || 60);
                   const roundLabel = getInterviewTypeLabel(item.interview_type);
                   const badgeClass = getInterviewTypeBadgeClass(item.interview_type);
 
@@ -721,10 +670,10 @@ export default function InterviewDashboard() {
                       {/* Middle: Candidate & Job Title */}
                       <div className="min-w-0 flex-1">
                         <h4 className="font-extrabold text-xs text-slate-900 truncate">
-                          {item.candidate_name || "Sarah Johnson"}
+                          {item.candidate_name || "Candidate"}
                         </h4>
                         <p className="text-[10px] text-slate-500 font-medium truncate">
-                          {item.job_title || "Software Engineer"}
+                          {item.job_title || "-"}
                         </p>
                       </div>
 
@@ -760,6 +709,187 @@ export default function InterviewDashboard() {
           </div>
 
         </div>
+
+      </div>
+
+      {/* NEW GRID UI SECTION: COMPLETED & PAST / MISSED INTERVIEWS ARCHIVE */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 space-y-3">
+        
+        {/* Archive Section Header & Filter Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-slate-100 text-slate-700 rounded-xl">
+              <History size={16} />
+            </div>
+            <div>
+              <h2 className="text-xs sm:text-sm font-extrabold text-slate-900 tracking-tight">
+                Completed & Past Session History
+              </h2>
+              <p className="text-[10px] text-slate-500">
+                View past evaluation records, ratings, recommendations, and missed session logs
+              </p>
+            </div>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto">
+            <button
+              onClick={() => setArchiveFilter("ALL")}
+              className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                archiveFilter === "ALL"
+                  ? "bg-white text-indigo-600 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              All History ({completedCount + pastMissedCount})
+            </button>
+
+            <button
+              onClick={() => setArchiveFilter("COMPLETED")}
+              className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                archiveFilter === "COMPLETED"
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Completed ({completedCount})
+            </button>
+
+            <button
+              onClick={() => setArchiveFilter("PAST")}
+              className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                archiveFilter === "PAST"
+                  ? "bg-amber-600 text-white shadow-2xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Past / Missed ({pastMissedCount})
+            </button>
+          </div>
+        </div>
+
+        {/* Card Grid Container */}
+        {archiveList.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 space-y-1">
+            <History size={26} className="mx-auto text-slate-300" />
+            <p className="text-xs font-bold text-slate-700">No session records in this filter</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {archiveList.map((item, idx) => {
+              const isCompleted = item.status === "COMPLETED";
+              const candidateName = item.candidate_name || "Unknown Candidate";
+              const candidateEmail = item.candidate_email || "-";
+              const jobTitle = item.job_title || "-";
+              const interviewerName = item.interviewer_name || item.client_name || "-";
+              const roundLabel = getInterviewTypeLabel(item.interview_type);
+              const formattedDate = formatDateDisplay(item.scheduled_date);
+              const formattedTime = formatTime12h(item.scheduled_time);
+              const initialChar = candidateName.charAt(0).toUpperCase();
+
+              const rating = item.rating || item.client_rating;
+              const recommendation = item.recommendation || item.client_recommendation || item.ai_recommendation;
+
+              return (
+                <div
+                  key={item.id || idx}
+                  className={`border rounded-2xl p-3.5 transition-all flex flex-col justify-between space-y-3 ${
+                    isCompleted
+                      ? "bg-emerald-50/20 border-emerald-200/80 hover:border-emerald-300 hover:shadow-xs"
+                      : "bg-amber-50/20 border-amber-200/80 hover:border-amber-300 hover:shadow-xs"
+                  }`}
+                >
+                  {/* Card Header: Candidate & Status Pill */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-8 h-8 rounded-full text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
+                        isCompleted ? "bg-gradient-to-tr from-emerald-600 to-teal-600" : "bg-gradient-to-tr from-amber-500 to-orange-500"
+                      }`}>
+                        {initialChar}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-extrabold text-xs text-slate-900 truncate">
+                          {candidateName}
+                        </h3>
+                        <p className="text-[10px] text-slate-500 font-medium truncate">
+                          {jobTitle} {candidateEmail !== "-" ? `• ${candidateEmail}` : ""}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status Badge */}
+                    {isCompleted ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                        <CheckCircle2 size={11} /> Completed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
+                        <History size={11} /> Past Slot
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Body Info */}
+                  <div className="space-y-1.5 text-[11px] text-slate-700 bg-white/80 p-2.5 rounded-xl border border-slate-100">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-semibold text-[10px]">Round:</span>
+                      <span className="font-bold text-slate-900">{roundLabel}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-semibold text-[10px]">Scheduled:</span>
+                      <span className="font-bold text-slate-800">{formattedDate} ({formattedTime})</span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-semibold text-[10px]">Interviewer:</span>
+                      <span className="font-semibold text-slate-800">{interviewerName}</span>
+                    </div>
+
+                    {/* Evaluation Details if completed */}
+                    {isCompleted && (
+                      <div className="pt-1 mt-1 border-t border-slate-100 flex items-center justify-between">
+                        {rating ? (
+                          <div className="flex items-center gap-1 text-amber-500 font-extrabold text-[11px]">
+                            <Star size={12} className="fill-amber-400" />
+                            <span>{rating} / 5</span>
+                          </div>
+                        ) : <span className="text-[10px] text-slate-400">No Rating</span>}
+
+                        {recommendation && (
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                            recommendation === "Selected" || recommendation === "Hire" || recommendation === "Strong Hire"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : recommendation === "Hold"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-rose-100 text-rose-800"
+                          }`}>
+                            {recommendation}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Footer Button */}
+                  <div className="pt-1 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      ID: {item.id?.substring(0, 8)}...
+                    </span>
+                    <button
+                      onClick={() => handleOpenDetails(item)}
+                      className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/70 border border-indigo-200/80 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                    >
+                      <Eye size={13} />
+                      <span>View Details</span>
+                    </button>
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+        )}
 
       </div>
 
@@ -804,18 +934,17 @@ export default function InterviewDashboard() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Sarah Johnson"
+                    placeholder="Candidate Name"
                     value={scheduleForm.candidate_name}
                     onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Candidate Email *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Candidate Email</label>
                   <input
                     type="email"
-                    required
-                    placeholder="sarah@example.com"
+                    placeholder="Candidate Email"
                     value={scheduleForm.candidate_email}
                     onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_email: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-900 font-medium focus:outline-none focus:bg-white focus:border-indigo-500"
@@ -828,7 +957,7 @@ export default function InterviewDashboard() {
                   <label className="block text-slate-700 font-bold mb-1">Job Title</label>
                   <input
                     type="text"
-                    placeholder="e.g. Software Engineer"
+                    placeholder="e.g. Job Title"
                     value={scheduleForm.job_title}
                     onChange={(e) => setScheduleForm({ ...scheduleForm, job_title: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-indigo-500"
