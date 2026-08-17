@@ -484,3 +484,49 @@ class SendInterviewEmailRequest(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class InterviewerCheckItem(BaseModel):
+    """Interviewer item for schedule conflict check."""
+
+    interviewer_id: Optional[str] = None
+    interviewer_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ClientCheckItem(BaseModel):
+    """Client item for schedule conflict check."""
+
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewCheckConflictRequest(BaseModel):
+    """Payload for checking interviewer/client time slot conflicts."""
+
+    scheduled_date: str
+    scheduled_time: str
+    interviewer_id: Optional[str] = None
+    interviewer_name: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    interviewers: Optional[List[InterviewerCheckItem]] = Field(default_factory=list)
+    clients: Optional[List[ClientCheckItem]] = Field(default_factory=list)
+    exclude_interview_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewCheckConflictResponse(BaseModel):
+    """Response schema for interview schedule conflict check."""
+
+    has_conflict: bool
+    conflict_type: Optional[str] = None  # "interviewer" | "client" | "both"
+    conflict_message: Optional[str] = None
+    conflicting_interviews: List[Dict[str, Any]] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+

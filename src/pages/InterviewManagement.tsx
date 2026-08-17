@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
-  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, MAIL_TEMPLATES_URL,
+  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, MAIL_TEMPLATES_URL,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
@@ -110,13 +110,69 @@ export default function InterviewManagement() {
   >([]);
 
   // Floating Toast Notification State
-  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info" | "warning"; text: string } | null>(null);
+  const toastTimerRef = useRef<any>(null);
 
-  const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
+  const showToast = (text: string, type: "success" | "error" | "info" | "warning" = "success", durationMs: number = 4000) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToastMessage({ type, text });
-    setTimeout(() => {
+    toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
-    }, 4500);
+    }, durationMs);
+  };
+
+  // Real-time Schedule Conflict Check state
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+
+  const checkScheduleTimeConflict = async (params: {
+    scheduled_date: string;
+    scheduled_time: string;
+    interviewer_id?: string;
+    interviewer_name?: string;
+    client_id?: string;
+    client_name?: string;
+    interviewers?: InterviewerItem[];
+    clients?: ClientFeedbackItem[];
+    exclude_interview_id?: string;
+  }) => {
+    const { scheduled_date, scheduled_time, interviewer_id, interviewer_name, client_id, client_name, interviewers, clients, exclude_interview_id } = params;
+
+    const filteredInterviewers = interviewers ? interviewers.filter((i) => i.interviewer_name && i.interviewer_name.trim()) : [];
+    const filteredClients = clients ? clients.filter((c) => c.client_name && c.client_name.trim()) : [];
+
+    const hasInterviewer = interviewer_id || (interviewer_name && interviewer_name.trim()) || filteredInterviewers.length > 0;
+    const hasClient = client_id || (client_name && client_name.trim()) || filteredClients.length > 0;
+
+    if (!scheduled_date || !scheduled_time || (!hasInterviewer && !hasClient)) {
+      setConflictWarning(null);
+      return;
+    }
+
+    try {
+      const res = await checkInterviewConflict({
+        scheduled_date,
+        scheduled_time,
+        interviewer_id,
+        interviewer_name,
+        client_id,
+        client_name,
+        interviewers: filteredInterviewers.length > 0 ? filteredInterviewers : undefined,
+        clients: filteredClients.length > 0 ? filteredClients : undefined,
+        exclude_interview_id,
+      });
+
+      if (res.has_conflict && res.conflict_message) {
+        setConflictWarning(res.conflict_message);
+        showToast(res.conflict_message, "warning");
+      } else {
+        setConflictWarning(null);
+        showToast(`Time slot ${scheduled_time} on ${scheduled_date} is available`, "info");
+      }
+    } catch (err: any) {
+      console.error("Conflict check error:", err);
+    }
   };
 
   const handleAddInterviewerMailRecipient = () => {
@@ -271,6 +327,14 @@ export default function InterviewManagement() {
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
       }
+      setTimeout(() => {
+        checkScheduleTimeConflict({
+          scheduled_date: scheduleForm.scheduled_date,
+          scheduled_time: scheduleForm.scheduled_time,
+          interviewers: updated,
+          clients: scheduleClientsList,
+        });
+      }, 50);
       return updated;
     });
   };
@@ -290,6 +354,14 @@ export default function InterviewManagement() {
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
       }
+      setTimeout(() => {
+        checkScheduleTimeConflict({
+          scheduled_date: scheduleForm.scheduled_date,
+          scheduled_time: scheduleForm.scheduled_time,
+          interviewers: scheduleInterviewersList,
+          clients: updated,
+        });
+      }, 50);
       return updated;
     });
   };
@@ -319,6 +391,14 @@ export default function InterviewManagement() {
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
       }
+      setTimeout(() => {
+        checkScheduleTimeConflict({
+          scheduled_date: nextRoundForm.scheduled_date,
+          scheduled_time: nextRoundForm.scheduled_time,
+          interviewers: updated,
+          clients: nextRoundClientsList,
+        });
+      }, 50);
       return updated;
     });
   };
@@ -338,6 +418,14 @@ export default function InterviewManagement() {
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
       }
+      setTimeout(() => {
+        checkScheduleTimeConflict({
+          scheduled_date: nextRoundForm.scheduled_date,
+          scheduled_time: nextRoundForm.scheduled_time,
+          interviewers: nextRoundInterviewersList,
+          clients: updated,
+        });
+      }, 50);
       return updated;
     });
   };
@@ -3596,6 +3684,17 @@ export default function InterviewManagement() {
             {/* Scrollable Form Body (Flexible middle) */}
             <form id="reschedule-form" onSubmit={handleRescheduleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs scrollbar-thin">
               
+              {/* TIME SLOT CONFLICT WARNING BANNER */}
+              {conflictWarning && (
+                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
+                  <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-amber-950">Schedule Time Slot Warning</span>
+                    <p className="font-medium mt-0.5 text-amber-900">{conflictWarning}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Candidate & Session Banner Card (Full Width) */}
               <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-3.5 shadow-md border border-slate-800 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -3634,7 +3733,38 @@ export default function InterviewManagement() {
                       <input
                         type="date"
                         value={rescheduleForm.scheduled_date}
-                        onChange={(e) => setRescheduleForm({ ...rescheduleForm, scheduled_date: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setRescheduleForm((prev) => ({ ...prev, scheduled_date: val }));
+                          if (selectedInterview) {
+                            checkScheduleTimeConflict({
+                              scheduled_date: val,
+                              scheduled_time: rescheduleForm.scheduled_time,
+                              interviewer_id: selectedInterview.interviewer_id,
+                              interviewer_name: selectedInterview.interviewer_name,
+                              client_id: selectedInterview.client_id,
+                              client_name: selectedInterview.client_name,
+                              interviewers: selectedInterview.interviewers,
+                              clients: selectedInterview.clients,
+                              exclude_interview_id: selectedInterview.id,
+                            });
+                          }
+                        }}
+                        onBlur={() => {
+                          if (selectedInterview && rescheduleForm.scheduled_date && rescheduleForm.scheduled_time) {
+                            checkScheduleTimeConflict({
+                              scheduled_date: rescheduleForm.scheduled_date,
+                              scheduled_time: rescheduleForm.scheduled_time,
+                              interviewer_id: selectedInterview.interviewer_id,
+                              interviewer_name: selectedInterview.interviewer_name,
+                              client_id: selectedInterview.client_id,
+                              client_name: selectedInterview.client_name,
+                              interviewers: selectedInterview.interviewers,
+                              clients: selectedInterview.clients,
+                              exclude_interview_id: selectedInterview.id,
+                            });
+                          }
+                        }}
                         className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                         required
                       />
@@ -3645,7 +3775,38 @@ export default function InterviewManagement() {
                       <input
                         type="time"
                         value={rescheduleForm.scheduled_time}
-                        onChange={(e) => setRescheduleForm({ ...rescheduleForm, scheduled_time: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setRescheduleForm((prev) => ({ ...prev, scheduled_time: val }));
+                          if (selectedInterview) {
+                            checkScheduleTimeConflict({
+                              scheduled_date: rescheduleForm.scheduled_date,
+                              scheduled_time: val,
+                              interviewer_id: selectedInterview.interviewer_id,
+                              interviewer_name: selectedInterview.interviewer_name,
+                              client_id: selectedInterview.client_id,
+                              client_name: selectedInterview.client_name,
+                              interviewers: selectedInterview.interviewers,
+                              clients: selectedInterview.clients,
+                              exclude_interview_id: selectedInterview.id,
+                            });
+                          }
+                        }}
+                        onBlur={() => {
+                          if (selectedInterview && rescheduleForm.scheduled_date && rescheduleForm.scheduled_time) {
+                            checkScheduleTimeConflict({
+                              scheduled_date: rescheduleForm.scheduled_date,
+                              scheduled_time: rescheduleForm.scheduled_time,
+                              interviewer_id: selectedInterview.interviewer_id,
+                              interviewer_name: selectedInterview.interviewer_name,
+                              client_id: selectedInterview.client_id,
+                              client_name: selectedInterview.client_name,
+                              interviewers: selectedInterview.interviewers,
+                              clients: selectedInterview.clients,
+                              exclude_interview_id: selectedInterview.id,
+                            });
+                          }
+                        }}
                         className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                         required
                       />
@@ -5811,12 +5972,18 @@ export default function InterviewManagement() {
                 ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
                 : toastMessage.type === "error"
                 ? "bg-slate-900/95 text-rose-400 border-rose-500/40 shadow-rose-950/30"
+                : toastMessage.type === "warning"
+                ? "bg-amber-950/95 text-amber-300 border-amber-500/50 shadow-amber-950/40"
                 : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
             }`}
           >
             {toastMessage.type === "success" ? (
               <div className="p-1 bg-emerald-500/20 rounded-full text-emerald-400">
                 <CheckCircle2 size={16} />
+              </div>
+            ) : toastMessage.type === "warning" ? (
+              <div className="p-1 bg-amber-500/20 rounded-full text-amber-300">
+                <AlertCircle size={16} />
               </div>
             ) : (
               <div className="p-1 bg-rose-500/20 rounded-full text-rose-400">

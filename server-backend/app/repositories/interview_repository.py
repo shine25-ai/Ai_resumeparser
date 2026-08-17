@@ -380,3 +380,144 @@ class InterviewRepository(BaseRepository):
         )
         return doc
 
+    async def check_schedule_conflict(
+        self,
+        scheduled_date: str,
+        scheduled_time: str,
+        interviewer_id: Optional[str] = None,
+        interviewer_name: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_name: Optional[str] = None,
+        interviewers: Optional[List[Dict[str, Any]]] = None,
+        clients: Optional[List[Dict[str, Any]]] = None,
+        exclude_interview_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Check if any person (interviewer or client) already has an active interview scheduled at the given date & time.
+        Enforces cross-role checking: a person cannot be assigned to multiple interviews at the same time slot,
+        regardless of whether they are assigned as an Interviewer or a Client in either session.
+        """
+        def normalize_time_str(t: Optional[str]) -> str:
+            if not t:
+                return ""
+            t = t.strip().upper()
+            import re
+            match = re.match(r"^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$", t)
+            if match:
+                h, m, period = match.groups()
+                hour = int(h)
+                minute = int(m)
+                if period == "PM" and hour < 12:
+                    hour += 12
+                elif period == "AM" and hour == 12:
+                    hour = 0
+                return f"{hour:02d}:{minute:02d}"
+            return t
+
+        norm_target_time = normalize_time_str(scheduled_time)
+        if not scheduled_date or not norm_target_time:
+            return {"has_conflict": False, "conflict_type": None, "conflict_message": None, "conflicting_interviews": []}
+
+        # Collect all target person IDs and Names across ALL requested roles (Interviewer + Client)
+        target_person_ids: Dict[str, str] = {}
+        target_person_names: Dict[str, str] = {}
+
+        def add_target_person(pid: Optional[str], pname: Optional[str]):
+            if pid and str(pid).strip():
+                clean_id = str(pid).strip()
+                target_person_ids[clean_id] = pname or clean_id
+            if pname and str(pname).strip():
+                clean_name = str(pname).strip()
+                target_person_names[clean_name.lower()] = clean_name
+
+        add_target_person(interviewer_id, interviewer_name)
+        add_target_person(client_id, client_name)
+
+        if interviewers:
+            for item in interviewers:
+                if isinstance(item, dict):
+                    add_target_person(item.get("interviewer_id"), item.get("interviewer_name"))
+
+        if clients:
+            for item in clients:
+                if isinstance(item, dict):
+                    add_target_person(item.get("client_id"), item.get("client_name"))
+
+        if not target_person_ids and not target_person_names:
+            return {"has_conflict": False, "conflict_type": None, "conflict_message": None, "conflicting_interviews": []}
+
+        status_cancelled = InterviewStatus.CANCELLED.value if hasattr(InterviewStatus.CANCELLED, "value") else "CANCELLED"
+        query: Dict[str, Any] = {
+            "scheduled_date": scheduled_date,
+            "status": {"$nin": [status_cancelled, "CANCELLED"]},
+        }
+        if exclude_interview_id:
+            query["id"] = {"$ne": exclude_interview_id}
+
+        existing_docs = await self.find_many(query=query, limit=200)
+
+        conflicting_docs = []
+        conflicting_person_names = set()
+
+        for doc in existing_docs:
+            doc_norm_time = normalize_time_str(doc.get("scheduled_time", ""))
+            if doc_norm_time != norm_target_time:
+                continue
+
+            # Gather all person IDs and Names present in this existing document across ALL roles
+            doc_ids: Dict[str, str] = {}
+            doc_names: Dict[str, str] = {}
+
+            def add_doc_person(pid: Optional[str], pname: Optional[str]):
+                if pid and str(pid).strip():
+                    doc_ids[str(pid).strip()] = pname or str(pid).strip()
+                if pname and str(pname).strip():
+                    clean_name = str(pname).strip()
+                    doc_names[clean_name.lower()] = clean_name
+
+            add_doc_person(doc.get("interviewer_id"), doc.get("interviewer_name"))
+            add_doc_person(doc.get("client_id"), doc.get("client_name"))
+
+            for item in (doc.get("interviewers") or []):
+                if isinstance(item, dict):
+                    add_doc_person(item.get("interviewer_id"), item.get("interviewer_name"))
+
+            for item in (doc.get("clients") or []):
+                if isinstance(item, dict):
+                    add_doc_person(item.get("client_id"), item.get("client_name"))
+
+            # Cross-role conflict check: compare target person IDs & Names with doc person IDs & Names
+            matched_name = None
+
+            for tid in target_person_ids:
+                if tid in doc_ids:
+                    matched_name = target_person_ids[tid] or doc_ids[tid]
+                    break
+
+            if not matched_name:
+                for tname_lower in target_person_names:
+                    if tname_lower in doc_names:
+                        matched_name = target_person_names[tname_lower]
+                        break
+
+            if matched_name:
+                conflicting_docs.append(doc)
+                conflicting_person_names.add(matched_name)
+
+        if conflicting_docs:
+            names_str = ", ".join(f"'{n}'" for n in sorted(conflicting_person_names))
+            cand_info = conflicting_docs[0].get("candidate_name", "another candidate")
+
+            msg = f"Warning: {names_str} is already scheduled for an interview at {scheduled_time} on {scheduled_date} (Candidate: {cand_info}). A person cannot be assigned to multiple interviews at the same date & time slot."
+
+            return {
+                "has_conflict": True,
+                "conflict_type": "cross_role",
+                "conflict_message": msg,
+                "conflicting_interviews": conflicting_docs,
+            }
+
+        return {"has_conflict": False, "conflict_type": None, "conflict_message": None, "conflicting_interviews": []}
+
+
+

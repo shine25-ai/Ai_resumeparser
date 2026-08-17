@@ -364,3 +364,23 @@ export interface SendInterviewEmailPayload {
   template_id?: string;
   custom_notes?: string;
 }
+
+export interface CheckConflictPayload {
+  scheduled_date: string;
+  scheduled_time: string;
+  interviewer_id?: string;
+  interviewer_name?: string;
+  client_id?: string;
+  client_name?: string;
+  interviewers?: InterviewerItem[];
+  clients?: ClientFeedbackItem[];
+  exclude_interview_id?: string;
+}
+
+export interface CheckConflictResponse {
+  has_conflict: boolean;
+  conflict_type?: "interviewer" | "client" | "both";
+  conflict_message?: string;
+  conflicting_interviews?: InterviewItem[];
+}
+

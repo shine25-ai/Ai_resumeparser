@@ -13,6 +13,7 @@ from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
+    InterviewCheckConflictRequest,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
     InterviewRescheduleRequest,
@@ -30,6 +31,49 @@ def get_interview_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -
     interview_repo = InterviewRepository(db)
     interview_service = InterviewService(interview_repo)
     return InterviewController(interview_service)
+
+
+@router.post(
+    "/check-conflict",
+    status_code=status.HTTP_200_OK,
+    summary="Check interviewer/client time slot schedule conflict",
+    description="Check if any interviewer or client already has an active interview scheduled at the given date and time.",
+)
+async def check_interview_conflict(
+    payload: InterviewCheckConflictRequest,
+    current_user: dict = Depends(get_current_active_user_optional),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.check_interview_conflict(payload)
+
+
+@router.get(
+    "/check-conflict",
+    status_code=status.HTTP_200_OK,
+    summary="Check interviewer/client time slot schedule conflict via query parameters",
+    description="Query parameter based endpoint to check if interviewer or client has a time conflict.",
+)
+async def check_interview_conflict_get(
+    scheduled_date: str = Query(..., description="Scheduled date (YYYY-MM-DD)"),
+    scheduled_time: str = Query(..., description="Scheduled time (e.g. 10:00)"),
+    interviewer_id: Optional[str] = Query(None),
+    interviewer_name: Optional[str] = Query(None),
+    client_id: Optional[str] = Query(None),
+    client_name: Optional[str] = Query(None),
+    exclude_interview_id: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_active_user_optional),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    payload = InterviewCheckConflictRequest(
+        scheduled_date=scheduled_date,
+        scheduled_time=scheduled_time,
+        interviewer_id=interviewer_id,
+        interviewer_name=interviewer_name,
+        client_id=client_id,
+        client_name=client_name,
+        exclude_interview_id=exclude_interview_id,
+    )
+    return await controller.check_interview_conflict(payload)
 
 
 @router.post(

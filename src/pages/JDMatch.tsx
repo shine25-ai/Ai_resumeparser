@@ -4,7 +4,7 @@ import {
   Briefcase, Clock, MapPin, ShieldCheck, Layers, AlignLeft, Sparkles, Video, Hash,
   Upload, Building2, AlertCircle, UserX, Plus, Trash2, Loader2, Eye
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
+import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -154,6 +154,9 @@ export default function JDMatch() {
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
       }
+      setTimeout(() => {
+        checkScheduleTimeConflict({ interviewers: updated });
+      }, 50);
       return updated;
     });
   };
@@ -173,8 +176,82 @@ export default function JDMatch() {
       if (updated[index]) {
         updated[index] = { ...updated[index], [field]: val };
       }
+      setTimeout(() => {
+        checkScheduleTimeConflict({ clients: updated });
+      }, 50);
       return updated;
     });
+  };
+
+  // Toast Notification State
+  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info" | "warning"; text: string } | null>(null);
+  const toastTimerRef = useRef<any>(null);
+
+  const showToast = (text: string, type: "success" | "error" | "info" | "warning" = "success", durationMs: number = 4000) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage({ type, text });
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, durationMs);
+  };
+
+  // Real-time Schedule Conflict Check state
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+
+  const checkScheduleTimeConflict = async (params?: {
+    scheduled_date?: string;
+    scheduled_time?: string;
+    interviewer_id?: string;
+    interviewer_name?: string;
+    client_id?: string;
+    client_name?: string;
+    interviewers?: InterviewerItem[];
+    clients?: ClientFeedbackItem[];
+  }) => {
+    const sDate = params?.scheduled_date ?? interviewForm.scheduled_date;
+    const sTime = params?.scheduled_time ?? interviewForm.scheduled_time;
+    const intId = params?.interviewer_id ?? interviewForm.interviewer_id;
+    const intName = params?.interviewer_name ?? interviewForm.interviewer_name;
+    const cliId = params?.client_id ?? interviewForm.client_id;
+    const cliName = params?.client_name ?? interviewForm.client_name;
+    const intList = params?.interviewers ?? interviewersList;
+    const cliList = params?.clients ?? clientsList;
+
+    const filteredInterviewers = intList ? intList.filter((i) => i.interviewer_name && i.interviewer_name.trim()) : [];
+    const filteredClients = cliList ? cliList.filter((c) => c.client_name && c.client_name.trim()) : [];
+
+    const hasInterviewer = intId || (intName && intName.trim()) || filteredInterviewers.length > 0;
+    const hasClient = cliId || (cliName && cliName.trim()) || filteredClients.length > 0;
+
+    if (!sDate || !sTime || (!hasInterviewer && !hasClient)) {
+      setConflictWarning(null);
+      return;
+    }
+
+    try {
+      const res = await checkInterviewConflict({
+        scheduled_date: sDate,
+        scheduled_time: sTime,
+        interviewer_id: intId,
+        interviewer_name: intName,
+        client_id: cliId,
+        client_name: cliName,
+        interviewers: filteredInterviewers.length > 0 ? filteredInterviewers : undefined,
+        clients: filteredClients.length > 0 ? filteredClients : undefined,
+      });
+
+      if (res.has_conflict && res.conflict_message) {
+        setConflictWarning(res.conflict_message);
+        showToast(res.conflict_message, "warning");
+      } else {
+        setConflictWarning(null);
+        showToast(`Time slot ${sTime} on ${sDate} is available`, "info");
+      }
+    } catch (err: any) {
+      console.error("Conflict check error:", err);
+    }
   };
 
   const [isUploadingFile, setIsUploadingFile] = useState(false);
@@ -1016,6 +1093,17 @@ export default function JDMatch() {
                   </div>
                 </div>
 
+                {/* TIME SLOT CONFLICT WARNING BANNER */}
+                {conflictWarning && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
+                    <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block text-amber-950">Schedule Time Slot Warning</span>
+                      <p className="font-medium mt-0.5 text-amber-900">{conflictWarning}</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* SECTION 2: SCHEDULE & MEETING LINK */}
                 <div className="bg-slate-50 border border-sky-200 rounded-2xl p-4 space-y-3 shadow-xs">
                   <div className="flex items-center gap-2 text-sky-700 font-bold text-xs border-b border-sky-100 pb-2">
@@ -1031,7 +1119,12 @@ export default function JDMatch() {
                       <input
                         type="date"
                         value={interviewForm.scheduled_date}
-                        onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_date: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setInterviewForm((prev) => ({ ...prev, scheduled_date: val }));
+                          checkScheduleTimeConflict({ scheduled_date: val });
+                        }}
+                        onBlur={() => checkScheduleTimeConflict()}
                         className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                         required
                       />
@@ -1044,7 +1137,12 @@ export default function JDMatch() {
                       <input
                         type="time"
                         value={interviewForm.scheduled_time}
-                        onChange={(e) => setInterviewForm({ ...interviewForm, scheduled_time: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setInterviewForm((prev) => ({ ...prev, scheduled_time: val }));
+                          checkScheduleTimeConflict({ scheduled_time: val });
+                        }}
+                        onBlur={() => checkScheduleTimeConflict()}
                         className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
                         required
                       />
@@ -1468,8 +1566,47 @@ export default function JDMatch() {
           </div>
         </div>
       )}
+
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
+          <div
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold tracking-wide backdrop-blur-md ${
+              toastMessage.type === "success"
+                ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
+                : toastMessage.type === "error"
+                ? "bg-slate-900/95 text-rose-400 border-rose-500/40 shadow-rose-950/30"
+                : toastMessage.type === "warning"
+                ? "bg-amber-950/95 text-amber-300 border-amber-500/50 shadow-amber-950/40"
+                : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
+            }`}
+          >
+            {toastMessage.type === "success" ? (
+              <div className="p-1 bg-emerald-500/20 rounded-full text-emerald-400">
+                <CheckCircle size={16} />
+              </div>
+            ) : toastMessage.type === "warning" ? (
+              <div className="p-1 bg-amber-500/20 rounded-full text-amber-300">
+                <AlertCircle size={16} />
+              </div>
+            ) : (
+              <div className="p-1 bg-rose-500/20 rounded-full text-rose-400">
+                <AlertCircle size={16} />
+              </div>
+            )}
+            <span className="text-white font-semibold">{toastMessage.text}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="ml-2 text-slate-400 hover:text-white transition-colors cursor-pointer p-0.5"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 

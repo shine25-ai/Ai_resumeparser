@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
+    InterviewCheckConflictRequest,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
     InterviewRescheduleRequest,
@@ -25,6 +26,14 @@ class InterviewController:
 
     def __init__(self, interview_service: InterviewService):
         self.interview_service = interview_service
+
+    async def check_interview_conflict(self, payload: InterviewCheckConflictRequest) -> JSONResponse:
+        """Check if any interviewer or client has a time conflict."""
+        res = await self.interview_service.check_interview_conflict(payload)
+        return success_response(
+            data=res.model_dump(),
+            message="Schedule conflict check completed.",
+        )
 
     async def upload_interview_document(self, file: UploadFile) -> JSONResponse:
         """Upload interview document file to AWS S3."""
