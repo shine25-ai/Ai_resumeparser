@@ -10,3 +10,9 @@ class EmailConfigModel(BaseModel):
     sender_email: EmailStr
     use_tls: bool = True
     use_ssl: bool = False
+
+class AIConfigModel(BaseModel):
+    provider: str
+    api_key: Optional[str] = None # Will store encrypted API key
+    base_url: Optional[str] = None
+    model_name: str

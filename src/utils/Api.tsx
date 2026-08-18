@@ -19,6 +19,8 @@ export const USERS_URL = `${BASE_URL}/users`;
 export const ROLES_URL = `${BASE_URL}/roles`;
 export const SETTINGS_EMAIL = `${BASE_URL}/settings/email`;
 export const SETTINGS_EMAIL_TEST = `${BASE_URL}/settings/email/test`;
+export const SETTINGS_AI = `${BASE_URL}/settings/ai`;
+export const SETTINGS_AI_USAGE = `${BASE_URL}/settings/ai/usage`;
 export const MAIL_TEMPLATES_URL = `${BASE_URL}/templates`;
 export const DASHBOARD_METRICS = `${BASE_URL}/dashboard/metrics`;
 

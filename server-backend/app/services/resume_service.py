@@ -146,11 +146,32 @@ class ResumeService:
         try:
             import httpx
             import asyncio
+            import json
+            from app.repositories.settings_repository import SettingsRepository
+            from app.utils.encryption import decrypt_password
+            
+            # Fetch AI config from DB
+            settings_repo = SettingsRepository()
+            ai_config = await settings_repo.get_ai_config()
+            
+            config_payload = {}
+            if ai_config:
+                decrypted_key = decrypt_password(ai_config.api_key) if ai_config.api_key else ""
+                config_payload = {
+                    "provider": ai_config.provider,
+                    "model_name": ai_config.model_name,
+                    "api_key": decrypted_key,
+                    "base_url": ai_config.base_url
+                }
+            else:
+                logger.warning("No AI Configuration found in DB, relying on ai-parser defaults")
+                
             with open(file_path, "rb") as f:
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     response = await client.post(
                         settings.AI_PARSER_URL,
-                        files={"file": (original_filename, f, content_type)}
+                        files={"file": (original_filename, f, content_type)},
+                        data={"ai_config": json.dumps(config_payload)}
                     )
                     response.raise_for_status()
                     ai_result = response.json()

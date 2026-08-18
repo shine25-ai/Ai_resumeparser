@@ -3,9 +3,10 @@ import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, A
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
+import AIConfiguration from '../components/AIConfiguration';
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config'>('config');
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -133,6 +134,17 @@ export default function Settings() {
         >
           <Shield className="w-4 h-4" />
           Roles & Access Control
+        </button>
+        <button
+          onClick={() => setActiveTab('ai_config')}
+          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+            activeTab === 'ai_config'
+              ? 'bg-white text-purple-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Server className="w-4 h-4" />
+          AI Configuration
         </button>
       </div>
 
@@ -302,8 +314,10 @@ export default function Settings() {
         </>
       ) : activeTab === 'templates' ? (
         <MailTemplates />
-      ) : (
+      ) : activeTab === 'roles' ? (
         <RoleManagement />
+      ) : (
+        <AIConfiguration />
       )}
     </div>
   );

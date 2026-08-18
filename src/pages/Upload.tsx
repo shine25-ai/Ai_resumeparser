@@ -150,7 +150,7 @@ export default function Upload() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token');
       const headers: Record<string, string> = {};
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -297,7 +297,7 @@ export default function Upload() {
       const formData = new FormData();
       formData.append('file', otherDocFile);
 
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token');
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
