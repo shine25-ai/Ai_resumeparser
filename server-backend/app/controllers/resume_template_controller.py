@@ -38,7 +38,7 @@ class ResumeTemplateController:
         return await self.repository.create(template)
 
     async def upload_docx_template(self, name: str, description: Optional[str], file: UploadFile, user_id: str) -> ResumeTemplateDocument:
-        if not file.filename.endswith(".docx"):
+        if not file.filename or not file.filename.endswith(".docx"):
             raise HTTPException(status_code=400, detail="Only .docx files are allowed")
             
         template_id = str(uuid.uuid4())
@@ -97,7 +97,7 @@ class ResumeTemplateController:
         if template.type == "html" and format == "docx":
             raise HTTPException(status_code=400, detail="Cannot export HTML template as DOCX.")
 
-        exported_files = []
+        exported_files: List[Tuple[str, bytes]] = []
         
         for cid in candidate_ids:
             resume_doc = await self.resume_repository.get_by_id(cid)
@@ -119,7 +119,8 @@ class ResumeTemplateController:
                 
                 if format == "pdf":
                     pdf_bytes = weasyprint.HTML(string=rendered_html).write_pdf()
-                    exported_files.append((f"{safe_name}.pdf", pdf_bytes))
+                    if pdf_bytes:
+                        exported_files.append((f"{safe_name}.pdf", pdf_bytes))
                     
             elif template.type == "docx":
                 if not template.file_path or not os.path.exists(template.file_path):
