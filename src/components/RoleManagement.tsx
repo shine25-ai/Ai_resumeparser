@@ -154,9 +154,27 @@ export default function RoleManagement() {
     }
   };
 
+  const isAdministratorRole = (role: RoleItem) => {
+    if (role.is_system) return true;
+    const slug = (role.slug || "").toLowerCase();
+    const name = (role.name || "").toLowerCase();
+    return ["admin", "administrator", "superadmin"].includes(slug) || ["admin", "administrator"].includes(name);
+  };
+
+  const isAdministratorUser = (user: UserProfile) => {
+    const role = (user.role || "").toLowerCase();
+    const email = (user.email || "").toLowerCase();
+    const name = (user.full_name || "").toLowerCase();
+    return (
+      ["admin", "administrator", "superadmin"].includes(role) ||
+      email.includes("admin@") ||
+      ["admin", "administrator"].includes(name)
+    );
+  };
+
   const handleDeleteRole = async (role: RoleItem) => {
-    if (role.is_system) {
-      setMessage({ type: "error", text: "Default system roles cannot be deleted." });
+    if (isAdministratorRole(role)) {
+      setMessage({ type: "error", text: "Administrator role cannot be deleted." });
       return;
     }
 
@@ -164,7 +182,7 @@ export default function RoleManagement() {
 
     try {
       await deleteRole(role.id);
-      setMessage({ type: "success", text: `Role "${role.name}" deleted.` });
+      setMessage({ type: "success", text: `Role "${role.name}" deleted successfully.` });
       await fetchData();
     } catch (err: any) {
       setMessage({ type: "error", text: err.message || "Failed to delete role" });
@@ -238,6 +256,11 @@ export default function RoleManagement() {
   };
 
   const handleDeleteUser = async (user: UserProfile) => {
+    if (isAdministratorUser(user)) {
+      setMessage({ type: "error", text: "Administrator account cannot be deleted." });
+      return;
+    }
+
     if (!window.confirm(`Are you sure you want to delete user account "${user.full_name}" (${user.email})?`)) return;
 
     try {
@@ -402,7 +425,7 @@ export default function RoleManagement() {
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        {!role.is_system && (
+                        {!isAdministratorRole(role) && (
                           <button
                             onClick={() => handleDeleteRole(role)}
                             className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
@@ -489,13 +512,15 @@ export default function RoleManagement() {
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteUser(u)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          title="Delete user account"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!isAdministratorUser(u) && (
+                          <button
+                            onClick={() => handleDeleteUser(u)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete user account"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

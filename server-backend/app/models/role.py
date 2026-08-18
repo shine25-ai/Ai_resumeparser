@@ -16,6 +16,7 @@ class RoleDocument(BaseModel):
     description: Optional[str] = ""
     permissions: List[str] = Field(default_factory=list)
     is_system: bool = False
+    is_deleted: bool = False
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 

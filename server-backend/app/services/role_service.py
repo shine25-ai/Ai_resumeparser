@@ -50,14 +50,14 @@ class RoleService:
         return RoleResponse.model_validate(role)
 
     async def list_roles(self, skip: int = 0, limit: int = 100) -> List[RoleResponse]:
-        """Fetch list of all system and custom roles."""
-        roles = await self.role_repo.find_many(skip=skip, limit=limit, sort_by="created_at", descending=False)
+        """Fetch list of all active system and custom roles (excluding soft-deleted)."""
+        roles = await self.role_repo.find_active_roles(skip=skip, limit=limit)
         return [RoleResponse.model_validate(r) for r in roles]
 
     async def update_role(self, role_id: str, payload: RoleUpdate) -> RoleResponse:
         """Update fields for specified role."""
         role = await self.role_repo.get_by_id(role_id)
-        if not role:
+        if not role or role.get("is_deleted", False):
             raise NotFoundError("Role not found.")
 
         update_dict = payload.model_dump(exclude_unset=True)
@@ -72,12 +72,14 @@ class RoleService:
         return RoleResponse.model_validate(updated_role)
 
     async def delete_role(self, role_id: str) -> bool:
-        """Delete role by ID. System roles cannot be deleted."""
+        """Soft delete role by ID. Administrator and system roles cannot be deleted."""
         role = await self.role_repo.get_by_id(role_id)
-        if not role:
+        if not role or role.get("is_deleted", False):
             raise NotFoundError("Role not found.")
 
-        if role.get("is_system", False):
-            raise BadRequestError("Default system roles cannot be deleted.")
+        slug_lower = str(role.get("slug", "")).lower()
+        name_lower = str(role.get("name", "")).lower()
+        if role.get("is_system", False) or slug_lower in ["admin", "administrator", "superadmin"] or name_lower in ["administrator", "admin"]:
+            raise BadRequestError("Administrator role cannot be deleted.")
 
-        return await self.role_repo.delete(role_id)
+        return await self.role_repo.soft_delete(role_id)

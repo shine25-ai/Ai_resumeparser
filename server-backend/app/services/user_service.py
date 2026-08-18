@@ -101,8 +101,8 @@ class UserService:
         return UserResponse.model_validate(enriched)
 
     async def list_all_users(self, skip: int = 0, limit: int = 100) -> List[UserResponse]:
-        """Fetch paginated list of all registered users."""
-        users = await self.user_repo.find_many(skip=skip, limit=limit, sort_by="created_at", descending=True)
+        """Fetch paginated list of all active registered users (excluding soft-deleted)."""
+        users = await self.user_repo.find_active_users(skip=skip, limit=limit)
         result = []
         for u in users:
             enriched = await self._attach_role_permissions(u)
@@ -110,8 +110,16 @@ class UserService:
         return result
 
     async def delete_user(self, user_id: str) -> bool:
-        """Delete user by ID."""
+        """Soft delete user account by ID. Administrator account cannot be deleted."""
+        from app.core.exceptions import BadRequestError
         user = await self.user_repo.get_by_id(user_id)
-        if not user:
+        if not user or user.get("is_deleted", False):
             raise NotFoundError("User profile not found.")
-        return await self.user_repo.delete(user_id)
+
+        role_lower = str(user.get("role", "")).lower()
+        email_lower = str(user.get("email", "")).lower()
+        name_lower = str(user.get("full_name", "")).lower()
+        if role_lower in ["admin", "administrator", "superadmin"] or email_lower in ["admin@gmail.com", "admin@company.com", "administrator@gmail.com"] or "administrator" in name_lower or name_lower == "admin":
+            raise BadRequestError("Administrator account cannot be deleted.")
+
+        return await self.user_repo.soft_delete(user_id)

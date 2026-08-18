@@ -40,3 +40,14 @@ class RoleRepository(BaseRepository):
 
         return await self.find_one({"$or": or_conds})
 
+    async def find_active_roles(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch active role documents excluding soft-deleted roles."""
+        query = {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]}
+        return await self.find_many(query=query, skip=skip, limit=limit, sort_by="created_at", descending=False)
+
+    async def soft_delete(self, role_id: str) -> bool:
+        """Soft delete role document by updating is_deleted flag."""
+        from app.utils.helpers import utc_now
+        result = await self.update(role_id, {"is_deleted": True, "updated_at": utc_now().isoformat()})
+        return result is not None
+

@@ -17,6 +17,7 @@ class UserDocument(BaseModel):
     password: str
     role: str = "user"
     is_active: bool = True
+    is_deleted: bool = False
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
