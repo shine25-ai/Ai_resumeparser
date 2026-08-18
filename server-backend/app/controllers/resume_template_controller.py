@@ -12,8 +12,16 @@ from app.repositories.resume_template_repository import ResumeTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.core.database import db_manager
 from jinja2 import Template
-from docxtpl import DocxTemplate
-import weasyprint
+try:
+    from docxtpl import DocxTemplate
+except Exception as err:
+    DocxTemplate = None
+    logger.warning(f"DocxTemplate import failed (DOCX export will be disabled): {err}")
+try:
+    import weasyprint
+except Exception as err:
+    weasyprint = None
+    logger.warning(f"WeasyPrint import failed (PDF export will be disabled): {err}")
 from app.utils.helpers import utc_now
 
 import uuid
@@ -118,11 +126,15 @@ class ResumeTemplateController:
                 rendered_html = jinja_template.render(candidate=candidate_data, resume=resume_doc)
                 
                 if format == "pdf":
+                    if not weasyprint:
+                        raise HTTPException(status_code=500, detail="PDF export is unavailable because WeasyPrint native libraries (GTK/gobject) are not installed on this server.")
                     pdf_bytes = weasyprint.HTML(string=rendered_html).write_pdf()
                     if pdf_bytes:
                         exported_files.append((f"{safe_name}.pdf", pdf_bytes))
                     
             elif template.type == "docx":
+                if not DocxTemplate:
+                    raise HTTPException(status_code=500, detail="DOCX template rendering is unavailable because docxtpl is not installed.")
                 if not template.file_path or not os.path.exists(template.file_path):
                     raise HTTPException(status_code=500, detail="DOCX template file missing")
                     

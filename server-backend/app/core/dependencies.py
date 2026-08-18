@@ -30,25 +30,32 @@ async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict
     import re
     slug_underscore = role_slug.replace("-", "_")
     slug_hyphen = role_slug.replace("_", "-")
-    role_query = {
-        "$or": [
-            {"slug": role_slug},
-            {"slug": slug_underscore},
-            {"slug": slug_hyphen},
-            {"id": role_identifier},
-            {"name": {"$regex": f"^{re.escape(str(role_identifier).strip())}$", "$options": "i"}},
-        ]
-    }
-    role_doc = await db[ROLES_COLLECTION].find_one(role_query)
+    role_query_or = [
+        {"slug": role_slug},
+        {"slug": slug_underscore},
+        {"slug": slug_hyphen},
+        {"id": role_identifier},
+        {"name": {"$regex": f"^{re.escape(str(role_identifier).strip())}$", "$options": "i"}},
+    ]
+
+    if len(str(role_identifier).strip()) == 24:
+        try:
+            from bson import ObjectId
+            role_query_or.append({"_id": ObjectId(str(role_identifier).strip())})
+        except Exception:
+            pass
+
+    role_doc = await db[ROLES_COLLECTION].find_one({"$or": role_query_or})
 
     if role_doc and "permissions" in role_doc:
         user["permissions"] = role_doc.get("permissions", [])
-    elif user.get("permissions") is not None:
+    elif user.get("permissions") is not None and isinstance(user.get("permissions"), list):
         user["permissions"] = user.get("permissions", [])
     else:
         user["permissions"] = []
 
     return user
+
 
 
 
@@ -142,6 +149,34 @@ def has_permission(user: dict, required_perm: str) -> bool:
     if user.get("is_active", True) and role not in ["restricted", "guest"]:
         return True
     return False
+
+
+def is_admin_or_staff_user(user: dict) -> bool:
+    """
+    Check if the user has staff/platform privileges (Admin, HR Manager, Interviewer, Recruiter,
+    custom role, or permissions access) to query shared candidate repository across the system.
+    """
+    if not user:
+        return False
+    role = user.get("role")
+    if isinstance(role, str):
+        role = role.lower()
+    else:
+        role = str(role or "").lower()
+
+    if role in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter", "hr"]:
+        return True
+
+    permissions = user.get("permissions", [])
+    if any(p in permissions for p in ["database", "evaluation", "jd-match", "upload", "interviews", "dashboard", "analytics"]):
+        return True
+
+    # Any active registered user in the platform can view shared candidate repository unless explicitly restricted or guest
+    if user.get("is_active", True) and role not in ["restricted", "guest"]:
+        return True
+
+    return False
+
 
 
 def require_role(allowed_roles: List[str]) -> Callable:

@@ -2,7 +2,7 @@
 Role repository for MongoDB database queries regarding Role entities.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.repositories.base_repository import BaseRepository
 from app.utils.constants import ROLES_COLLECTION
@@ -22,16 +22,21 @@ class RoleRepository(BaseRepository):
         slug_underscore = clean_slug.replace("-", "_")
         slug_hyphen = clean_slug.replace("_", "-")
 
-        # Try matching by slug variants, ID, or name
+        # Try matching by slug variants, ID, ObjectId, or name
         import re
-        query = {
-            "$or": [
-                {"slug": clean_slug},
-                {"slug": slug_underscore},
-                {"slug": slug_hyphen},
-                {"id": slug},
-                {"name": {"$regex": f"^{re.escape(slug.strip())}$", "$options": "i"}},
-            ]
-        }
-        return await self.find_one(query)
+        or_conds: List[Dict[str, Any]] = [
+            {"slug": clean_slug},
+            {"slug": slug_underscore},
+            {"slug": slug_hyphen},
+            {"id": slug.strip()},
+            {"name": {"$regex": f"^{re.escape(slug.strip())}$", "$options": "i"}},
+        ]
+        if len(slug.strip()) == 24:
+            try:
+                from bson import ObjectId
+                or_conds.append({"_id": ObjectId(slug.strip())})
+            except Exception:
+                pass
+
+        return await self.find_one({"$or": or_conds})
 

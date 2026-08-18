@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status, Backgro
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.resume_controller import ResumeController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, get_current_active_user_optional
+from app.core.dependencies import get_current_active_user, get_current_active_user_optional, is_admin_or_staff_user
 from app.repositories.resume_repository import ResumeRepository
 from app.schemas.resume import ResumeUpdateRequest
 from app.services.resume_service import ResumeService
@@ -22,24 +22,7 @@ def is_admin_or_staff(user: dict) -> bool:
     Check if the user has staff privileges (Admin, HR Manager, Interviewer, Recruiter,
     or permission access) to query candidate resumes across the repository.
     """
-    if not user:
-        return False
-    role = user.get("role")
-    if isinstance(role, str):
-        role = role.lower()
-
-    if role in ["admin", "superadmin", "hr_manager", "interviewer", "recruiter", "hr"]:
-        return True
-
-    permissions = user.get("permissions", [])
-    if any(p in permissions for p in ["database", "evaluation", "jd-match", "upload", "interviews", "dashboard", "analytics"]):
-        return True
-
-    # Any active registered user in the platform can view shared candidate repository unless guest
-    if user.get("is_active", True) and role not in ["restricted", "guest"]:
-        return True
-
-    return False
+    return is_admin_or_staff_user(user)
 
 
 def get_resume_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -> ResumeController:

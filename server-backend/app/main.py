@@ -60,8 +60,10 @@ def create_application() -> FastAPI:
     # Register Exception Handlers
     register_exception_handlers(app)
 
-    # Mount Static directory
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    # Mount Static directory safely
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    os.makedirs(static_dir, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # Include Routers
     app.include_router(health.router)

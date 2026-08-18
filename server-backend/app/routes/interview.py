@@ -202,9 +202,9 @@ async def list_interviews(
 ):
     if current_user and isinstance(current_user, dict):
         user_role = str(current_user.get("role", "")).lower()
-        if "client" in user_role and not client_id and not interviewer_id:
+        if user_role in ["client", "client_guest"] and not client_id and not interviewer_id:
             client_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
-        elif "interviewer" in user_role and not interviewer_id and not client_id:
+        elif user_role in ["external_interviewer", "candidate_interviewer"] and not interviewer_id and not client_id:
             interviewer_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
 
     return await controller.list_interviews(
