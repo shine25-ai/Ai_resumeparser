@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
-  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, MAIL_TEMPLATES_URL,
-  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile
+  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, MAIL_TEMPLATES_URL,
+  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile, type InterviewTypeItem
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
@@ -48,6 +48,7 @@ export default function InterviewManagement() {
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [candidatesList, setCandidatesList] = useState<any[]>([]);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
+  const [interviewTypes, setInterviewTypes] = useState<InterviewTypeItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -289,6 +290,7 @@ export default function InterviewManagement() {
     job_location: "",
     job_type: "Full Time",
     interview_type: "TECHNICAL" as InterviewTypeEnum,
+    interview_type_id: "",
     round_number: 2,
     scheduled_date: new Date().toISOString().split("T")[0],
     scheduled_time: "10:00",
@@ -329,6 +331,7 @@ export default function InterviewManagement() {
     job_location: "",
     job_type: "Full Time",
     interview_type: "TECHNICAL" as InterviewTypeEnum,
+    interview_type_id: "",
     round_number: 1,
     scheduled_date: new Date().toISOString().split("T")[0],
     scheduled_time: "10:00",
@@ -491,6 +494,7 @@ export default function InterviewManagement() {
     job_location: "",
     job_type: "Full Time",
     interview_type: "TECHNICAL" as InterviewTypeEnum,
+    interview_type_id: "",
     round_number: 1,
     scheduled_date: "",
     scheduled_time: "",
@@ -854,11 +858,14 @@ export default function InterviewManagement() {
         filterParams.interviewer_id = currentUser.id || currentUser.email || currentUser.full_name;
       }
 
-      const [interviewData, resumesData, usersData] = await Promise.all([
+      const [interviewData, resumesData, usersData, typesData] = await Promise.all([
         getInterviews(filterParams),
         getResumes().catch(() => []),
         getUsers().catch(() => []),
+        getInterviewTypes().catch(() => []),
       ]);
+
+      setInterviewTypes(Array.isArray(typesData) ? typesData : []);
 
       let items: InterviewItem[] = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || interviewData?.data?.interviews || [];
       if (isClientUser || isInterviewerUser) {
@@ -1033,6 +1040,7 @@ export default function InterviewManagement() {
         job_location: scheduleForm.job_location || undefined,
         job_type: scheduleForm.job_type || undefined,
         interview_type: scheduleForm.interview_type,
+        interview_type_id: scheduleForm.interview_type_id || undefined,
         round_number: Number(scheduleForm.round_number),
         scheduled_date: scheduleForm.scheduled_date,
         scheduled_time: scheduleForm.scheduled_time,
@@ -1138,6 +1146,7 @@ export default function InterviewManagement() {
         job_location: editForm.job_location || undefined,
         job_type: editForm.job_type || undefined,
         interview_type: editForm.interview_type,
+        interview_type_id: editForm.interview_type_id || undefined,
         round_number: Number(editForm.round_number),
         scheduled_date: editForm.scheduled_date,
         scheduled_time: editForm.scheduled_time,
@@ -1687,6 +1696,8 @@ export default function InterviewManagement() {
         : [{ client_id: item.client_id, client_name: item.client_name || "", client_email: item.client_email || "" }];
     setNextRoundClientsList(initClients);
 
+    const matchedDefaultType = interviewTypes.find((t) => t.code === defaultType || t.id === defaultType || t.name === defaultType);
+
     setNextRoundForm({
       candidate_id: item.candidate_id || "",
       candidate_name: item.candidate_name || "",
@@ -1697,6 +1708,7 @@ export default function InterviewManagement() {
       job_location: item.job_location || "",
       job_type: item.job_type || "Full Time",
       interview_type: defaultType,
+      interview_type_id: matchedDefaultType?.id || item.interview_type_id || "",
       round_number: nextRoundNum,
       scheduled_date: new Date().toISOString().split("T")[0],
       scheduled_time: "10:00",
@@ -1729,13 +1741,17 @@ export default function InterviewManagement() {
     setIsNextRoundOpen(true);
   };
 
-  const handleNextRoundTypeChange = async (newType: InterviewTypeEnum) => {
-    setNextRoundForm((prev) => ({ ...prev, interview_type: newType }));
+  const handleNextRoundTypeChange = async (newType: string) => {
+    const matchedType = interviewTypes.find((t) => t.code === newType || t.id === newType || t.name === newType);
+    const selectedCode = matchedType ? matchedType.code : newType;
+    const selectedId = matchedType ? matchedType.id : "";
+
+    setNextRoundForm((prev) => ({ ...prev, interview_type: selectedCode as InterviewTypeEnum, interview_type_id: selectedId }));
     if (selectedInterview?.candidate_id) {
       try {
-        const res = await getNextRoundNumber(selectedInterview.candidate_id, newType);
+        const res = await getNextRoundNumber(selectedInterview.candidate_id, selectedCode);
         if (res && res.next_round_number) {
-          setNextRoundForm((prev) => ({ ...prev, round_number: res.next_round_number, notes: `Next Round (${newType} R${res.next_round_number}) follow-up for ${prev.candidate_name}` }));
+          setNextRoundForm((prev) => ({ ...prev, round_number: res.next_round_number, notes: `Next Round (${selectedCode} R${res.next_round_number}) follow-up for ${prev.candidate_name}` }));
         }
       } catch (e) {
         console.warn("Failed to fetch next round number:", e);
@@ -1769,6 +1785,7 @@ export default function InterviewManagement() {
         job_location: nextRoundForm.job_location || undefined,
         job_type: nextRoundForm.job_type || undefined,
         interview_type: nextRoundForm.interview_type,
+        interview_type_id: nextRoundForm.interview_type_id || undefined,
         round_number: Number(nextRoundForm.round_number),
         scheduled_date: nextRoundForm.scheduled_date,
         scheduled_time: nextRoundForm.scheduled_time,
@@ -2535,15 +2552,33 @@ export default function InterviewManagement() {
                       </label>
                       <select
                         value={scheduleForm.interview_type}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, interview_type: e.target.value as InterviewTypeEnum })}
+                        onChange={(e) => {
+                          const selectedVal = e.target.value;
+                          const matched = interviewTypes.find((t) => t.code === selectedVal || t.id === selectedVal || t.name === selectedVal);
+                          setScheduleForm({
+                            ...scheduleForm,
+                            interview_type: (matched ? matched.code : selectedVal) as InterviewTypeEnum,
+                            interview_type_id: matched ? matched.id : "",
+                          });
+                        }}
                         className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-2xs"
                       >
-                        <option value="TECHNICAL">💻 TECHNICAL</option>
-                        <option value="HR">👥 HR SCREENING</option>
-                        <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                        <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                        <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                        <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                        {interviewTypes && interviewTypes.length > 0 ? (
+                          interviewTypes.filter((t) => t.is_active !== false).map((t) => (
+                            <option key={t.id} value={t.code}>
+                              {t.name} ({t.code})
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="TECHNICAL">💻 TECHNICAL</option>
+                            <option value="HR">👥 HR SCREENING</option>
+                            <option value="MANAGERIAL">👔 MANAGERIAL</option>
+                            <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
+                            <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
+                            <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                          </>
+                        )}
                       </select>
                     </div>
 
@@ -3185,15 +3220,33 @@ export default function InterviewManagement() {
                         </label>
                         <select
                           value={editForm.interview_type}
-                          onChange={(e) => setEditForm({ ...editForm, interview_type: e.target.value as InterviewTypeEnum })}
+                          onChange={(e) => {
+                            const selectedVal = e.target.value;
+                            const matched = interviewTypes.find((t) => t.code === selectedVal || t.id === selectedVal || t.name === selectedVal);
+                            setEditForm({
+                              ...editForm,
+                              interview_type: (matched ? matched.code : selectedVal) as InterviewTypeEnum,
+                              interview_type_id: matched ? matched.id : "",
+                            });
+                          }}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
                         >
-                          <option value="TECHNICAL">💻 TECHNICAL</option>
-                          <option value="HR">👥 HR SCREENING</option>
-                          <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                          <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                          <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                          <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                          {interviewTypes && interviewTypes.length > 0 ? (
+                            interviewTypes.filter((t) => t.is_active !== false).map((t) => (
+                              <option key={t.id} value={t.code}>
+                                {t.name} ({t.code})
+                              </option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="TECHNICAL">💻 TECHNICAL</option>
+                              <option value="HR">👥 HR SCREENING</option>
+                              <option value="MANAGERIAL">👔 MANAGERIAL</option>
+                              <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
+                              <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
+                              <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                            </>
+                          )}
                         </select>
                       </div>
 
@@ -5316,19 +5369,29 @@ export default function InterviewManagement() {
                     <label className="block text-slate-700 mb-1 font-semibold">Next Interview Type / Format</label>
                     <select
                       value={nextRoundForm.interview_type}
-                      onChange={(e) => handleNextRoundTypeChange(e.target.value as InterviewTypeEnum)}
+                      onChange={(e) => handleNextRoundTypeChange(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
                     >
-                      <option value="TECHNICAL">💻 TECHNICAL ROUND</option>
-                      <option value="CLIENT_ROUND">🏢 CLIENT ROUND</option>
-                      <option value="SYSTEM_DESIGN">🏗️ SYSTEM DESIGN</option>
-                      <option value="CODING_TEST">⌨️ CODING TEST / LIVE PAIRING</option>
-                      <option value="HR">👥 HR INTERVIEW</option>
-                      <option value="MANAGERIAL">👔 MANAGERIAL ROUND</option>
-                      <option value="CULTURE_FIT">🤝 CULTURE FIT</option>
-                      <option value="BEHAVIORAL">🧠 BEHAVIORAL ASSESSMENT</option>
-                      <option value="FINAL_ROUND">🏆 FINAL EXECUTIVE ROUND</option>
-                      <option value="INITIAL_SCREENING">📞 INITIAL SCREENING</option>
+                      {interviewTypes && interviewTypes.length > 0 ? (
+                        interviewTypes.filter((t) => t.is_active !== false).map((t) => (
+                          <option key={t.id} value={t.code}>
+                            {t.name} ({t.code})
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="TECHNICAL">💻 TECHNICAL ROUND</option>
+                          <option value="CLIENT_ROUND">🏢 CLIENT ROUND</option>
+                          <option value="SYSTEM_DESIGN">🏗️ SYSTEM DESIGN</option>
+                          <option value="CODING_TEST">⌨️ CODING TEST / LIVE PAIRING</option>
+                          <option value="HR">👥 HR INTERVIEW</option>
+                          <option value="MANAGERIAL">👔 MANAGERIAL ROUND</option>
+                          <option value="CULTURE_FIT">🤝 CULTURE FIT</option>
+                          <option value="BEHAVIORAL">🧠 BEHAVIORAL ASSESSMENT</option>
+                          <option value="FINAL_ROUND">🏆 FINAL EXECUTIVE ROUND</option>
+                          <option value="INITIAL_SCREENING">📞 INITIAL SCREENING</option>
+                        </>
+                      )}
                     </select>
                   </div>
 

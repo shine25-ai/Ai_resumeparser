@@ -4,7 +4,7 @@ import {
   Briefcase, Clock, MapPin, ShieldCheck, Layers, AlignLeft, Sparkles, Video, Hash,
   Upload, Building2, AlertCircle, UserX, Plus, Trash2, Loader2, Eye
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem } from "../utils/Api";
+import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem, type InterviewTypeItem } from "../utils/Api";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -17,6 +17,7 @@ interface FilterPill {
 export default function JDMatch() {
   const [loading, setLoading] = useState(false);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
+  const [interviewTypes, setInterviewTypes] = useState<InterviewTypeItem[]>([]);
 
   // Dynamic dropdown options state fetched from /api/v1/resumes/parsed-summary
   const [summaryOptions, setSummaryOptions] = useState<{
@@ -102,6 +103,7 @@ export default function JDMatch() {
     job_location: "",
     job_type: "Full Time",
     interview_type: "TECHNICAL" as InterviewTypeEnum,
+    interview_type_id: "",
     round_number: 1,
     scheduled_date: new Date().toISOString().split("T")[0],
     scheduled_time: "10:00",
@@ -301,10 +303,13 @@ export default function JDMatch() {
   useEffect(() => {
     const fetchSummaryDropdowns = async () => {
       try {
-        const [res, usersData] = await Promise.all([
+        const [res, usersData, typesData] = await Promise.all([
           getParsedResumeSummary().catch(() => null),
           getUsers().catch(() => []),
+          getInterviewTypes().catch(() => []),
         ]);
+
+        setInterviewTypes(Array.isArray(typesData) ? typesData : []);
 
         if (res) {
           setSummaryOptions({
@@ -544,6 +549,7 @@ export default function JDMatch() {
         job_location: interviewForm.job_location || undefined,
         job_type: interviewForm.job_type || undefined,
         interview_type: interviewForm.interview_type,
+        interview_type_id: interviewForm.interview_type_id || undefined,
         round_number: Number(interviewForm.round_number),
         scheduled_date: interviewForm.scheduled_date,
         scheduled_time: interviewForm.scheduled_time,
@@ -1066,15 +1072,33 @@ export default function JDMatch() {
                       </label>
                       <select
                         value={interviewForm.interview_type}
-                        onChange={(e) => setInterviewForm({ ...interviewForm, interview_type: e.target.value as InterviewTypeEnum })}
+                        onChange={(e) => {
+                          const selectedVal = e.target.value;
+                          const matched = interviewTypes.find((t) => t.code === selectedVal || t.id === selectedVal || t.name === selectedVal);
+                          setInterviewForm({
+                            ...interviewForm,
+                            interview_type: (matched ? matched.code : selectedVal) as InterviewTypeEnum,
+                            interview_type_id: matched ? matched.id : "",
+                          });
+                        }}
                         className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-indigo-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-semibold cursor-pointer"
                       >
-                        <option value="TECHNICAL">💻 TECHNICAL</option>
-                        <option value="HR">👥 HR SCREENING</option>
-                        <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                        <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                        <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                        <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                        {interviewTypes && interviewTypes.length > 0 ? (
+                          interviewTypes.filter((t) => t.is_active !== false).map((t) => (
+                            <option key={t.id} value={t.code}>
+                              {t.name} ({t.code})
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="TECHNICAL">💻 TECHNICAL</option>
+                            <option value="HR">👥 HR SCREENING</option>
+                            <option value="MANAGERIAL">👔 MANAGERIAL</option>
+                            <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
+                            <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
+                            <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
+                          </>
+                        )}
                       </select>
                     </div>
 

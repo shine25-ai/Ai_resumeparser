@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers } from 'lucide-react';
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
+import InterviewTypeManagement from '../components/InterviewTypeManagement';
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles'>('config');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes') || 'config';
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'interviewTypes'>(initialTab);
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -22,6 +26,13 @@ export default function Settings() {
   const [testing, setTesting] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [message, setMessage] = useState({ type: '', text: '' });
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes';
+    if (tabParam && ['config', 'templates', 'roles', 'interviewTypes'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetchConfig();
@@ -102,8 +113,8 @@ export default function Settings() {
 
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl mb-8 border border-slate-200">
         <button
-          onClick={() => setActiveTab('config')}
-          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+          onClick={() => { setActiveTab('config'); setSearchParams({ tab: 'config' }); }}
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
             activeTab === 'config'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -113,8 +124,8 @@ export default function Settings() {
           Email Configuration
         </button>
         <button
-          onClick={() => setActiveTab('templates')}
-          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+          onClick={() => { setActiveTab('templates'); setSearchParams({ tab: 'templates' }); }}
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
             activeTab === 'templates'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -124,8 +135,8 @@ export default function Settings() {
           Mail Templates
         </button>
         <button
-          onClick={() => setActiveTab('roles')}
-          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+          onClick={() => { setActiveTab('roles'); setSearchParams({ tab: 'roles' }); }}
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
             activeTab === 'roles'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -133,6 +144,17 @@ export default function Settings() {
         >
           <Shield className="w-4 h-4" />
           Roles & Access Control
+        </button>
+        <button
+          onClick={() => { setActiveTab('interviewTypes'); setSearchParams({ tab: 'interviewTypes' }); }}
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+            activeTab === 'interviewTypes'
+              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          Interview Types
         </button>
       </div>
 
@@ -302,8 +324,10 @@ export default function Settings() {
         </>
       ) : activeTab === 'templates' ? (
         <MailTemplates />
-      ) : (
+      ) : activeTab === 'roles' ? (
         <RoleManagement />
+      ) : (
+        <InterviewTypeManagement />
       )}
     </div>
   );

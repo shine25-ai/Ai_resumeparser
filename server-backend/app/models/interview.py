@@ -27,7 +27,8 @@ class InterviewDocument(BaseModel):
     job_type: Optional[str] = None  # Full Time / Part Time / Contract / Remote / Hybrid
 
     # Interview Details
-    interview_type: InterviewType
+    interview_type: str = "TECHNICAL"
+    interview_type_id: Optional[str] = None
     round_number: int = 1
 
     # Schedule

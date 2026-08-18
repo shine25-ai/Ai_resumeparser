@@ -17,6 +17,7 @@ export const AUTH_REFRESH = `${BASE_URL}/auth/refresh`;
 export const USER_ME = `${BASE_URL}/users/me`;
 export const USERS_URL = `${BASE_URL}/users`;
 export const ROLES_URL = `${BASE_URL}/roles`;
+export const INTERVIEW_TYPES_URL = `${BASE_URL}/interview-types`;
 export const SETTINGS_EMAIL = `${BASE_URL}/settings/email`;
 export const SETTINGS_EMAIL_TEST = `${BASE_URL}/settings/email/test`;
 export const MAIL_TEMPLATES_URL = `${BASE_URL}/templates`;
@@ -1256,5 +1257,118 @@ export const deleteSkillsEvaluation = async (skillId: string): Promise<void> => 
     throw new Error(resData.detail || "Failed to delete skills evaluation template");
   }
 };
+
+// INTERVIEW TYPE MANAGEMENT API
+export interface InterviewTypeItem {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  color?: string;
+  is_active: boolean;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InterviewTypeCreatePayload {
+  name: string;
+  code?: string;
+  description?: string;
+  color?: string;
+  is_active?: boolean;
+}
+
+export interface InterviewTypeUpdatePayload {
+  name?: string;
+  code?: string;
+  description?: string;
+  color?: string;
+  is_active?: boolean;
+}
+
+export const getInterviewTypes = async (includeInactive: boolean = true): Promise<InterviewTypeItem[]> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEW_TYPES_URL}?include_inactive=${includeInactive}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch interview types");
+  }
+
+  const payload = resData.data || resData;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.interview_types)) return payload.interview_types;
+  return [];
+};
+
+export const createInterviewType = async (payload: InterviewTypeCreatePayload): Promise<InterviewTypeItem> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(INTERVIEW_TYPES_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to create interview type");
+  }
+
+  return resData.data || resData;
+};
+
+export const updateInterviewType = async (id: string, payload: InterviewTypeUpdatePayload): Promise<InterviewTypeItem> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEW_TYPES_URL}/${id}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to update interview type");
+  }
+
+  return resData.data || resData;
+};
+
+export const deleteInterviewType = async (id: string): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEW_TYPES_URL}/${id}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to delete interview type");
+  }
+};
+
 
 

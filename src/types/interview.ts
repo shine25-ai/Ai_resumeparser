@@ -8,7 +8,8 @@ export type InterviewTypeEnum =
   | "CODING_TEST"
   | "CLIENT_ROUND"
   | "SYSTEM_DESIGN"
-  | "BEHAVIORAL";
+  | "BEHAVIORAL"
+  | (string & {});
 
 export type InterviewStatusEnum =
   | "PENDING"
@@ -73,6 +74,7 @@ export interface InterviewItem {
   job_location?: string;
   job_type?: string;
   interview_type: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number: number;
   scheduled_date: string;
   scheduled_time: string;
@@ -146,6 +148,7 @@ export interface CreateInterviewPayload {
   job_location?: string;
   job_type?: string;
   interview_type?: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number?: number;
   scheduled_date: string;
   scheduled_time: string;
@@ -204,6 +207,7 @@ export interface BatchCreateInterviewPayload {
   job_location?: string;
   job_type?: string;
   interview_type?: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number?: number;
   scheduled_date: string;
   scheduled_time: string;
@@ -257,6 +261,7 @@ export interface UpdateInterviewPayload {
   job_location?: string;
   job_type?: string;
   interview_type?: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number?: number;
   scheduled_date?: string;
   scheduled_time?: string;

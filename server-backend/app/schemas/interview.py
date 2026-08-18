@@ -80,7 +80,8 @@ class InterviewCreateRequest(BaseModel):
     job_location: Optional[str] = None
     job_type: Optional[str] = None
 
-    interview_type: InterviewType = InterviewType.TECHNICAL
+    interview_type: str = "TECHNICAL"
+    interview_type_id: Optional[str] = None
     round_number: int = 1
 
     scheduled_date: str
@@ -149,7 +150,8 @@ class InterviewBatchCreateRequest(BaseModel):
     job_location: Optional[str] = None
     job_type: Optional[str] = None
 
-    interview_type: InterviewType = InterviewType.TECHNICAL
+    interview_type: str = "TECHNICAL"
+    interview_type_id: Optional[str] = None
     round_number: int = 1
 
     scheduled_date: str
@@ -206,7 +208,8 @@ class InterviewUpdateRequest(BaseModel):
     job_title: Optional[str] = None
     job_location: Optional[str] = None
     job_type: Optional[str] = None
-    interview_type: Optional[InterviewType] = None
+    interview_type: Optional[str] = None
+    interview_type_id: Optional[str] = None
     round_number: Optional[int] = None
 
     scheduled_date: Optional[str] = None
@@ -356,7 +359,8 @@ class InterviewResponse(BaseModel):
     job_location: Optional[str] = None
     job_type: Optional[str] = None
 
-    interview_type: InterviewType
+    interview_type: str = "TECHNICAL"
+    interview_type_id: Optional[str] = None
     round_number: int
 
     scheduled_date: str
