@@ -56,6 +56,7 @@ class InterviewRepository(BaseRepository):
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
@@ -74,7 +75,30 @@ class InterviewRepository(BaseRepository):
             and_conditions.append({"candidate_id": candidate_id})
 
         if interviewer_id:
-            and_conditions.append({"interviewer_id": interviewer_id})
+            iid = interviewer_id.strip()
+            and_conditions.append({
+                "$or": [
+                    {"interviewer_id": iid},
+                    {"interviewer_email": {"$regex": f"^{re.escape(iid)}$", "$options": "i"}},
+                    {"interviewer_name": {"$regex": re.escape(iid), "$options": "i"}},
+                    {"interviewers.interviewer_id": iid},
+                    {"interviewers.interviewer_email": {"$regex": f"^{re.escape(iid)}$", "$options": "i"}},
+                    {"interviewers.interviewer_name": {"$regex": re.escape(iid), "$options": "i"}},
+                ]
+            })
+
+        if client_id:
+            cid = client_id.strip()
+            and_conditions.append({
+                "$or": [
+                    {"client_id": cid},
+                    {"client_email": {"$regex": f"^{re.escape(cid)}$", "$options": "i"}},
+                    {"client_name": {"$regex": re.escape(cid), "$options": "i"}},
+                    {"clients.client_id": cid},
+                    {"clients.client_email": {"$regex": f"^{re.escape(cid)}$", "$options": "i"}},
+                    {"clients.client_name": {"$regex": re.escape(cid), "$options": "i"}},
+                ]
+            })
 
         if status:
             val = status.value if hasattr(status, "value") else str(status)
@@ -107,6 +131,7 @@ class InterviewRepository(BaseRepository):
                     {"candidate_email": s_regex},
                     {"job_title": s_regex},
                     {"interviewer_name": s_regex},
+                    {"client_name": s_regex},
                     {"interview_type": s_regex},
                 ]
             })
@@ -125,6 +150,7 @@ class InterviewRepository(BaseRepository):
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
@@ -141,6 +167,7 @@ class InterviewRepository(BaseRepository):
         query = self._build_filter_query(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
+            client_id=client_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
@@ -164,6 +191,7 @@ class InterviewRepository(BaseRepository):
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
@@ -178,6 +206,7 @@ class InterviewRepository(BaseRepository):
         query = self._build_filter_query(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
+            client_id=client_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
@@ -423,11 +452,11 @@ class InterviewRepository(BaseRepository):
         target_person_names: Dict[str, str] = {}
 
         def add_target_person(pid: Optional[str], pname: Optional[str]):
-            if pid and str(pid).strip():
-                clean_id = str(pid).strip()
+            if pid and pid.strip():
+                clean_id = pid.strip()
                 target_person_ids[clean_id] = pname or clean_id
-            if pname and str(pname).strip():
-                clean_name = str(pname).strip()
+            if pname and pname.strip():
+                clean_name = pname.strip()
                 target_person_names[clean_name.lower()] = clean_name
 
         add_target_person(interviewer_id, interviewer_name)
@@ -469,10 +498,11 @@ class InterviewRepository(BaseRepository):
             doc_names: Dict[str, str] = {}
 
             def add_doc_person(pid: Optional[str], pname: Optional[str]):
-                if pid and str(pid).strip():
-                    doc_ids[str(pid).strip()] = pname or str(pid).strip()
-                if pname and str(pname).strip():
-                    clean_name = str(pname).strip()
+                if pid and pid.strip():
+                    clean_id = pid.strip()
+                    doc_ids[clean_id] = pname or clean_id
+                if pname and pname.strip():
+                    clean_name = pname.strip()
                     doc_names[clean_name.lower()] = clean_name
 
             add_doc_person(doc.get("interviewer_id"), doc.get("interviewer_name"))

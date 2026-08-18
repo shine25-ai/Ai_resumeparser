@@ -647,6 +647,7 @@ export const checkInterviewConflict = async (payload: CheckConflictPayload): Pro
 export const getInterviews = async (params: {
   candidate_id?: string;
   interviewer_id?: string;
+  client_id?: string;
   status?: string;
   interview_type?: string;
   job_title?: string;
@@ -665,6 +666,7 @@ export const getInterviews = async (params: {
 
   if (params.candidate_id) queryParts.push(`candidate_id=${encodeURIComponent(params.candidate_id)}`);
   if (params.interviewer_id) queryParts.push(`interviewer_id=${encodeURIComponent(params.interviewer_id)}`);
+  if (params.client_id) queryParts.push(`client_id=${encodeURIComponent(params.client_id)}`);
   if (params.status) queryParts.push(`status=${encodeURIComponent(params.status)}`);
   if (params.interview_type) queryParts.push(`interview_type=${encodeURIComponent(params.interview_type)}`);
   if (params.job_title) queryParts.push(`job_title=${encodeURIComponent(params.job_title)}`);

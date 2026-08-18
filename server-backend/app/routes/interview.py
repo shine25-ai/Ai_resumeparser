@@ -184,6 +184,7 @@ async def get_candidate_history(
 async def list_interviews(
     candidate_id: Optional[str] = Query(None, description="Filter by Candidate ID"),
     interviewer_id: Optional[str] = Query(None, description="Filter by Interviewer ID"),
+    client_id: Optional[str] = Query(None, description="Filter by Client ID"),
     status_val: Optional[str] = Query(None, alias="status", description="Filter by Interview Status"),
     interview_type: Optional[str] = Query(None, description="Filter by Interview Type"),
     job_title: Optional[str] = Query(None, description="Filter by Job Title"),
@@ -199,9 +200,17 @@ async def list_interviews(
     current_user: dict = Depends(get_current_active_user_optional),
     controller: InterviewController = Depends(get_interview_controller),
 ):
+    if current_user and isinstance(current_user, dict):
+        user_role = str(current_user.get("role", "")).lower()
+        if "client" in user_role and not client_id and not interviewer_id:
+            client_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
+        elif "interviewer" in user_role and not interviewer_id and not client_id:
+            interviewer_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
+
     return await controller.list_interviews(
         candidate_id=candidate_id,
         interviewer_id=interviewer_id,
+        client_id=client_id,
         status=status_val,
         interview_type=interview_type,
         job_title=job_title,
