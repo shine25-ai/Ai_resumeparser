@@ -3,7 +3,7 @@ import {
   X, ChevronLeft, ChevronRight, UserCheck,
   Building2, DollarSign, Sparkles, HelpCircle, Plus, Trash2,
   Star, FileText, Upload, Calendar, RefreshCw, ShieldCheck,
-  AlignLeft, Briefcase, TrendingUp
+  AlignLeft, Briefcase, TrendingUp, Eye, Loader2
 } from "lucide-react";
 import {
   bulkSubmitInterviewFeedback,
@@ -77,6 +77,7 @@ interface SingleCandidateFeedbackForm {
   final_fit_salary: string;
   joining_date: string;
   interview_document_files: string;
+  interview_feedback_files: string;
   notes: string;
 }
 
@@ -93,6 +94,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
 
   const [questionOptions, setQuestionOptions] = useState<string[]>([]);
+  const [isUploadingDocFile, setIsUploadingDocFile] = useState<boolean>(false);
+  const [isUploadingFeedbackReportFile, setIsUploadingFeedbackReportFile] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -179,7 +182,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           salary_requested: item.salary_requested || "",
           final_fit_salary: item.final_fit_salary || "",
           joining_date: item.joining_date || "",
-          interview_document_files: item.interview_document_files ? item.interview_document_files.join("\n") : "",
+          interview_document_files: item.interview_document_files ? Array.from(new Set(item.interview_document_files)).join("\n") : "",
+          interview_feedback_files: item.interview_feedback_files ? Array.from(new Set(item.interview_feedback_files)).join("\n") : "",
           notes: item.notes || "",
         };
       });
@@ -326,9 +330,10 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   };
 
   // Document Upload Handler (Uploads directly to AWS S3)
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    setIsUploadingDocFile(true);
     try {
       const uploadedUrls: string[] = [];
       for (const file of Array.from(files)) {
@@ -338,14 +343,15 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
         }
       }
       if (uploadedUrls.length > 0) {
-        const urlsJoined = uploadedUrls.join("\n");
         setFormsData((prev) => {
           const updated = [...prev];
           const form = updated[activeCandidateIndex];
           if (form) {
-            form.interview_document_files = form.interview_document_files
-              ? `${form.interview_document_files}\n${urlsJoined}`
-              : urlsJoined;
+            const existing = form.interview_document_files
+              ? form.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+              : [];
+            const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+            form.interview_document_files = combined;
           }
           return updated;
         });
@@ -354,6 +360,43 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       console.error("Failed to upload document to S3:", err);
       alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
     } finally {
+      setIsUploadingDocFile(false);
+      e.target.value = "";
+    }
+  };
+
+  // Feedback Report Upload Handler (Uploads directly to AWS S3)
+  const handleFeedbackReportFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploadingFeedbackReportFile(true);
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        const res = await uploadInterviewDocument(file);
+        if (res?.s3_url) {
+          uploadedUrls.push(res.s3_url);
+        }
+      }
+      if (uploadedUrls.length > 0) {
+        setFormsData((prev) => {
+          const updated = [...prev];
+          const form = updated[activeCandidateIndex];
+          if (form) {
+            const existing = form.interview_feedback_files
+              ? form.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+              : [];
+            const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+            form.interview_feedback_files = combined;
+          }
+          return updated;
+        });
+      }
+    } catch (err: any) {
+      console.error("Failed to upload feedback report to S3:", err);
+      alert(`Failed to upload feedback report to S3: ${err.message || "Upload error"}`);
+    } finally {
+      setIsUploadingFeedbackReportFile(false);
       e.target.value = "";
     }
   };
@@ -365,7 +408,10 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
       const itemsPayload: BulkFeedbackItemPayload[] = formsData.map((f) => {
         const docFilesArray = f.interview_document_files
-          ? f.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+          ? Array.from(new Set(f.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
+          : [];
+        const feedbackReportFilesArray = f.interview_feedback_files
+          ? Array.from(new Set(f.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
           : [];
 
         return {
@@ -399,6 +445,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           final_fit_salary: f.final_fit_salary || undefined,
           joining_date: f.joining_date || undefined,
           interview_document_files: docFilesArray,
+          interview_feedback_files: feedbackReportFilesArray,
           notes: f.notes || undefined,
         };
       });
@@ -1182,31 +1229,166 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
                 {/* DOCUMENTS & NOTES SECTION */}
                 <div id="sec-documents" className="space-y-4">
-                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                  {/* CARD 1: SESSION & CANDIDATE ATTACHED DOCUMENTS */}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2">
                         <FileText size={18} className="text-rose-600" />
-                        <h3 className="text-sm font-extrabold text-slate-900">Attached Documents & Media</h3>
+                        <h3 className="text-sm font-extrabold text-slate-900">Session & Candidate Attached Documents</h3>
                       </div>
-                      <label className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs">
-                        <Upload size={13} />
-                        <span>Browse / Attach File</span>
+                      <label className={`inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingDocFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingDocFile ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-indigo-600" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={13} />
+                            <span>Browse / Attach File</span>
+                          </>
+                        )}
                         <input
                           type="file"
                           multiple
-                          onChange={handleFileUpload}
+                          onChange={handleDocFileUpload}
+                          disabled={isUploadingDocFile}
                           className="hidden"
                         />
                       </label>
                     </div>
 
-                    <textarea
-                      rows={2}
-                      value={currentForm.interview_document_files}
-                      onChange={(e) => handleCurrentFormChange("interview_document_files", e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none font-mono text-xs"
-                      placeholder="Document names or URLs (one per line)..."
-                    />
+                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const attachedList = currentForm.interview_document_files
+                        ? Array.from(new Set(currentForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
+                        : [];
+                      if (attachedList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2 mt-1">
+                          {attachedList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={15} className="text-rose-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={13} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
+                                      handleCurrentFormChange("interview_document_files", updated);
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* CARD 2: INTERVIEW FEEDBACK & ROUND ASSESSMENT REPORTS */}
+                  <div className="bg-amber-50/40 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-amber-200 pb-3">
+                      <div className="flex items-center gap-2 text-amber-900">
+                        <ShieldCheck size={18} className="text-amber-600" />
+                        <h3 className="text-sm font-extrabold">Interview Feedback & Round Assessment Reports</h3>
+                      </div>
+                      <label className={`inline-flex items-center gap-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackReportFile ? "opacity-60 pointer-events-none" : ""}`}>
+                        {isUploadingFeedbackReportFile ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-amber-700" />
+                            <span>Uploading to S3...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={13} />
+                            <span>Browse / Attach Feedback File</span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleFeedbackReportFileUpload}
+                          disabled={isUploadingFeedbackReportFile}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* FEEDBACK REPORT FILES CARDS WITH VIEW BUTTON */}
+                    {(() => {
+                      const feedbackReportList = currentForm.interview_feedback_files
+                        ? Array.from(new Set(currentForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
+                        : [];
+                      if (feedbackReportList.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 mb-2 mt-1">
+                          {feedbackReportList.map((fileStr, idx) => {
+                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
+                            const rawName = fileStr.split("/").pop() || fileStr;
+                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-amber-200/90 rounded-xl px-3.5 py-2 shadow-2xs">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={15} className="text-amber-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isUrl && (
+                                    <a
+                                      href={fileStr}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye size={13} />
+                                      <span>View</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = feedbackReportList.filter((_, i) => i !== idx).join("\n");
+                                      handleCurrentFormChange("interview_feedback_files", updated);
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">

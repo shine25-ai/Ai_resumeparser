@@ -714,11 +714,13 @@ export default function InterviewManagement() {
           }
         }
         if (uploadedUrls.length > 0) {
-          const existing = feedbackForm.interview_document_files
-            ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-          setFeedbackForm((prev) => ({ ...prev, interview_document_files: combined }));
+          setFeedbackForm((prev) => {
+            const existing = prev.interview_document_files
+              ? prev.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+              : [];
+            const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+            return { ...prev, interview_document_files: combined };
+          });
         }
       } catch (err: any) {
         console.error("Failed to upload document to S3:", err);
@@ -745,11 +747,13 @@ export default function InterviewManagement() {
           }
         }
         if (uploadedUrls.length > 0) {
-          const existing = feedbackForm.interview_feedback_files
-            ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-          setFeedbackForm((prev) => ({ ...prev, interview_feedback_files: combined }));
+          setFeedbackForm((prev) => {
+            const existing = prev.interview_feedback_files
+              ? prev.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+              : [];
+            const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
+            return { ...prev, interview_feedback_files: combined };
+          });
         }
       } catch (err: any) {
         console.error("Failed to upload feedback report to S3:", err);
@@ -1272,8 +1276,8 @@ export default function InterviewManagement() {
       salary_requested: item.salary_requested || "",
       final_fit_salary: item.final_fit_salary || "",
       joining_date: item.joining_date || "",
-      interview_document_files: item.interview_document_files ? item.interview_document_files.join("\n") : "",
-      interview_feedback_files: item.interview_feedback_files ? item.interview_feedback_files.join("\n") : "",
+      interview_document_files: item.interview_document_files ? Array.from(new Set(item.interview_document_files)).join("\n") : "",
+      interview_feedback_files: item.interview_feedback_files ? Array.from(new Set(item.interview_feedback_files)).join("\n") : "",
       notes: item.notes || "",
     });
     setIsFeedbackOpen(true);
@@ -1293,10 +1297,10 @@ export default function InterviewManagement() {
     try {
       setActionLoading(true);
       const docFilesArray = feedbackForm.interview_document_files
-        ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+        ? Array.from(new Set(feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
         : [];
       const feedbackReportFilesArray = feedbackForm.interview_feedback_files
-        ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+        ? Array.from(new Set(feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
         : [];
 
       await submitInterviewFeedback(selectedInterview.id, {
@@ -4729,7 +4733,7 @@ export default function InterviewManagement() {
                       {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
                       {(() => {
                         const attachedList = feedbackForm.interview_document_files
-                          ? feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                          ? Array.from(new Set(feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
                           : [];
                         if (attachedList.length === 0) return null;
                         return (
@@ -4812,7 +4816,7 @@ export default function InterviewManagement() {
                       {/* FEEDBACK REPORT FILES CARDS WITH VIEW BUTTON */}
                       {(() => {
                         const feedbackReportList = feedbackForm.interview_feedback_files
-                          ? feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
+                          ? Array.from(new Set(feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
                           : [];
                         if (feedbackReportList.length === 0) return null;
                         return (
