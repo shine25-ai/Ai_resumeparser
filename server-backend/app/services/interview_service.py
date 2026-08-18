@@ -265,6 +265,7 @@ class InterviewService:
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
@@ -287,6 +288,7 @@ class InterviewService:
         interviews = await self.interview_repo.filter_interviews(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
+            client_id=client_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
@@ -302,6 +304,7 @@ class InterviewService:
         total = await self.interview_repo.count_interviews(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
+            client_id=client_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
@@ -714,9 +717,9 @@ class InterviewService:
                 if attached_files and len(attached_files) > 0:
                     file_badges = ""
                     for file_url in attached_files:
-                        if not file_url or not str(file_url).strip():
+                        if not file_url or not file_url.strip():
                             continue
-                        f_str = str(file_url).strip()
+                        f_str = file_url.strip()
                         raw_name = f_str.split("/")[-1] if "/" in f_str else f_str
                         disp_name = urllib.parse.unquote(raw_name)
                         disp_name = re.sub(r'^[a-f0-9]{8,32}_', '', disp_name)

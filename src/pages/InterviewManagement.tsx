@@ -87,6 +87,60 @@ export default function InterviewManagement() {
   // Dynamic Feedback Question Options loaded from backend JSON API
   const [feedbackQuestionOptions, setFeedbackQuestionOptions] = useState<string[]>([]);
 
+  // User Authentication & Role Detection
+  const userStr = localStorage.getItem("user");
+  const currentUser: UserProfile | null = userStr ? JSON.parse(userStr) : null;
+  const userRole = (currentUser?.role || "").toLowerCase();
+  const isClientUser = userRole.includes("client");
+  const isInterviewerUser = userRole.includes("interviewer");
+
+  const isInterviewAssignedToCurrentUser = (item: InterviewItem): boolean => {
+    if (!currentUser) return true;
+    if (!isClientUser && !isInterviewerUser) return true;
+
+    const uId = currentUser.id || (currentUser as any)._id || "";
+    const uEmail = (currentUser.email || "").trim().toLowerCase();
+    const uName = (currentUser.full_name || "").trim().toLowerCase();
+
+    if (isClientUser) {
+      const matchTop =
+        (item.client_id && item.client_id === uId) ||
+        (item.client_email && item.client_email.trim().toLowerCase() === uEmail) ||
+        (item.client_name && item.client_name.trim().toLowerCase() === uName);
+      if (matchTop) return true;
+
+      if (item.clients && item.clients.length > 0) {
+        return item.clients.some(
+          (c) =>
+            (c.client_id && c.client_id === uId) ||
+            (c.client_email && c.client_email.trim().toLowerCase() === uEmail) ||
+            (c.client_name && c.client_name.trim().toLowerCase() === uName)
+        );
+      }
+      return false;
+    }
+
+    if (isInterviewerUser) {
+      const matchTop =
+        (item.interviewer_id && item.interviewer_id === uId) ||
+        (item.interviewer_email && item.interviewer_email.trim().toLowerCase() === uEmail) ||
+        (item.interviewer_name && item.interviewer_name.trim().toLowerCase() === uName);
+      if (matchTop) return true;
+
+      if (item.interviewers && item.interviewers.length > 0) {
+        return item.interviewers.some(
+          (i) =>
+            (i.interviewer_id && i.interviewer_id === uId) ||
+            (i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail) ||
+            (i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName)
+        );
+      }
+      return false;
+    }
+
+    return true;
+  };
+
   // Send Mail Popup Modal State
   const [isSendMailOpen, setIsSendMailOpen] = useState<boolean>(false);
   const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
@@ -783,27 +837,39 @@ export default function InterviewManagement() {
       const activeType = targetType !== "All" ? targetType : (targetTab !== "All" ? targetTab : undefined);
       const activeStatus = targetStatus !== "All" ? targetStatus : undefined;
 
+      const filterParams: any = {
+        page: targetPage,
+        limit: targetLimit,
+        search: targetSearch.trim() || undefined,
+        name: targetName.trim() || undefined,
+        email: targetEmail.trim() || undefined,
+        scheduled_date: targetDate.trim() || undefined,
+        interview_type: activeType,
+        status: activeStatus,
+      };
+
+      if (isClientUser && currentUser) {
+        filterParams.client_id = currentUser.id || currentUser.email || currentUser.full_name;
+      } else if (isInterviewerUser && currentUser) {
+        filterParams.interviewer_id = currentUser.id || currentUser.email || currentUser.full_name;
+      }
+
       const [interviewData, resumesData, usersData] = await Promise.all([
-        getInterviews({
-          page: targetPage,
-          limit: targetLimit,
-          search: targetSearch.trim() || undefined,
-          name: targetName.trim() || undefined,
-          email: targetEmail.trim() || undefined,
-          scheduled_date: targetDate.trim() || undefined,
-          interview_type: activeType,
-          status: activeStatus,
-        }),
+        getInterviews(filterParams),
         getResumes().catch(() => []),
         getUsers().catch(() => []),
       ]);
 
-      const items = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || interviewData?.data?.interviews || [];
+      let items: InterviewItem[] = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || interviewData?.data?.interviews || [];
+      if (isClientUser || isInterviewerUser) {
+        items = items.filter(isInterviewAssignedToCurrentUser);
+      }
+
       const total = typeof interviewData?.total === "number" ? interviewData.total : (interviewData?.data?.total || items.length);
       const computedTotalPages = typeof interviewData?.total_pages === "number" ? interviewData.total_pages : (interviewData?.data?.total_pages || Math.ceil(total / targetLimit) || 1);
 
       setInterviews(items);
-      setTotalCount(total);
+      setTotalCount(items.length < total && (isClientUser || isInterviewerUser) ? items.length : total);
       setTotalPages(computedTotalPages);
 
       const resumes = Array.isArray(resumesData) ? resumesData : resumesData?.resumes || [];
@@ -1221,29 +1287,82 @@ export default function InterviewManagement() {
   // Open Feedback Modal
   const handleOpenFeedback = (item: InterviewItem) => {
     setSelectedInterview(item);
-    setFeedbackTab("INTERVIEWER");
+    setFeedbackTab(isClientUser ? "CLIENT" : "INTERVIEWER");
 
-    const initInts: InterviewerItem[] = item.interviewers && item.interviewers.length > 0
-      ? item.interviewers
-      : [{
-          interviewer_name: item.interviewer_name || "Interviewer 1",
-          interviewer_email: item.interviewer_email || "",
+    const uId = currentUser?.id || (currentUser as any)?._id || "";
+    const uEmail = (currentUser?.email || "").trim().toLowerCase();
+    const uName = (currentUser?.full_name || "").trim().toLowerCase();
+
+    let initInts: InterviewerItem[] = [];
+    if (isInterviewerUser && currentUser) {
+      const matched = (item.interviewers || []).filter((i) => {
+        return (
+          (i.interviewer_id && i.interviewer_id === uId) ||
+          (i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail) ||
+          (i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName)
+        );
+      });
+      if (matched.length > 0) {
+        initInts = matched;
+      } else {
+        initInts = [{
+          interviewer_id: uId,
+          interviewer_name: currentUser.full_name || item.interviewer_name || "Interviewer 1",
+          interviewer_email: currentUser.email || item.interviewer_email || "",
           rating: item.rating || 1,
           feedback: item.feedback || "",
           recommendation: item.recommendation || "Selected",
           strengths: item.strengths || [],
           weaknesses: item.weaknesses || [],
         }];
+      }
+    } else {
+      initInts = item.interviewers && item.interviewers.length > 0
+        ? item.interviewers
+        : [{
+            interviewer_name: item.interviewer_name || "Interviewer 1",
+            interviewer_email: item.interviewer_email || "",
+            rating: item.rating || 1,
+            feedback: item.feedback || "",
+            recommendation: item.recommendation || "Selected",
+            strengths: item.strengths || [],
+            weaknesses: item.weaknesses || [],
+          }];
+    }
 
-    const initClients: ClientFeedbackItem[] = item.clients && item.clients.length > 0
-      ? item.clients
-      : [{
-          client_name: item.client_name || "Client Evaluator 1",
+    let initClients: ClientFeedbackItem[] = [];
+    if (isClientUser && currentUser) {
+      const matched = (item.clients || []).filter((c) => {
+        return (
+          (c.client_id && c.client_id === uId) ||
+          (c.client_email && c.client_email.trim().toLowerCase() === uEmail) ||
+          (c.client_name && c.client_name.trim().toLowerCase() === uName)
+        );
+      });
+      if (matched.length > 0) {
+        initClients = matched;
+      } else {
+        initClients = [{
+          client_id: uId,
+          client_name: currentUser.full_name || item.client_name || "Client Evaluator 1",
+          client_email: currentUser.email || item.client_email || "",
           client_rating: item.client_rating || 1,
           client_feedback: item.client_feedback || "",
           client_recommendation: item.client_recommendation || "Selected",
           client_notes: item.client_notes || "",
         }];
+      }
+    } else {
+      initClients = item.clients && item.clients.length > 0
+        ? item.clients
+        : [{
+            client_name: item.client_name || "Client Evaluator 1",
+            client_rating: item.client_rating || 1,
+            client_feedback: item.client_feedback || "",
+            client_recommendation: item.client_recommendation || "Selected",
+            client_notes: item.client_notes || "",
+          }];
+    }
 
     setFeedbackInterviewersList(initInts);
     setFeedbackClientsList(initClients);
@@ -1303,13 +1422,39 @@ export default function InterviewManagement() {
         ? Array.from(new Set(feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
         : [];
 
+      const uId = currentUser?.id || (currentUser as any)?._id || "";
+      const uEmail = (currentUser?.email || "").trim().toLowerCase();
+      const uName = (currentUser?.full_name || "").trim().toLowerCase();
+
+      let finalClientsList = feedbackClientsList;
+      if (isClientUser && currentUser && selectedInterview.clients && selectedInterview.clients.length > 0) {
+        const otherClients = selectedInterview.clients.filter((c) => {
+          const matchId = c.client_id && c.client_id === uId;
+          const matchEmail = c.client_email && c.client_email.trim().toLowerCase() === uEmail;
+          const matchName = c.client_name && c.client_name.trim().toLowerCase() === uName;
+          return !matchId && !matchEmail && !matchName;
+        });
+        finalClientsList = [...otherClients, ...feedbackClientsList];
+      }
+
+      let finalInterviewersList = feedbackInterviewersList;
+      if (isInterviewerUser && currentUser && selectedInterview.interviewers && selectedInterview.interviewers.length > 0) {
+        const otherInterviewers = selectedInterview.interviewers.filter((i) => {
+          const matchId = i.interviewer_id && i.interviewer_id === uId;
+          const matchEmail = i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail;
+          const matchName = i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName;
+          return !matchId && !matchEmail && !matchName;
+        });
+        finalInterviewersList = [...otherInterviewers, ...feedbackInterviewersList];
+      }
+
       await submitInterviewFeedback(selectedInterview.id, {
         rating: Number(feedbackForm.rating),
         feedback: feedbackForm.feedback || undefined,
         strengths: feedbackForm.strengths ? feedbackForm.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
         weaknesses: feedbackForm.weaknesses ? feedbackForm.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
         recommendation: feedbackForm.recommendation || undefined,
-        interviewers: feedbackInterviewersList,
+        interviewers: finalInterviewersList,
         skill_ratings: feedbackSkillRatings,
         category_scores: feedbackCategoryScores,
         ai_score: feedbackAiScore,
@@ -1322,7 +1467,7 @@ export default function InterviewManagement() {
         client_recommendation: feedbackForm.client_recommendation || undefined,
         client_notes: feedbackForm.client_notes || undefined,
         client_feedback_date: feedbackForm.client_feedback_date || undefined,
-        clients: feedbackClientsList,
+        clients: finalClientsList,
         candidate_requested_date: feedbackForm.candidate_requested_date || undefined,
         candidate_requested_time: feedbackForm.candidate_requested_time || undefined,
         candidate_requested_role: feedbackForm.candidate_requested_role || undefined,
@@ -4050,33 +4195,45 @@ export default function InterviewManagement() {
 
               {/* Right Tab Switcher & Actions (Single Row) */}
               <div className="flex items-center gap-2.5 flex-shrink-0">
-                <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setFeedbackTab("INTERVIEWER")}
-                    className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                      feedbackTab === "INTERVIEWER"
-                        ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <UserCheck size={14} />
-                    Panel Interviewers
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setFeedbackTab("CLIENT")}
-                    className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                      feedbackTab === "CLIENT"
-                        ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
+                {isClientUser ? (
+                  <div className="px-3 py-1 bg-teal-50 border border-teal-200 text-teal-700 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-2xs">
                     <Building2 size={14} />
-                    Client Evaluators
-                  </button>
-                </div>
+                    <span>Client Evaluator Feedback</span>
+                  </div>
+                ) : isInterviewerUser ? (
+                  <div className="px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-2xs">
+                    <UserCheck size={14} />
+                    <span>Panel Interviewer Feedback</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setFeedbackTab("INTERVIEWER")}
+                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                        feedbackTab === "INTERVIEWER"
+                          ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <UserCheck size={14} />
+                      Panel Interviewers
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFeedbackTab("CLIENT")}
+                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                        feedbackTab === "CLIENT"
+                          ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Building2 size={14} />
+                      Client Evaluators
+                    </button>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2 border-l border-slate-200 pl-2.5">
                   <button
@@ -4141,13 +4298,25 @@ export default function InterviewManagement() {
                     Evaluation Workspace
                   </span>
                   
-                  <a
-                    href="#sec-interviewer"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                  >
-                    <UserCheck size={15} className="text-indigo-600" />
-                    <span>Panel Feedback</span>
-                  </a>
+                  {!isClientUser && (
+                    <a
+                      href="#sec-interviewer"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                    >
+                      <UserCheck size={15} className="text-indigo-600" />
+                      <span>Panel Feedback</span>
+                    </a>
+                  )}
+
+                  {isClientUser && (
+                    <a
+                      href="#sec-interviewer"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-teal-600 border border-transparent hover:border-slate-200/80 transition-all"
+                    >
+                      <Building2 size={15} className="text-teal-600" />
+                      <span>Client Feedback</span>
+                    </a>
+                  )}
 
                   <a
                     href="#sec-skills"
@@ -4191,13 +4360,15 @@ export default function InterviewManagement() {
                               <p className="text-[11px] text-slate-500 font-medium">Record individual ratings & observations</p>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleAddFeedbackInterviewer}
-                            className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
-                          >
-                            <Plus size={14} /> Add Interviewer
-                          </button>
+                          {!isInterviewerUser && (
+                            <button
+                              type="button"
+                              onClick={handleAddFeedbackInterviewer}
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                            >
+                              <Plus size={14} /> Add Interviewer
+                            </button>
+                          )}
                         </div>
 
                         {feedbackInterviewersList.map((interviewer, idx) => (
@@ -4209,7 +4380,7 @@ export default function InterviewManagement() {
                                 </div>
                                 <span className="font-extrabold text-slate-900 text-sm">Interviewer #{idx + 1}</span>
                               </div>
-                              {feedbackInterviewersList.length > 1 && (
+                              {!isInterviewerUser && feedbackInterviewersList.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFeedbackInterviewer(idx)}
@@ -4419,13 +4590,15 @@ export default function InterviewManagement() {
                               <p className="text-[11px] text-slate-500 font-medium">Manage client team feedback</p>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleAddFeedbackClient}
-                            className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
-                          >
-                            <Plus size={14} /> Add Client Evaluator
-                          </button>
+                          {!isClientUser && (
+                            <button
+                              type="button"
+                              onClick={handleAddFeedbackClient}
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                            >
+                              <Plus size={14} /> Add Client Evaluator
+                            </button>
+                          )}
                         </div>
 
                         {feedbackClientsList.map((client, idx) => (
@@ -4437,7 +4610,7 @@ export default function InterviewManagement() {
                                 </div>
                                 <span className="font-extrabold text-slate-900 text-sm">Client Evaluator #{idx + 1}</span>
                               </div>
-                              {feedbackClientsList.length > 1 && (
+                              {!isClientUser && feedbackClientsList.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFeedbackClient(idx)}

@@ -97,6 +97,13 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   const [isUploadingDocFile, setIsUploadingDocFile] = useState<boolean>(false);
   const [isUploadingFeedbackReportFile, setIsUploadingFeedbackReportFile] = useState<boolean>(false);
 
+  // User Authentication & Role Detection
+  const userStr = localStorage.getItem("user");
+  const currentUser: UserProfile | null = userStr ? JSON.parse(userStr) : null;
+  const userRole = (currentUser?.role || "").toLowerCase();
+  const isClientUser = userRole.includes("client");
+  const isInterviewerUser = userRole.includes("interviewer");
+
   useEffect(() => {
     if (isOpen) {
       getUsers().then((users) => setSystemUsers(users)).catch(() => setSystemUsers([]));
@@ -107,8 +114,31 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   useEffect(() => {
     if (selectedInterviews && selectedInterviews.length > 0) {
       const initialForms: SingleCandidateFeedbackForm[] = selectedInterviews.map((item) => {
-        const initInterviewers: InterviewerItem[] =
-          item.interviewers && item.interviewers.length > 0
+        const uId = currentUser?.id || (currentUser as any)?._id || "";
+        const uEmail = (currentUser?.email || "").trim().toLowerCase();
+        const uName = (currentUser?.full_name || "").trim().toLowerCase();
+
+        let initInterviewers: InterviewerItem[] = [];
+        if (isInterviewerUser && currentUser) {
+          const matched = (item.interviewers || []).filter((i) => {
+            return (
+              (i.interviewer_id && i.interviewer_id === uId) ||
+              (i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail) ||
+              (i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName)
+            );
+          });
+          initInterviewers = matched.length > 0 ? matched : [{
+            interviewer_id: uId,
+            interviewer_name: currentUser.full_name || item.interviewer_name || "Interviewer 1",
+            interviewer_email: currentUser.email || item.interviewer_email || "",
+            rating: item.rating || 4,
+            feedback: item.feedback || "",
+            recommendation: item.recommendation || "Selected",
+            strengths: item.strengths || [],
+            weaknesses: item.weaknesses || [],
+          }];
+        } else {
+          initInterviewers = item.interviewers && item.interviewers.length > 0
             ? item.interviewers
             : [
                 {
@@ -121,9 +151,28 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   weaknesses: item.weaknesses || [],
                 },
               ];
+        }
 
-        const initClients: ClientFeedbackItem[] =
-          item.clients && item.clients.length > 0
+        let initClients: ClientFeedbackItem[] = [];
+        if (isClientUser && currentUser) {
+          const matched = (item.clients || []).filter((c) => {
+            return (
+              (c.client_id && c.client_id === uId) ||
+              (c.client_email && c.client_email.trim().toLowerCase() === uEmail) ||
+              (c.client_name && c.client_name.trim().toLowerCase() === uName)
+            );
+          });
+          initClients = matched.length > 0 ? matched : [{
+            client_id: uId,
+            client_name: currentUser.full_name || item.client_name || "Client Evaluator 1",
+            client_email: currentUser.email || item.client_email || "",
+            client_rating: item.client_rating || 4,
+            client_feedback: item.client_feedback || "",
+            client_recommendation: item.client_recommendation || "Selected",
+            client_notes: item.client_notes || "",
+          }];
+        } else {
+          initClients = item.clients && item.clients.length > 0
             ? item.clients
             : [
                 {
@@ -134,6 +183,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   client_notes: item.client_notes || "",
                 },
               ];
+        }
 
         const initSkills =
           item.skill_ratings && item.skill_ratings.length > 0
@@ -152,7 +202,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           meeting_platform: item.meeting_platform,
           meeting_link: item.meeting_link,
 
-          feedbackTab: "INTERVIEWER",
+          feedbackTab: isClientUser ? "CLIENT" : "INTERVIEWER",
           
           rating: item.rating !== undefined && item.rating !== null ? item.rating : 1,
           feedback: item.feedback || "",
@@ -406,6 +456,10 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       setLoading(true);
       setError(null);
 
+      const uId = currentUser?.id || (currentUser as any)?._id || "";
+      const uEmail = (currentUser?.email || "").trim().toLowerCase();
+      const uName = (currentUser?.full_name || "").trim().toLowerCase();
+
       const itemsPayload: BulkFeedbackItemPayload[] = formsData.map((f) => {
         const docFilesArray = f.interview_document_files
           ? Array.from(new Set(f.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
@@ -414,6 +468,30 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           ? Array.from(new Set(f.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
           : [];
 
+        const origItem = selectedInterviews.find((i) => i.id === f.interview_id);
+
+        let finalClientsList = f.clientsList;
+        if (isClientUser && currentUser && origItem?.clients && origItem.clients.length > 0) {
+          const otherClients = origItem.clients.filter((c) => {
+            const matchId = c.client_id && c.client_id === uId;
+            const matchEmail = c.client_email && c.client_email.trim().toLowerCase() === uEmail;
+            const matchName = c.client_name && c.client_name.trim().toLowerCase() === uName;
+            return !matchId && !matchEmail && !matchName;
+          });
+          finalClientsList = [...otherClients, ...(f.clientsList || [])];
+        }
+
+        let finalInterviewersList = f.interviewersList;
+        if (isInterviewerUser && currentUser && origItem?.interviewers && origItem.interviewers.length > 0) {
+          const otherInterviewers = origItem.interviewers.filter((i) => {
+            const matchId = i.interviewer_id && i.interviewer_id === uId;
+            const matchEmail = i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail;
+            const matchName = i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName;
+            return !matchId && !matchEmail && !matchName;
+          });
+          finalInterviewersList = [...otherInterviewers, ...(f.interviewersList || [])];
+        }
+
         return {
           interview_id: f.interview_id,
           rating: Number(f.rating),
@@ -421,7 +499,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           strengths: f.strengths ? f.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
           weaknesses: f.weaknesses ? f.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
           recommendation: f.recommendation || undefined,
-          interviewers: f.interviewersList,
+          interviewers: finalInterviewersList,
 
           client_name: f.client_name || undefined,
           client_rating: f.client_rating ? Number(f.client_rating) : undefined,
@@ -431,7 +509,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           client_recommendation: f.client_recommendation || undefined,
           client_notes: f.client_notes || undefined,
           client_feedback_date: f.client_feedback_date || undefined,
-          clients: f.clientsList,
+          clients: finalClientsList,
 
           skill_ratings: f.skill_ratings,
           category_scores: f.category_scores,
@@ -490,33 +568,45 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           {/* Right Panel Tab Switcher & Actions */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
             {currentForm && (
-              <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => handleCurrentFormChange("feedbackTab", "INTERVIEWER")}
-                  className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    currentForm.feedbackTab === "INTERVIEWER"
-                      ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <UserCheck size={14} />
-                  Panel Interviewers
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleCurrentFormChange("feedbackTab", "CLIENT")}
-                  className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    currentForm.feedbackTab === "CLIENT"
-                      ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
+              isClientUser ? (
+                <div className="px-3 py-1 bg-teal-50 border border-teal-200 text-teal-700 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-2xs">
                   <Building2 size={14} />
-                  Client Evaluators
-                </button>
-              </div>
+                  <span>Client Evaluator Feedback</span>
+                </div>
+              ) : isInterviewerUser ? (
+                <div className="px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-2xs">
+                  <UserCheck size={14} />
+                  <span>Panel Interviewer Feedback</span>
+                </div>
+              ) : (
+                <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => handleCurrentFormChange("feedbackTab", "INTERVIEWER")}
+                    className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      currentForm.feedbackTab === "INTERVIEWER"
+                        ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <UserCheck size={14} />
+                    Panel Interviewers
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCurrentFormChange("feedbackTab", "CLIENT")}
+                    className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      currentForm.feedbackTab === "CLIENT"
+                        ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Building2 size={14} />
+                    Client Evaluators
+                  </button>
+                </div>
+              )
             )}
 
             <div className="flex items-center gap-2 border-l border-slate-200 pl-2.5">
@@ -664,13 +754,25 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   Evaluation Workspace
                 </span>
                 
-                <a
-                  href="#sec-interviewer"
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                >
-                  <UserCheck size={15} className="text-indigo-600" />
-                  <span>Panel Feedback</span>
-                </a>
+                {!isClientUser && (
+                  <a
+                    href="#sec-interviewer"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <UserCheck size={15} className="text-indigo-600" />
+                    <span>Panel Feedback</span>
+                  </a>
+                )}
+
+                {isClientUser && (
+                  <a
+                    href="#sec-interviewer"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-teal-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <Building2 size={15} className="text-teal-600" />
+                    <span>Client Feedback</span>
+                  </a>
+                )}
 
                 <a
                   href="#sec-skills"
@@ -714,34 +816,36 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                             <p className="text-[11px] text-slate-500 font-medium">Record individual ratings & observations</p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleAddInterviewer}
-                          className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
-                        >
-                          <Plus size={14} /> Add Interviewer
-                        </button>
-                      </div>
+                          {!isInterviewerUser && (
+                            <button
+                              type="button"
+                              onClick={handleAddInterviewer}
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                            >
+                              <Plus size={14} /> Add Interviewer
+                            </button>
+                          )}
+                        </div>
 
-                      {currentForm.interviewersList.map((interviewer, intIdx) => (
-                        <div key={intIdx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-indigo-200 transition-all">
-                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center">
-                                {interviewer.interviewer_name ? interviewer.interviewer_name.charAt(0).toUpperCase() : "I"}
+                        {currentForm.interviewersList.map((interviewer, intIdx) => (
+                          <div key={intIdx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-indigo-200 transition-all">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                                  {interviewer.interviewer_name ? interviewer.interviewer_name.charAt(0).toUpperCase() : "I"}
+                                </div>
+                                <span className="font-extrabold text-slate-900 text-sm">Interviewer #{intIdx + 1}</span>
                               </div>
-                              <span className="font-extrabold text-slate-900 text-sm">Interviewer #{intIdx + 1}</span>
+                              {!isInterviewerUser && currentForm.interviewersList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveInterviewer(intIdx)}
+                                  className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 size={13} /> Remove
+                                </button>
+                              )}
                             </div>
-                            {currentForm.interviewersList.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveInterviewer(intIdx)}
-                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              >
-                                <Trash2 size={13} /> Remove
-                              </button>
-                            )}
-                          </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
@@ -943,34 +1047,36 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                             <p className="text-[11px] text-slate-500 font-medium">Manage client team feedback</p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleAddClient}
-                          className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
-                        >
-                          <Plus size={14} /> Add Client Evaluator
-                        </button>
-                      </div>
+                          {!isClientUser && (
+                            <button
+                              type="button"
+                              onClick={handleAddClient}
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
+                            >
+                              <Plus size={14} /> Add Client Evaluator
+                            </button>
+                          )}
+                        </div>
 
-                      {currentForm.clientsList.map((client, clientIdx) => (
-                        <div key={clientIdx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-teal-200 transition-all">
-                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-xs flex items-center justify-center">
-                                {client.client_name ? client.client_name.charAt(0).toUpperCase() : "C"}
+                        {currentForm.clientsList.map((client, clientIdx) => (
+                          <div key={clientIdx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-teal-200 transition-all">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-xs flex items-center justify-center">
+                                  {client.client_name ? client.client_name.charAt(0).toUpperCase() : "C"}
+                                </div>
+                                <span className="font-extrabold text-slate-900 text-sm">Client Evaluator #{clientIdx + 1}</span>
                               </div>
-                              <span className="font-extrabold text-slate-900 text-sm">Client Evaluator #{clientIdx + 1}</span>
+                              {!isClientUser && currentForm.clientsList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveClient(clientIdx)}
+                                  className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 size={13} /> Remove
+                                </button>
+                              )}
                             </div>
-                            {currentForm.clientsList.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveClient(clientIdx)}
-                                className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              >
-                                <Trash2 size={13} /> Remove
-                              </button>
-                            )}
-                          </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>

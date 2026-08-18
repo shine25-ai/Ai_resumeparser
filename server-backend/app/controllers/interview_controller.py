@@ -74,6 +74,7 @@ class InterviewController:
         self,
         candidate_id: Optional[str] = None,
         interviewer_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
         job_title: Optional[str] = None,
@@ -91,6 +92,7 @@ class InterviewController:
         res = await self.interview_service.filter_interviews(
             candidate_id=candidate_id,
             interviewer_id=interviewer_id,
+            client_id=client_id,
             status=status,
             interview_type=interview_type,
             job_title=job_title,
