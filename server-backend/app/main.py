@@ -15,7 +15,7 @@ from app.middleware.request_logger import RequestLoggerMiddleware
 from app.routes import auth, health, interview, resume, users, dashboard, roles
 from app.routes import settings as settings_router
 from app.routes import templates
-from app.routes import transcription, skills_evaluation
+from app.routes import transcription, skills_evaluation, resume_templates
 
 
 def create_application() -> FastAPI:
@@ -45,6 +45,7 @@ def create_application() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Content-Disposition"],
     )
 
     # Enable Trusted Host Security Middleware
@@ -74,6 +75,7 @@ def create_application() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(transcription.router)
     app.include_router(skills_evaluation.router)
+    app.include_router(resume_templates.router)
     # ── Serve Frontend Static Files ──────────────────────────────────────────────
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dist_path = os.path.join(os.path.dirname(BASE_DIR), "dist")

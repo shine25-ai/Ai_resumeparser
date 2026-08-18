@@ -12,6 +12,7 @@ import ClientFeedback from "./pages/ClientFeedback";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
+import ResumeTemplates from "./pages/ResumeTemplates";
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/upload" element={<Upload />} />
                       <Route path="/database" element={<CandidateDatabase />} />
+                      <Route path="/resume-templates" element={<ResumeTemplates />} />
                       <Route path="/evaluation" element={<Evaluation />} />
                       <Route path="/evaluation/:id" element={<Evaluation />} />
                       <Route path="/jd-match" element={<JDMatch />} />

@@ -47,6 +47,7 @@ export function Sidebar() {
     { name: "Interview Dashboard", path: "/interview-dashboard", perm: "interview-dashboard", icon: <Video size={20} /> },
     { name: "Client Feedback", path: "/client-feedback", perm: "client-feedback", icon: <MessageSquare size={20} /> },
     { name: "Analytics & Reports", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
+    { name: "Resume Templates", path: "/resume-templates", perm: "resume-templates", icon: <Briefcase size={20} /> },
   ];
 
   // Dynamic role-based filtering:
