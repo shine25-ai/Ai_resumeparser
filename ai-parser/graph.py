@@ -22,7 +22,7 @@ def get_llm(ai_config: dict = None, state: dict = None):
     elif provider == "openrouter":
         from langchain_openai import ChatOpenAI
         base_url = ai_config.get("base_url") or "https://openrouter.ai/api/v1"
-        model = ai_config.get("model_name") or "mistralai/mistral-7b-instruct:free"
+        model = ai_config.get("model_name") or os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b")
         api_key = ai_config.get("api_key") or os.getenv("OPENROUTER_API_KEY", "")
         llm = ChatOpenAI(model=model, base_url=base_url, api_key=api_key, temperature=0, model_kwargs={"response_format": {"type": "json_object"}})
     else:
@@ -208,7 +208,7 @@ def evaluate_candidate_node(state: GraphState):
         if provider == "ollama":
             model = ai_config.get("model_name") or os.getenv("OLLAMA_MODEL", "gpt-oss:120b-cloud")
         elif provider == "openrouter":
-            model = ai_config.get("model_name") or "mistralai/mistral-7b-instruct:free"
+            model = ai_config.get("model_name") or os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b")
         else:
             model = ai_config.get("model_name") or os.getenv("GROQ_MODEL", "gpt-oss:120b")
         eval_data["ai_metadata"] = {"provider": provider, "model": model}
