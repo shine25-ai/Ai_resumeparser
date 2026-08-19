@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Activity, Server, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import { SETTINGS_AI_USAGE } from '../utils/Api';
 

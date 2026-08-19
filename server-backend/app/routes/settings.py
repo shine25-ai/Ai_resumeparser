@@ -46,3 +46,16 @@ async def update_ai_config(
 @router.get("/ai/usage")
 async def get_ai_usage(controller: SettingsController = Depends(get_controller)):
     return await controller.get_ai_usage()
+
+from app.schemas.settings import AppConfigCreate, AppConfigResponse
+
+@router.get("/app", response_model=AppConfigResponse)
+async def get_app_config(controller: SettingsController = Depends(get_controller)):
+    return await controller.get_app_config()
+
+@router.put("/app", response_model=AppConfigResponse)
+async def update_app_config(
+    config: AppConfigCreate,
+    controller: SettingsController = Depends(get_controller)
+):
+    return await controller.update_app_config(config)

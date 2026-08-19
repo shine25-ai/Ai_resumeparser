@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from app.services.settings_service import SettingsService
-from app.schemas.settings import EmailConfigCreate, EmailConfigResponse
+from app.services.settings_service import SettingsService
+from app.schemas.settings import EmailConfigCreate, EmailConfigResponse, AppConfigCreate, AppConfigResponse
 from app.utils.encryption import decrypt_password
 import smtplib
 from email.message import EmailMessage
@@ -149,3 +150,12 @@ class SettingsController:
             }
             
         return {"provider": provider, "message": "Usage info not available for this provider."}
+
+    async def get_app_config(self) -> AppConfigResponse:
+        config = await self.service.get_app_config()
+        if not config:
+            return AppConfigResponse(enable_bulk_parsing=True, bulk_parsing_limit=5)
+        return config
+
+    async def update_app_config(self, config_data: AppConfigCreate) -> AppConfigResponse:
+        return await self.service.save_app_config(config_data)

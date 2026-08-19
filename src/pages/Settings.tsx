@@ -4,9 +4,10 @@ import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
 import AIConfiguration from '../components/AIConfiguration';
+import AppConfiguration from '../components/AppConfiguration';
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config'>('config');
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -145,6 +146,17 @@ export default function Settings() {
         >
           <Server className="w-4 h-4" />
           AI Configuration
+        </button>
+        <button
+          onClick={() => setActiveTab('app_config')}
+          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+            activeTab === 'app_config'
+              ? 'bg-white text-emerald-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <SettingsIcon className="w-4 h-4" />
+          App Configuration
         </button>
       </div>
 
@@ -316,8 +328,10 @@ export default function Settings() {
         <MailTemplates />
       ) : activeTab === 'roles' ? (
         <RoleManagement />
-      ) : (
+      ) : activeTab === 'ai_config' ? (
         <AIConfiguration />
+      ) : (
+        <AppConfiguration />
       )}
     </div>
   );

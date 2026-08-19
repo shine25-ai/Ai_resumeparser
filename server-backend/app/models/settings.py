@@ -16,3 +16,7 @@ class AIConfigModel(BaseModel):
     api_key: Optional[str] = None # Will store encrypted API key
     base_url: Optional[str] = None
     model_name: str
+
+class AppConfigModel(BaseModel):
+    enable_bulk_parsing: bool = True
+    bulk_parsing_limit: int = 5

@@ -26,3 +26,13 @@ class AIConfigCreate(AIConfigBase):
 
 class AIConfigResponse(AIConfigBase):
     api_key_set: bool
+
+class AppConfigBase(BaseModel):
+    enable_bulk_parsing: bool = True
+    bulk_parsing_limit: int = 5
+
+class AppConfigCreate(AppConfigBase):
+    pass
+
+class AppConfigResponse(AppConfigBase):
+    pass
