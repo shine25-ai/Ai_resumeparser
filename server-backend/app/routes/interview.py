@@ -21,7 +21,7 @@ from app.schemas.interview import (
     SendInterviewEmailRequest,
 )
 from app.services.interview_service import InterviewService
-from app.utils.enums import InterviewStatus, InterviewType
+from app.utils.enums import InterviewStatus
 
 router = APIRouter(prefix="/api/v1/interviews", tags=["Interviews"])
 
@@ -150,15 +150,16 @@ async def check_candidate_active_status(
     "/candidate/{candidate_id}/next-round-number",
     status_code=status.HTTP_200_OK,
     summary="Get next round number for candidate by interview type",
-    description="Calculate next round number for candidate, filtered per interview_type if provided.",
+    description="Calculate next round number for candidate, filtered per interview_type or interview_type_id if provided.",
 )
 async def get_next_round_number(
     candidate_id: str,
     interview_type: Optional[str] = Query(None, description="Interview type filter"),
+    interview_type_id: Optional[str] = Query(None, description="Interview type ID filter"),
     current_user: dict = Depends(get_current_active_user_optional),
     controller: InterviewController = Depends(get_interview_controller),
 ):
-    return await controller.get_next_round_number(candidate_id, interview_type=interview_type)
+    return await controller.get_next_round_number(candidate_id, interview_type=interview_type, interview_type_id=interview_type_id)
 
 
 @router.get(
@@ -187,6 +188,7 @@ async def list_interviews(
     client_id: Optional[str] = Query(None, description="Filter by Client ID"),
     status_val: Optional[str] = Query(None, alias="status", description="Filter by Interview Status"),
     interview_type: Optional[str] = Query(None, description="Filter by Interview Type"),
+    interview_type_id: Optional[str] = Query(None, description="Filter by Interview Type ID"),
     job_title: Optional[str] = Query(None, description="Filter by Job Title"),
     name: Optional[str] = Query(None, description="Filter by Candidate Name"),
     email: Optional[str] = Query(None, description="Filter by Candidate Email"),
@@ -213,6 +215,7 @@ async def list_interviews(
         client_id=client_id,
         status=status_val,
         interview_type=interview_type,
+        interview_type_id=interview_type_id,
         job_title=job_title,
         name=name,
         email=email,

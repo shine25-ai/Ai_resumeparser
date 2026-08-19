@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
   LayoutDashboard, UploadCloud, Users, Settings, Briefcase,
-  Calendar, Video, MessageSquare, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield
+  Calendar, Video, MessageSquare, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield, Layers
 } from "lucide-react";
 
 interface UserState {
@@ -48,6 +48,7 @@ export function Sidebar() {
     { name: "Client Feedback", path: "/client-feedback", perm: "client-feedback", icon: <MessageSquare size={20} /> },
     { name: "Analytics & Reports", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
     { name: "Resume Templates", path: "/resume-templates", perm: "resume-templates", icon: <Briefcase size={20} /> },
+    { name: "Interview Types", path: "/settings?tab=interviewTypes", perm: "settings", icon: <Layers size={20} /> },
   ];
 
   // Dynamic role-based filtering:

@@ -32,7 +32,7 @@ from app.services.s3_service import S3Service
 from app.services.settings_service import SettingsService
 from app.services.template_service import TemplateService
 from app.utils.encryption import decrypt_password
-from app.utils.enums import InterviewStatus, InterviewType
+from app.utils.enums import InterviewStatus
 from app.utils.helpers import utc_now
 from app.utils.validators import validate_uploaded_file
 
@@ -121,6 +121,7 @@ class InterviewService:
             job_location=payload.job_location,
             job_type=payload.job_type,
             interview_type=payload.interview_type,
+            interview_type_id=payload.interview_type_id,
             round_number=payload.round_number,
             scheduled_date=payload.scheduled_date,
             scheduled_time=payload.scheduled_time,
@@ -208,6 +209,7 @@ class InterviewService:
                 job_location=payload.job_location,
                 job_type=payload.job_type,
                 interview_type=payload.interview_type,
+                interview_type_id=payload.interview_type_id,
                 round_number=payload.round_number,
                 scheduled_date=payload.scheduled_date,
                 scheduled_time=payload.scheduled_time,
@@ -268,6 +270,7 @@ class InterviewService:
         client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
+        interview_type_id: Optional[str] = None,
         job_title: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
@@ -291,6 +294,7 @@ class InterviewService:
             client_id=client_id,
             status=status,
             interview_type=interview_type,
+            interview_type_id=interview_type_id,
             job_title=job_title,
             name=name,
             email=email,
@@ -307,6 +311,7 @@ class InterviewService:
             client_id=client_id,
             status=status,
             interview_type=interview_type,
+            interview_type_id=interview_type_id,
             job_title=job_title,
             name=name,
             email=email,
@@ -338,9 +343,9 @@ class InterviewService:
             raise NotFoundError("Interview not found.")
 
         update_fields = payload.model_dump(exclude_unset=True)
-        if "status" in update_fields and isinstance(update_fields["status"], InterviewStatus):
+        if "status" in update_fields and hasattr(update_fields["status"], "value"):
             update_fields["status"] = update_fields["status"].value
-        if "interview_type" in update_fields and isinstance(update_fields["interview_type"], InterviewType):
+        if "interview_type" in update_fields and hasattr(update_fields["interview_type"], "value"):
             update_fields["interview_type"] = update_fields["interview_type"].value
 
         check_date = update_fields.get("scheduled_date") or existing.get("scheduled_date")
@@ -469,30 +474,34 @@ class InterviewService:
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
         return InterviewResponse.model_validate(updated_doc)
 
-    async def get_next_round_number(self, candidate_id: str, interview_type: Optional[str] = None) -> Dict[str, Any]:
-        """Calculate the next round number for a candidate, specifically per interview_type if provided."""
+    async def get_next_round_number(
+        self, candidate_id: str, interview_type: Optional[str] = None, interview_type_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Calculate the next round number for a candidate, specifically per interview_type or interview_type_id if provided."""
         raw_interviews = await self.interview_repo.get_by_candidate_id(candidate_id, skip=0, limit=200)
         
         if not raw_interviews:
-            return {"candidate_id": candidate_id, "interview_type": interview_type, "next_round_number": 1}
+            return {"candidate_id": candidate_id, "interview_type": interview_type, "interview_type_id": interview_type_id, "next_round_number": 1}
 
         matching_rounds = []
-        if interview_type:
-            norm_type = interview_type.upper().strip()
+        if interview_type_id or interview_type:
+            target_id = (interview_type_id or "").strip()
+            norm_type = (interview_type or "").upper().strip()
             for doc in raw_interviews:
+                doc_type_id = str(doc.get("interview_type_id", "")).strip()
                 doc_type = str(doc.get("interview_type", "")).upper().strip()
-                if doc_type == norm_type:
+                if (target_id and doc_type_id == target_id) or (norm_type and doc_type == norm_type):
                     matching_rounds.append(doc.get("round_number", 1))
         
         if matching_rounds:
             next_round = max(matching_rounds) + 1
         else:
-            # If no rounds of this specific type exist, default to 1 for this type, or max total rounds + 1
-            next_round = max((doc.get("round_number", 1) for doc in raw_interviews), default=0) + 1 if not interview_type else 1
+            next_round = max((doc.get("round_number", 1) for doc in raw_interviews), default=0) + 1 if not (interview_type or interview_type_id) else 1
 
         return {
             "candidate_id": candidate_id,
             "interview_type": interview_type,
+            "interview_type_id": interview_type_id,
             "next_round_number": next_round,
             "total_existing_rounds": len(raw_interviews)
         }

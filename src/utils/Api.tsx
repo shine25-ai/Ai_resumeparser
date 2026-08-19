@@ -17,6 +17,7 @@ export const AUTH_REFRESH = `${BASE_URL}/auth/refresh`;
 export const USER_ME = `${BASE_URL}/users/me`;
 export const USERS_URL = `${BASE_URL}/users`;
 export const ROLES_URL = `${BASE_URL}/roles`;
+export const INTERVIEW_TYPES_URL = `${BASE_URL}/interview-types`;
 export const SETTINGS_EMAIL = `${BASE_URL}/settings/email`;
 export const SETTINGS_EMAIL_TEST = `${BASE_URL}/settings/email/test`;
 export const SETTINGS_AI = `${BASE_URL}/settings/ai`;
@@ -425,9 +426,11 @@ export const updateResume = async (resumeId: string, updateData: any) => {
 };
 
 // INTERVIEW INTERFACES & API FUNCTIONS
+import { RECOMMENDATION_OPTIONS } from "../types/interview";
 import type {
   InterviewTypeEnum,
   InterviewStatusEnum,
+  InterviewRecommendationEnum,
   InterviewerItem,
   ClientFeedbackItem,
   InterviewItem,
@@ -446,9 +449,11 @@ import type {
   CheckConflictResponse,
 } from "../types/interview";
 
+export { RECOMMENDATION_OPTIONS };
 export type {
   InterviewTypeEnum,
   InterviewStatusEnum,
+  InterviewRecommendationEnum,
   InterviewerItem,
   ClientFeedbackItem,
   InterviewItem,
@@ -955,9 +960,12 @@ export const getFeedbackQuestionsFromBackend = async (interviewType?: string) =>
   return resData.data || resData;
 };
 
-export const getNextRoundNumber = async (candidateId: string, interviewType?: string) => {
+export const getNextRoundNumber = async (candidateId: string, interviewType?: string, interviewTypeId?: string) => {
   const token = localStorage.getItem("access_token") || "";
-  const query = interviewType ? `?interview_type=${encodeURIComponent(interviewType)}` : "";
+  const params = new URLSearchParams();
+  if (interviewType) params.append("interview_type", interviewType);
+  if (interviewTypeId) params.append("interview_type_id", interviewTypeId);
+  const query = params.toString() ? `?${params.toString()}` : "";
   const response = await fetch(`${INTERVIEWS_URL}/candidate/${candidateId}/next-round-number${query}`, {
     method: "GET",
     headers: {
@@ -1259,5 +1267,118 @@ export const deleteSkillsEvaluation = async (skillId: string): Promise<void> => 
     throw new Error(resData.detail || "Failed to delete skills evaluation template");
   }
 };
+
+// INTERVIEW TYPE MANAGEMENT API
+export interface InterviewTypeItem {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  color?: string;
+  is_active: boolean;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InterviewTypeCreatePayload {
+  name: string;
+  code?: string;
+  description?: string;
+  color?: string;
+  is_active?: boolean;
+}
+
+export interface InterviewTypeUpdatePayload {
+  name?: string;
+  code?: string;
+  description?: string;
+  color?: string;
+  is_active?: boolean;
+}
+
+export const getInterviewTypes = async (includeInactive: boolean = true): Promise<InterviewTypeItem[]> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEW_TYPES_URL}?include_inactive=${includeInactive}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch interview types");
+  }
+
+  const payload = resData.data || resData;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.interview_types)) return payload.interview_types;
+  return [];
+};
+
+export const createInterviewType = async (payload: InterviewTypeCreatePayload): Promise<InterviewTypeItem> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(INTERVIEW_TYPES_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to create interview type");
+  }
+
+  return resData.data || resData;
+};
+
+export const updateInterviewType = async (id: string, payload: InterviewTypeUpdatePayload): Promise<InterviewTypeItem> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEW_TYPES_URL}/${id}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to update interview type");
+  }
+
+  return resData.data || resData;
+};
+
+export const deleteInterviewType = async (id: string): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEW_TYPES_URL}/${id}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to delete interview type");
+  }
+};
+
 
 

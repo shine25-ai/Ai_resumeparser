@@ -323,7 +323,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
                         <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 rounded-xl shadow-xs">
-                            Round {round.round_number} ({(round.interview_type || "TECHNICAL").replace(/_/g, " ")})
+                            Round {round.round_number} ({(round.interview_type || "Interview").replace(/_/g, " ")})
                           </div>
                           <div className="text-slate-700 font-semibold flex items-center gap-1">
                             <Calendar size={13} className="text-indigo-600" /> {round.scheduled_date} at {round.scheduled_time} ({round.timezone})

@@ -665,7 +665,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
           </span>
           {currentRoundNumber && (
             <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-              Active Evaluation: Round {currentRoundNumber} ({(currentInterviewType || "TECHNICAL").replace(/_/g, " ")})
+              Active Evaluation: Round {currentRoundNumber} ({(currentInterviewType || "Interview").replace(/_/g, " ")})
             </span>
           )}
         </div>
@@ -692,12 +692,12 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
             const roundsList = (allRounds && allRounds.length > 0)
               ? [...allRounds].sort((a, b) => (a.round_number || 1) - (b.round_number || 1))
               : currentRoundNumber
-              ? [{ round_number: currentRoundNumber, interview_type: currentInterviewType || "TECHNICAL", status: "SCHEDULED" }]
-              : [{ round_number: 1, interview_type: "TECHNICAL", status: "SCHEDULED" }];
+              ? [{ round_number: currentRoundNumber, interview_type: currentInterviewType || "Interview", status: "SCHEDULED" }]
+              : [{ round_number: 1, interview_type: "Interview", status: "SCHEDULED" }];
 
             return roundsList.map((rndItem, rIdx) => {
               const rndNum = rndItem.round_number || (rIdx + 1);
-              const rndType = (rndItem.interview_type || "TECHNICAL").replace(/_/g, " ");
+              const rndType = (rndItem.interview_type || "Interview").replace(/_/g, " ");
               const isCurrent = currentRoundNumber ? rndNum === currentRoundNumber : rIdx === 0;
               const isCompleted = rndItem.status === "COMPLETED" || (currentRoundNumber ? rndNum < currentRoundNumber : false);
 

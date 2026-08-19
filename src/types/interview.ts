@@ -1,14 +1,4 @@
-export type InterviewTypeEnum =
-  | "TECHNICAL"
-  | "HR"
-  | "MANAGERIAL"
-  | "CULTURE_FIT"
-  | "FINAL_ROUND"
-  | "INITIAL_SCREENING"
-  | "CODING_TEST"
-  | "CLIENT_ROUND"
-  | "SYSTEM_DESIGN"
-  | "BEHAVIORAL";
+export type InterviewTypeEnum = string;
 
 export type InterviewStatusEnum =
   | "PENDING"
@@ -17,6 +7,27 @@ export type InterviewStatusEnum =
   | "CANCELLED"
   | "RESCHEDULED"
   | "NO_SHOW";
+
+export const RECOMMENDATION_OPTIONS = [
+  "Selected",
+  "Rejected",
+  "On Hold",
+  "Shortlisted",
+  "Pending",
+  "Need Further Evaluation",
+  "Withdrawn",
+  "No Show",
+  "Reschedule Required",
+  "Recommended",
+  "Not Recommended",
+  "Offer to Be Released",
+  "Offer Accepted",
+  "Offer Rejected",
+] as const;
+
+export type InterviewRecommendationEnum =
+  | typeof RECOMMENDATION_OPTIONS[number]
+  | (string & {});
 
 export interface SkillRatingItem {
   skill_name: string;
@@ -73,6 +84,7 @@ export interface InterviewItem {
   job_location?: string;
   job_type?: string;
   interview_type: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number: number;
   scheduled_date: string;
   scheduled_time: string;
@@ -146,6 +158,7 @@ export interface CreateInterviewPayload {
   job_location?: string;
   job_type?: string;
   interview_type?: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number?: number;
   scheduled_date: string;
   scheduled_time: string;
@@ -204,6 +217,7 @@ export interface BatchCreateInterviewPayload {
   job_location?: string;
   job_type?: string;
   interview_type?: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number?: number;
   scheduled_date: string;
   scheduled_time: string;
@@ -257,6 +271,7 @@ export interface UpdateInterviewPayload {
   job_location?: string;
   job_type?: string;
   interview_type?: InterviewTypeEnum;
+  interview_type_id?: string;
   round_number?: number;
   scheduled_date?: string;
   scheduled_time?: string;
