@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight, MoreVertical
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
@@ -68,6 +68,22 @@ export default function InterviewManagement() {
   // Bulk Selection & Modal State
   const [selectedInterviewIds, setSelectedInterviewIds] = useState<string[]>([]);
   const [isBulkFeedbackOpen, setIsBulkFeedbackOpen] = useState<boolean>(false);
+
+  // Actions 3-Dots Menu State
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  // Close actions popup menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openActionMenuId && !(event.target as HTMLElement).closest(".mgm-action-menu-container")) {
+        setOpenActionMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [openActionMenuId]);
 
   // Modals state
   const [isScheduleOpen, setIsScheduleOpen] = useState<boolean>(false);
@@ -986,6 +1002,18 @@ export default function InterviewManagement() {
     }
   };
 
+  const getRecommendationBadge = (rec?: string) => {
+    if (!rec) return "bg-slate-50 border-slate-200 text-slate-500 font-medium";
+    const r = rec.trim();
+    if (["Selected", "Hire", "Strong Hire", "Recommended", "Offer Accepted", "Offer to Be Released", "Shortlisted"].includes(r)) {
+      return "bg-emerald-50 border-emerald-200 text-emerald-700 font-bold";
+    }
+    if (["Hold", "On Hold", "Pending", "Need Further Evaluation", "Reschedule Required"].includes(r)) {
+      return "bg-amber-50 border-amber-200 text-amber-800 font-bold";
+    }
+    return "bg-rose-50 border-rose-200 text-rose-700 font-bold";
+  };
+
   // Schedule Submit
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1206,25 +1234,25 @@ export default function InterviewManagement() {
 
     const intList = item.interviewers && item.interviewers.length > 0
       ? item.interviewers.map((i) => ({
-          send: true,
-          name: i.interviewer_name || "Interviewer",
-          email: i.interviewer_email || "",
-          type: "Interviewer" as const,
-        }))
+        send: true,
+        name: i.interviewer_name || "Interviewer",
+        email: i.interviewer_email || "",
+        type: "Interviewer" as const,
+      }))
       : item.interviewer_email
-      ? [{ send: true, name: item.interviewer_name || "Interviewer", email: item.interviewer_email, type: "Interviewer" as const }]
-      : [];
+        ? [{ send: true, name: item.interviewer_name || "Interviewer", email: item.interviewer_email, type: "Interviewer" as const }]
+        : [];
 
     const cliList = item.clients && item.clients.length > 0
       ? item.clients.map((c) => ({
-          send: true,
-          name: c.client_name || "Client Evaluator",
-          email: c.client_email || "",
-          type: "Client" as const,
-        }))
+        send: true,
+        name: c.client_name || "Client Evaluator",
+        email: c.client_email || "",
+        type: "Client" as const,
+      }))
       : item.client_email
-      ? [{ send: true, name: item.client_name || "Client Evaluator", email: item.client_email, type: "Client" as const }]
-      : [];
+        ? [{ send: true, name: item.client_name || "Client Evaluator", email: item.client_email, type: "Client" as const }]
+        : [];
 
     const combinedRecipients = [...intList, ...cliList];
     if (combinedRecipients.length === 0) {
@@ -1324,14 +1352,14 @@ export default function InterviewManagement() {
       initInts = item.interviewers && item.interviewers.length > 0
         ? item.interviewers
         : [{
-            interviewer_name: item.interviewer_name || "Interviewer 1",
-            interviewer_email: item.interviewer_email || "",
-            rating: item.rating || 1,
-            feedback: item.feedback || "",
-            recommendation: item.recommendation || "Selected",
-            strengths: item.strengths || [],
-            weaknesses: item.weaknesses || [],
-          }];
+          interviewer_name: item.interviewer_name || "Interviewer 1",
+          interviewer_email: item.interviewer_email || "",
+          rating: item.rating || 1,
+          feedback: item.feedback || "",
+          recommendation: item.recommendation || "Selected",
+          strengths: item.strengths || [],
+          weaknesses: item.weaknesses || [],
+        }];
     }
 
     let initClients: ClientFeedbackItem[] = [];
@@ -1360,12 +1388,12 @@ export default function InterviewManagement() {
       initClients = item.clients && item.clients.length > 0
         ? item.clients
         : [{
-            client_name: item.client_name || "Client Evaluator 1",
-            client_rating: item.client_rating || 1,
-            client_feedback: item.client_feedback || "",
-            client_recommendation: item.client_recommendation || "Selected",
-            client_notes: item.client_notes || "",
-          }];
+          client_name: item.client_name || "Client Evaluator 1",
+          client_rating: item.client_rating || 1,
+          client_feedback: item.client_feedback || "",
+          client_recommendation: item.client_recommendation || "Selected",
+          client_notes: item.client_notes || "",
+        }];
     }
 
     setFeedbackInterviewersList(initInts);
@@ -1545,38 +1573,38 @@ export default function InterviewManagement() {
     const initInts =
       item.interviewers && item.interviewers.length > 0
         ? item.interviewers.map((i) => ({
-            send: true,
-            name: i.interviewer_name || "Interviewer",
-            email: i.interviewer_email || "",
-          }))
+          send: true,
+          name: i.interviewer_name || "Interviewer",
+          email: i.interviewer_email || "",
+        }))
         : item.interviewer_name || item.interviewer_email
-        ? [
+          ? [
             {
               send: true,
               name: item.interviewer_name || "Interviewer",
               email: item.interviewer_email || "",
             },
           ]
-        : [];
+          : [];
     setInterviewerMailRecipients(initInts);
 
     // Initialize client evaluator mail recipient list
     const initClients =
       item.clients && item.clients.length > 0
         ? item.clients.map((c) => ({
-            send: true,
-            name: c.client_name || "Client Evaluator",
-            email: c.client_email || "",
-          }))
+          send: true,
+          name: c.client_name || "Client Evaluator",
+          email: c.client_email || "",
+        }))
         : item.client_name || item.client_email
-        ? [
+          ? [
             {
               send: true,
               name: item.client_name || "Client Evaluator",
               email: item.client_email || "",
             },
           ]
-        : [];
+          : [];
     setClientMailRecipients(initClients);
 
     setIsSendMailOpen(true);
@@ -1828,7 +1856,7 @@ export default function InterviewManagement() {
   };
 
   return (
-    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
+    <div className="bg-white text-slate-800 min-h-screen px-2 py-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div className="flex items-center gap-3">
@@ -2039,8 +2067,8 @@ export default function InterviewManagement() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm min-h-[340px]">
+            <table className="w-full text-left border-collapse min-w-[1150px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
                   <th className="py-3.5 px-4 w-12 text-center">
@@ -2052,11 +2080,12 @@ export default function InterviewManagement() {
                       title="Select / Deselect all candidates"
                     />
                   </th>
-                  <th className="py-3.5 px-4 min-w-[220px]">Candidate Details</th>
-                  <th className="py-3.5 px-4 min-w-[170px]">Role & Round</th>
+                  <th className="py-3.5 px-4 min-w-[200px]">Candidate Details</th>
+                  <th className="py-3.5 px-4 min-w-[160px]">Role & Round</th>
                   <th className="py-3.5 px-4 min-w-[170px]">Schedule & HR Call</th>
-                  <th className="py-3.5 px-4 min-w-[260px]">Feedback & Ratings</th>
-                  <th className="py-3.5 px-4 min-w-[140px] text-right">Actions</th>
+                  <th className="py-3.5 px-4 min-w-[180px]">Feedback & Ratings</th>
+                  <th className="py-3.5 px-4 min-w-[210px]">Recommendation Status</th>
+                  <th className="py-3.5 px-2 min-w-[140px] text-left">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs font-sans">
@@ -2133,35 +2162,58 @@ export default function InterviewManagement() {
                     {/* Feedback & Ratings */}
                     <td className="py-4 px-4">
                       <div className="space-y-1.5">
-                        {/* Interviewer */}
+                        {/* Interviewer Rating */}
                         <div className="flex items-center gap-2 text-[10px]">
                           <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-1.5 py-0.5 rounded shrink-0">
                             Interviewer
                           </span>
-                          <span className="text-amber-600 font-bold shrink-0">⭐ {row.rating ? `${row.rating}/5` : "-"}</span>
-                          {row.recommendation && (
-                            <span className="bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded text-[9px] font-semibold truncate max-w-[90px]">
-                              {row.recommendation}
-                            </span>
-                          )}
+                          <span className="text-amber-600 font-bold shrink-0">
+                            ⭐ {row.rating ? `${row.rating}/5` : "-"}
+                          </span>
                         </div>
 
-                        {/* Client */}
+                        {/* Client Rating */}
                         <div className="flex items-center gap-2 text-[10px]">
                           <span className="bg-teal-50 text-teal-700 border border-teal-200 font-bold px-1.5 py-0.5 rounded shrink-0">
                             Client
                           </span>
-                          {row.client_rating || row.client_recommendation || row.client_name ? (
-                            <>
-                              <span className="text-teal-700 font-bold truncate max-w-[100px]">
-                                {row.client_name ? `${row.client_name}: ` : ""}⭐ {row.client_rating ? `${row.client_rating}/5` : "-"}
-                              </span>
-                              {row.client_recommendation && (
-                                <span className="bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0">
-                                  {row.client_recommendation}
-                                </span>
-                              )}
-                            </>
+                          {row.client_rating || row.client_name ? (
+                            <span className="text-teal-700 font-bold truncate max-w-[140px]">
+                              {row.client_name ? `${row.client_name}: ` : ""}⭐ {row.client_rating ? `${row.client_rating}/5` : "-"}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Pending</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Recommendation Status (Interviewer & Client) */}
+                    <td className="py-4 px-4">
+                      <div className="space-y-1.5">
+                        {/* Interviewer Recommendation */}
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-1.5 py-0.5 rounded shrink-0">
+                            Interviewer
+                          </span>
+                          {row.recommendation ? (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border truncate max-w-[130px] ${getRecommendationBadge(row.recommendation)}`}>
+                              {row.recommendation}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Pending</span>
+                          )}
+                        </div>
+
+                        {/* Client Recommendation */}
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="bg-teal-50 text-teal-700 border border-teal-200 font-bold px-1.5 py-0.5 rounded shrink-0">
+                            Client
+                          </span>
+                          {row.client_recommendation ? (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border truncate max-w-[130px] ${getRecommendationBadge(row.client_recommendation)}`}>
+                              {row.client_recommendation}
+                            </span>
                           ) : (
                             <span className="text-slate-400 italic">Pending</span>
                           )}
@@ -2170,76 +2222,100 @@ export default function InterviewManagement() {
                     </td>
 
                     {/* Actions */}
-                    <td className="py-4 px-0 text-right">
-                      <div className="flex flex-col items-end gap-1.5 text-indigo-600">
-                        {/* Row 1: 4 buttons */}
-                        <div className="flex items-center gap-1.5">
-                          {/* Send Interview Email Button */}
-                          <button
-                            onClick={() => handleOpenSendMail(row)}
-                            title="Send Email to Candidate & Interviewer"
-                            className="p-1.5 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-indigo-600"
-                          >
-                            <Mail size={14} />
-                          </button>
+                    <td className="py-4 px-2 text-left relative">
+                      <div className="relative inline-block text-left mgm-action-menu-container">
+                        {/* 3-Dots Button */}
+                        <button
+                          onClick={() => setOpenActionMenuId(openActionMenuId === row.id ? null : row.id)}
+                          className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs"
+                          title="Actions Menu"
+                        >
+                          <MoreVertical size={16} />
+                        </button>
 
-                          {/* View Candidate Full History Button */}
-                          <button
-                            onClick={() => handleOpenDetails(row)}
-                            title="View Candidate Full Details & All Rounds History"
-                            className="p-1.5 hover:bg-sky-50 hover:text-sky-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-sky-600"
-                          >
-                            <Eye size={14} />
-                          </button>
+                        {/* Action Dropdown Popup */}
+                        {openActionMenuId === row.id && (
+                          <div className="absolute right-0 top-8 z-50 w-52 bg-white border border-slate-200 rounded-2xl shadow-2xl py-1.5 text-left text-xs animate-in fade-in duration-150 space-y-0.5">
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenSendMail(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Mail size={14} className="text-indigo-600" />
+                              <span>Send Email</span>
+                            </button>
 
-                          {/* Open Single Feedback Modal */}
-                          <button
-                            onClick={() => handleOpenFeedback(row)}
-                            title="Submit Single Candidate Feedback"
-                            className="p-1.5 hover:bg-amber-50 hover:text-amber-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-amber-600"
-                          >
-                            <Star size={14} />
-                          </button>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenDetails(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-sky-50 hover:text-sky-600 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Eye size={14} className="text-sky-600" />
+                              <span>View Candidate Details</span>
+                            </button>
 
-                          {/* Edit Button */}
-                          <button
-                            onClick={() => handleOpenEdit(row)}
-                            title="Edit Interview"
-                            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 cursor-pointer text-slate-700"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                        </div>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenFeedback(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-600 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Star size={14} className="text-amber-600" />
+                              <span>Submit Feedback</span>
+                            </button>
 
-                        {/* Row 2: 3-4 buttons */}
-                        <div className="flex items-center gap-1.5">
-                          {/* Reschedule Button */}
-                          <button
-                            onClick={() => handleOpenReschedule(row)}
-                            title="Reschedule Date & Time"
-                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors border border-slate-200 cursor-pointer text-amber-600"
-                          >
-                            <Calendar size={14} />
-                          </button>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenEdit(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Edit2 size={14} className="text-slate-600" />
+                              <span>Edit Interview</span>
+                            </button>
 
-                          {/* Schedule Next Round Button */}
-                          <button
-                            onClick={() => handleOpenNextRound(row)}
-                            title="Schedule Next Round"
-                            className="p-1.5 hover:bg-purple-50 hover:text-purple-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-purple-600"
-                          >
-                            <Layers size={14} />
-                          </button>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenReschedule(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-700 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Calendar size={14} className="text-amber-600" />
+                              <span>Reschedule Interview</span>
+                            </button>
 
-                          {/* Delete Button */}
-                          <button
-                            onClick={() => handleOpenDelete(row)}
-                            title="Delete Interview"
-                            className="p-1.5 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors border border-slate-200 cursor-pointer text-rose-600"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenNextRound(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-purple-50 hover:text-purple-700 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Layers size={14} className="text-purple-600" />
+                              <span>Schedule Next Round</span>
+                            </button>
+
+                            <div className="border-t border-slate-100 my-1"></div>
+
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenDelete(row);
+                              }}
+                              className="w-full px-3.5 py-2 text-rose-600 hover:bg-rose-50 font-bold flex items-center gap-2.5 transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={14} className="text-rose-600" />
+                              <span>Delete Interview</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -2305,11 +2381,10 @@ export default function InterviewManagement() {
                 <button
                   key={pageNum}
                   onClick={() => setPage(pageNum)}
-                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    page === pageNum
-                      ? "bg-indigo-600 text-white shadow-xs"
-                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                  }`}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${page === pageNum
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
                 >
                   {pageNum}
                 </button>
@@ -3059,11 +3134,10 @@ export default function InterviewManagement() {
                           ? `Cannot schedule interview: Candidate '${scheduleForm.candidate_name}' already has an active interview session pending feedback.`
                           : "Schedule Interview"
                       }
-                      className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${
-                        hasActiveIncomplete
-                          ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none opacity-60"
-                          : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 cursor-pointer"
-                      }`}
+                      className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${hasActiveIncomplete
+                        ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none opacity-60"
+                        : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 cursor-pointer"
+                        }`}
                     >
                       <Plus size={16} /> Schedule Interview
                     </button>
@@ -3820,7 +3894,7 @@ export default function InterviewManagement() {
       {isRescheduleOpen && selectedInterview && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-3 sm:p-4 font-sans animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200/90 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-900">
-            
+
             {/* Modal Header (Fixed at top) */}
             <div className="px-6 py-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-slate-200 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
@@ -3848,7 +3922,7 @@ export default function InterviewManagement() {
 
             {/* Scrollable Form Body (Flexible middle) */}
             <form id="reschedule-form" onSubmit={handleRescheduleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs scrollbar-thin">
-              
+
               {/* TIME SLOT CONFLICT WARNING BANNER */}
               {conflictWarning && (
                 <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
@@ -3885,7 +3959,7 @@ export default function InterviewManagement() {
 
               {/* 2-COLUMN WIDE GRID */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
+
                 {/* LEFT COLUMN: RESCHEDULE TIME & REASON */}
                 <div className="space-y-3.5 bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl">
                   <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
@@ -4077,11 +4151,10 @@ export default function InterviewManagement() {
                                       }}
                                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
                                     />
-                                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                                      rec.type === "Client"
-                                        ? "bg-teal-50 border border-teal-200 text-teal-700"
-                                        : "bg-indigo-50 border border-indigo-200 text-indigo-700"
-                                    }`}>
+                                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${rec.type === "Client"
+                                      ? "bg-teal-50 border border-teal-200 text-teal-700"
+                                      : "bg-indigo-50 border border-indigo-200 text-indigo-700"
+                                      }`}>
                                       {rec.type}
                                     </span>
                                   </div>
@@ -4172,7 +4245,7 @@ export default function InterviewManagement() {
       {isFeedbackOpen && selectedInterview && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 md:p-4 font-sans animate-in fade-in duration-300">
           <div className="bg-slate-50 border border-slate-200/80 rounded-3xl w-full max-w-[98vw] h-[95vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-900">
-            
+
             {/* 1. TOP WORKSPACE STICKY HEADER (SINGLE HORIZONTAL ROW) */}
             <header className="flex flex-nowrap items-center justify-between gap-3 px-5 py-2.5 bg-white/90 backdrop-blur-md border-b border-slate-200/80 flex-shrink-0 sticky top-0 z-20">
               {/* Left Profile Details (Single Row) */}
@@ -4186,13 +4259,12 @@ export default function InterviewManagement() {
                     <h2 className="text-sm font-extrabold text-slate-900 tracking-tight whitespace-nowrap leading-tight">
                       {selectedInterview.candidate_name}
                     </h2>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                      feedbackAiRecommendation === "Strong Hire" || feedbackAiRecommendation === "Selected"
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                        : feedbackAiRecommendation === "Hire"
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${feedbackAiRecommendation === "Strong Hire" || feedbackAiRecommendation === "Selected"
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                      : feedbackAiRecommendation === "Hire"
                         ? "bg-teal-50 border-teal-200 text-teal-700"
                         : "bg-amber-50 border-amber-200 text-amber-700"
-                    }`}>
+                      }`}>
                       {feedbackAiRecommendation} ({feedbackAiScore}/100)
                     </span>
                   </div>
@@ -4226,11 +4298,10 @@ export default function InterviewManagement() {
                     <button
                       type="button"
                       onClick={() => setFeedbackTab("INTERVIEWER")}
-                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                        feedbackTab === "INTERVIEWER"
-                          ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
+                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${feedbackTab === "INTERVIEWER"
+                        ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                        }`}
                     >
                       <UserCheck size={14} />
                       Panel Interviewers
@@ -4239,11 +4310,10 @@ export default function InterviewManagement() {
                     <button
                       type="button"
                       onClick={() => setFeedbackTab("CLIENT")}
-                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                        feedbackTab === "CLIENT"
-                          ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
+                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${feedbackTab === "CLIENT"
+                        ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                        }`}
                     >
                       <Building2 size={14} />
                       Client Evaluators
@@ -4304,7 +4374,7 @@ export default function InterviewManagement() {
 
             {/* 2. MAIN DASHBOARD CONTENT AREA */}
             <form id="interview-feedback-form" onSubmit={handleFeedbackSubmit} className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col justify-between space-y-6">
-              
+
               {/* 3-COLUMN WORKSPACE GRID */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
@@ -4313,7 +4383,7 @@ export default function InterviewManagement() {
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 block mb-2">
                     Evaluation Workspace
                   </span>
-                  
+
                   {!isClientUser && (
                     <a
                       href="#sec-interviewer"
@@ -4361,7 +4431,7 @@ export default function InterviewManagement() {
 
                 {/* MAIN CONTENT AREA (7 COLS) */}
                 <div className="lg:col-span-7 space-y-6">
-                  
+
                   {/* PANEL INTERVIEWER / CLIENT CARDS SECTION */}
                   <div id="sec-interviewer" className="space-y-4">
                     {feedbackTab === "INTERVIEWER" && (
@@ -5072,7 +5142,7 @@ export default function InterviewManagement() {
 
                 {/* RIGHT FLOATING STICKY AI SUMMARY PANEL (3 COLS) */}
                 <div className="lg:col-span-3 space-y-5 sticky top-0 self-start">
-                  
+
                   {/* STICKY AI DASHBOARD SCORE GAUGE CARD */}
                   <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 shadow-xl space-y-4 border border-indigo-700/50">
                     <div className="flex items-center justify-between border-b border-indigo-700/50 pb-3">
@@ -5125,13 +5195,12 @@ export default function InterviewManagement() {
 
                     <div className="space-y-2 text-xs">
                       {/* HR Call Verification Status */}
-                      <div className={`flex items-center justify-between p-2.5 rounded-xl font-bold border transition-all ${
-                        selectedInterview.hr_call_verification === "Verified"
-                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                          : selectedInterview.hr_call_verification === "Not Eligible"
+                      <div className={`flex items-center justify-between p-2.5 rounded-xl font-bold border transition-all ${selectedInterview.hr_call_verification === "Verified"
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                        : selectedInterview.hr_call_verification === "Not Eligible"
                           ? "bg-rose-50 text-rose-800 border-rose-200"
                           : "bg-amber-50 text-amber-800 border-amber-200"
-                      }`}>
+                        }`}>
                         <div className="flex items-center gap-2">
                           <ShieldCheck size={15} className={selectedInterview.hr_call_verification === "Verified" ? "text-emerald-600" : "text-amber-600"} />
                           <span>HR Screening</span>
@@ -5159,13 +5228,12 @@ export default function InterviewManagement() {
                               return (
                                 <div
                                   key={rnd.id}
-                                  className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all ${
-                                    isCurrent
-                                      ? "bg-indigo-50/90 text-indigo-900 font-extrabold border-2 border-indigo-500 shadow-2xs"
-                                      : isCompleted
+                                  className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all ${isCurrent
+                                    ? "bg-indigo-50/90 text-indigo-900 font-extrabold border-2 border-indigo-500 shadow-2xs"
+                                    : isCompleted
                                       ? "bg-slate-50 text-slate-700 font-semibold border border-slate-200"
                                       : "bg-slate-50/60 text-slate-500 font-medium border border-slate-200"
-                                  }`}
+                                    }`}
                                 >
                                   <div className="flex items-center gap-2 truncate max-w-[160px]">
                                     {isCurrent ? (
@@ -5841,11 +5909,10 @@ export default function InterviewManagement() {
             <form onSubmit={handleSendMailSubmit} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
               {sendMailStatus && (
                 <div
-                  className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${
-                    sendMailStatus.type === "success"
-                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                      : "bg-rose-50 text-rose-800 border border-rose-200"
-                  }`}
+                  className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${sendMailStatus.type === "success"
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                    : "bg-rose-50 text-rose-800 border border-rose-200"
+                    }`}
                 >
                   {sendMailStatus.type === "success" ? (
                     <UserCheck size={16} className="shrink-0 text-emerald-600" />
@@ -5892,38 +5959,38 @@ export default function InterviewManagement() {
 
                 {((selectedInterview.interview_document_files && selectedInterview.interview_document_files.length > 0) ||
                   (selectedInterview.interview_feedback_files && selectedInterview.interview_feedback_files.length > 0)) && (
-                  <div className="pt-2 border-t border-indigo-100/80 space-y-1.5">
-                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
-                      📎 Attached Session Files & S3 Resources (Included in Email)
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {Array.from(new Set([...(selectedInterview.interview_document_files || []), ...(selectedInterview.interview_feedback_files || [])])).map((fileUrl: string, fIdx: number) => {
-                        const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
-                        const rawName = fileUrl.split("/").pop() || fileUrl;
-                        const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
-                        return (
-                          <div key={fIdx} className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-[11px] shadow-2xs">
-                            <FileText size={12} className="text-indigo-600 shrink-0" />
-                            <span className="font-semibold text-slate-800 max-w-[170px] truncate" title={fileUrl}>
-                              {displayName}
-                            </span>
-                            {isUrl && (
-                              <a
-                                href={fileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[9px] px-1.5 py-0.2 rounded font-bold transition-all"
-                              >
-                                <Eye size={10} />
-                                <span>View</span>
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="pt-2 border-t border-indigo-100/80 space-y-1.5">
+                      <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                        📎 Attached Session Files & S3 Resources (Included in Email)
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {Array.from(new Set([...(selectedInterview.interview_document_files || []), ...(selectedInterview.interview_feedback_files || [])])).map((fileUrl: string, fIdx: number) => {
+                          const isUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+                          const rawName = fileUrl.split("/").pop() || fileUrl;
+                          const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
+                          return (
+                            <div key={fIdx} className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-[11px] shadow-2xs">
+                              <FileText size={12} className="text-indigo-600 shrink-0" />
+                              <span className="font-semibold text-slate-800 max-w-[170px] truncate" title={fileUrl}>
+                                {displayName}
+                              </span>
+                              {isUrl && (
+                                <a
+                                  href={fileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[9px] px-1.5 py-0.2 rounded font-bold transition-all"
+                                >
+                                  <Eye size={10} />
+                                  <span>View</span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
               </div>
 
               {/* Recipient Indications Section */}
@@ -6157,15 +6224,14 @@ export default function InterviewManagement() {
       {toastMessage && (
         <div className="fixed top-6 right-6 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
           <div
-            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold tracking-wide backdrop-blur-md ${
-              toastMessage.type === "success"
-                ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
-                : toastMessage.type === "error"
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold tracking-wide backdrop-blur-md ${toastMessage.type === "success"
+              ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
+              : toastMessage.type === "error"
                 ? "bg-slate-900/95 text-rose-400 border-rose-500/40 shadow-rose-950/30"
                 : toastMessage.type === "warning"
-                ? "bg-amber-950/95 text-amber-300 border-amber-500/50 shadow-amber-950/40"
-                : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
-            }`}
+                  ? "bg-amber-950/95 text-amber-300 border-amber-500/50 shadow-amber-950/40"
+                  : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
+              }`}
           >
             {toastMessage.type === "success" ? (
               <div className="p-1 bg-emerald-500/20 rounded-full text-emerald-400">
