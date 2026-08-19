@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
-import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip, Clock, Sparkles, Cpu, Send, Brain } from "lucide-react";
-import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS } from "../utils/Api";
+import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip, Clock, Sparkles, Cpu, Send, Brain, AlertCircle } from "lucide-react";
+import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS, SETTINGS_APP } from "../utils/Api";
 
 export default function Upload() {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [appConfig, setAppConfig] = useState({ enable_bulk_parsing: true, bulk_parsing_limit: 5 });
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, filename: "" });
   const [isParsing, setIsParsing] = useState(false);
   const [parsingStep, setParsingStep] = useState<number>(1);
   const [parsingStatusText, setParsingStatusText] = useState<string>("Uploading document & initializing parser...");
@@ -22,6 +25,20 @@ export default function Upload() {
   const [otherDocType, setOtherDocType] = useState<string>("Cover Letter");
   const [otherDocTitle, setOtherDocTitle] = useState<string>("");
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  useEffect(() => {
+    fetch(SETTINGS_APP)
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.enable_bulk_parsing !== 'undefined') {
+          setAppConfig({
+            enable_bulk_parsing: data.enable_bulk_parsing,
+            bulk_parsing_limit: data.bulk_parsing_limit || 5
+          });
+        }
+      })
+      .catch(err => console.error("Failed to load app config", err));
+  }, []);
 
   // Timer effect for tracking elapsed time during parsing
   useEffect(() => {
@@ -111,7 +128,18 @@ export default function Upload() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFile(e.dataTransfer.files[0]);
+      const selectedFiles = Array.from(e.dataTransfer.files);
+      if (appConfig.enable_bulk_parsing) {
+        if (selectedFiles.length > appConfig.bulk_parsing_limit) {
+          setPollingError(`You can only upload up to ${appConfig.bulk_parsing_limit} files at a time.`);
+          return;
+        }
+        setFiles(selectedFiles);
+        setFile(selectedFiles[0]); // keep legacy state for now to prevent breaking other UI
+      } else {
+        setFiles([selectedFiles[0]]);
+        setFile(selectedFiles[0]);
+      }
       setParsedResponse(null);
       setToastMessage(null);
       setPollingError(null);
@@ -123,7 +151,18 @@ export default function Upload() {
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+      const selectedFiles = Array.from(e.target.files);
+      if (appConfig.enable_bulk_parsing) {
+        if (selectedFiles.length > appConfig.bulk_parsing_limit) {
+          setPollingError(`You can only upload up to ${appConfig.bulk_parsing_limit} files at a time.`);
+          return;
+        }
+        setFiles(selectedFiles);
+        setFile(selectedFiles[0]);
+      } else {
+        setFiles([selectedFiles[0]]);
+        setFile(selectedFiles[0]);
+      }
       setParsedResponse(null);
       setToastMessage(null);
       setPollingError(null);
@@ -140,129 +179,132 @@ export default function Upload() {
   };
 
   const handleParse = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setIsParsing(true);
     setPollingError(null);
-    setParsingStep(1);
-    setParsingProgress(10);
+    
+    let allResults: any[] = [];
+    let lastErrorMsg = "";
+    
+    for (let i = 0; i < files.length; i++) {
+      const currentFile = files[i];
+      setFile(currentFile); // Update UI for current file
+      setBulkProgress({ current: i + 1, total: files.length, filename: currentFile.name });
+      setParsingStep(1);
+      setParsingProgress(10);
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', currentFile);
 
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      let uploadUrl = `${RESUME_UPLOAD}?resume_source=${encodeURIComponent(resumeSource)}`;
-      if (resumeSourceInformerName.trim()) {
-        uploadUrl += `&resume_source_informer_name=${encodeURIComponent(resumeSourceInformerName.trim())}`;
-      }
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-
-      const resData = await response.json();
-
-      if (response.status === 401 || (resData.detail && typeof resData.detail === 'string' &&
-        (resData.detail.toLowerCase().includes('token') || resData.detail.toLowerCase().includes('signature') || resData.detail.toLowerCase().includes('authentication')))) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-        throw new Error('Session expired. Please log in again.');
-      }
-
-      if (!response.ok) {
-        throw new Error(resData.detail || resData.message || 'Upload failed. Ensure backend is running.');
-      }
-
-      const initialResult = resData.data || resData;
-      const resumeId = initialResult.id;
-      console.log(`[FRONTEND_UPLOAD] File uploaded successfully. Initial Resume ID: '${resumeId}', Status: '${initialResult.status}'`);
-
-      let finalResult = initialResult;
-      let currentStatus = (initialResult.status || "").toLowerCase();
-      let attempts = 0;
-      let consecutiveErrors = 0;
-
-      // Poll every 4 seconds, allowing up to 120 attempts (8 minutes max for very large resumes)
-      while (currentStatus === "pending" && attempts < 120) {
-        await new Promise(resolve => setTimeout(resolve, 4000));
-        attempts++;
-        console.log(`[FRONTEND_UPLOAD_POLL] Checking status for Resume ID '${resumeId}' (Attempt ${attempts})...`);
-
-        try {
-          const statusRes = await fetch(`${RESUME_LIST}/${resumeId}`, {
-            method: 'GET',
-            headers
-          });
-
-          if (!statusRes.ok) {
-            consecutiveErrors++;
-            console.warn(`[FRONTEND_UPLOAD_POLL] Status request non-200. Consecutive errors: ${consecutiveErrors}`);
-            if (consecutiveErrors >= 5) {
-              const statusData = await statusRes.json().catch(() => ({}));
-              throw new Error(statusData.detail || "Failed to check parsing status from server.");
-            }
-            continue;
-          }
-
-          const statusData = await statusRes.json();
-          consecutiveErrors = 0; // Reset error counter on successful response
-
-          finalResult = statusData.data || statusData;
-          currentStatus = (finalResult.status || "").toLowerCase();
-          console.log(`[FRONTEND_UPLOAD_POLL] Status response received:`, finalResult);
-
-          if (currentStatus === "failed" || currentStatus === "error") {
-            throw new Error("AI Parsing failed on the backend.");
-          }
-        } catch (pollErr: any) {
-          consecutiveErrors++;
-          console.warn(`[FRONTEND_UPLOAD_POLL] Poll fetch glitch (attempt ${attempts}):`, pollErr);
-          if (consecutiveErrors >= 5) {
-            throw pollErr;
-          }
+        const token = localStorage.getItem('access_token');
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
         }
-      }
 
-      if (currentStatus === "pending") {
-        throw new Error("Parsing timed out after 8 minutes. Please try again.");
-      }
+        let uploadUrl = `${RESUME_UPLOAD}?resume_source=${encodeURIComponent(resumeSource)}`;
+        if (resumeSourceInformerName.trim()) {
+          uploadUrl += `&resume_source_informer_name=${encodeURIComponent(resumeSourceInformerName.trim())}`;
+        }
+        const response = await fetch(uploadUrl, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
 
-      setParsingProgress(100);
-      console.log(`[FRONTEND_UPLOAD_SUCCESS] Resume parsing completed! Final Candidate ID: '${finalResult.id}', Email: '${finalResult.parsed_data?.email}'`);
-      setIsParsing(false);
-      setParsedResponse(finalResult);
-      if (finalResult.is_auto_updated) {
-        const candName = finalResult.parsed_data?.full_name || "Candidate";
-        const rawOldDate = finalResult.previous_upload_date || (finalResult.other_documents && finalResult.other_documents.length > 0 ? finalResult.other_documents[finalResult.other_documents.length - 1]?.uploaded_at : null);
-        let formattedOldDate = "";
-        if (rawOldDate) {
+        const resData = await response.json();
+
+        if (response.status === 401 || (resData.detail && typeof resData.detail === 'string' &&
+          (resData.detail.toLowerCase().includes('token') || resData.detail.toLowerCase().includes('signature') || resData.detail.toLowerCase().includes('authentication')))) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+          throw new Error('Session expired. Please log in again.');
+        }
+
+        if (!response.ok) {
+          throw new Error(resData.detail || resData.message || 'Upload failed. Ensure backend is running.');
+        }
+
+        const initialResult = resData.data || resData;
+        const resumeId = initialResult.id;
+        
+        let finalResult = initialResult;
+        let currentStatus = (initialResult.status || "").toLowerCase();
+        let attempts = 0;
+        let consecutiveErrors = 0;
+
+        while (currentStatus === "pending" && attempts < 120) {
+          await new Promise(resolve => setTimeout(resolve, 4000));
+          attempts++;
+          
           try {
-            formattedOldDate = new Date(rawOldDate).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
+            const statusRes = await fetch(`${RESUME_LIST}/${resumeId}`, {
+              method: 'GET',
+              headers
             });
-          } catch {
-            formattedOldDate = String(rawOldDate).split("T")[0];
+
+            if (!statusRes.ok) {
+              consecutiveErrors++;
+              if (consecutiveErrors >= 5) {
+                const statusData = await statusRes.json().catch(() => ({}));
+                throw new Error(statusData.detail || "Failed to check parsing status from server.");
+              }
+              continue;
+            }
+
+            const statusData = await statusRes.json();
+            consecutiveErrors = 0; 
+
+            finalResult = statusData.data || statusData;
+            currentStatus = (finalResult.status || "").toLowerCase();
+
+            if (currentStatus === "failed" || currentStatus === "error") {
+              throw new Error("AI Parsing failed on the backend.");
+            }
+          } catch (pollErr: any) {
+            consecutiveErrors++;
+            if (consecutiveErrors >= 5) {
+              throw pollErr;
+            }
           }
         }
-        const dateText = formattedOldDate ? ` (Created on: ${formattedOldDate})` : "";
-        setToastMessage(`The candidate profile for "${candName}" already exists${dateText}, so the resume has been updated.`);
-      } else {
-        setToastMessage(null);
+
+        if (currentStatus === "pending") {
+          throw new Error("Parsing timed out after 8 minutes. Please try again.");
+        }
+
+        setParsingProgress(100);
+        allResults.push({ ...finalResult, originalFilename: currentFile.name, parseStatus: 'success' });
+        
+      } catch (e: any) {
+        lastErrorMsg = e.message || "Failed to parse upload";
+        allResults.push({ originalFilename: currentFile.name, parseStatus: 'error', errorMsg: lastErrorMsg });
       }
+    }
+    
+    setIsParsing(false);
+    
+    if (files.length === 1) {
+      if (allResults[0].parseStatus === 'success') {
+        setParsedResponse(allResults[0]);
+        if (allResults[0].is_auto_updated) {
+          const candName = allResults[0].parsed_data?.full_name || "Candidate";
+          setToastMessage(`The candidate profile for "${candName}" already exists, so the resume has been updated.`);
+        } else {
+          setToastMessage(null);
+        }
+        setShowModal(true);
+      } else {
+        setPollingError(allResults[0].errorMsg);
+      }
+    } else {
+      // For bulk, we set the first successful response as the display, 
+      // but ideally we'd show a summary modal. We'll set a mock response to trigger step 4.
+      setParsedResponse({ isBulk: true, results: allResults });
       setShowModal(true);
-    } catch (e: any) {
-      setIsParsing(false);
-      setPollingError(e.message || "Failed to parse upload");
     }
   };
 
@@ -297,7 +339,7 @@ export default function Upload() {
       const formData = new FormData();
       formData.append('file', otherDocFile);
 
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token');
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -409,7 +451,7 @@ export default function Upload() {
                     <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1.5">
                       <FileText size={14} />
                       Browse File
-                      <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileInput} />
+                      <input type="file" className="hidden" accept=".pdf,.doc,.docx" multiple={appConfig.enable_bulk_parsing} onChange={handleFileInput} />
                     </label>
                   </div>
                 </div>
@@ -425,8 +467,8 @@ export default function Upload() {
                       <FileText size={20} />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-900">{file.name}</p>
-                      <p className="text-[11px] text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      <p className="text-xs font-bold text-slate-900">{files.length === 1 ? file.name : `${files.length} files selected`}</p>
+                      <p className="text-[11px] text-slate-500">{files.length === 1 ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : `Total size: ${(files.reduce((acc, f) => acc + f.size, 0) / 1024 / 1024).toFixed(2)} MB`}</p>
                     </div>
                   </div>
 
@@ -539,7 +581,7 @@ export default function Upload() {
                       </div>
                       <div className="space-y-0.5 overflow-hidden">
                         <h4 className="text-xs font-bold text-slate-800 font-mono break-all">{file.name}</h4>
-                        <p className="text-[11px] text-slate-400 font-medium">({(file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                        <p className="text-[11px] text-slate-400 font-medium">({(file.size / 1024 / 1024).toFixed(2)} MB) {files.length > 1 && ` - File ${bulkProgress.current} of ${bulkProgress.total}`}</p>
                       </div>
                     </div>
 
@@ -731,6 +773,32 @@ export default function Upload() {
               </button>
             </div>
 
+            {parsedResponse?.isBulk ? (
+              <div className="p-6 overflow-y-auto max-h-[70vh]">
+                <h4 className="text-md font-bold mb-4 text-slate-800">Bulk Parsing Results</h4>
+                <div className="space-y-4">
+                  {parsedResponse.results.map((res: any, idx: number) => (
+                    <div key={idx} className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-xs">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{res.originalFilename}</p>
+                        {res.parseStatus === 'success' ? (
+                          <p className="text-xs text-emerald-600 font-medium mt-1">Successfully parsed • {res.parsed_data?.full_name}</p>
+                        ) : (
+                          <p className="text-xs text-rose-600 font-medium mt-1">Failed: {res.errorMsg}</p>
+                        )}
+                      </div>
+                      {res.parseStatus === 'success' && (
+                        <CheckCircle2 className="text-emerald-500 w-5 h-5" />
+                      )}
+                      {res.parseStatus === 'error' && (
+                        <AlertCircle className="text-rose-500 w-5 h-5" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
             {/* Modal Navigation Tabs */}
             <div className="flex items-center gap-2 px-6 border-b border-slate-200 bg-white overflow-x-auto text-xs py-2">
               {[
@@ -992,6 +1060,8 @@ export default function Upload() {
                 </div>
               )}
             </div>
+            </>
+            )}
 
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">

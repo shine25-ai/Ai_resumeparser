@@ -1,7 +1,7 @@
 import os
 import shutil
 import traceback
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
@@ -30,7 +30,7 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def _process_resume_task(job_id: int, file_path: str):
+def _process_resume_task(job_id: int, file_path: str, ai_config_dict: dict = None):
     # Use a new DB session for the background task
     from database import SessionLocal
     db = SessionLocal()
@@ -44,7 +44,8 @@ def _process_resume_task(job_id: int, file_path: str):
             "parsed_resume": {},
             "evaluation": {},
             "status": "started",
-            "error": ""
+            "error": "",
+            "ai_config": ai_config_dict or {}
         }
         
         logger.info(f"[Job {job_id}] Invoking LangGraph workflow...")
@@ -79,12 +80,27 @@ def _process_resume_task(job_id: int, file_path: str):
 
 
 @app.post("/api/upload")
-async def upload_resume(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_resume(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...), 
+    ai_config: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    from fastapi import Form
+    import json
     if not file.filename.endswith((".pdf", ".docx", ".doc")):
         raise HTTPException(status_code=400, detail="Only PDF and Word documents are supported.")
         
-    if not os.environ.get("GROQ_API_KEY") and not os.environ.get("OLLAMA_BASE_URL"):
-        raise HTTPException(status_code=500, detail="LLM configuration (GROQ or OLLAMA) is missing.")
+    ai_config_dict = {}
+    if ai_config:
+        try:
+            ai_config_dict = json.loads(ai_config)
+        except Exception:
+            pass
+            
+    # We remove the strict env check because config might come from ai_config
+    if not ai_config_dict and not os.environ.get("GROQ_API_KEY") and not os.environ.get("OLLAMA_BASE_URL"):
+        logger.warning("No AI config provided in payload, and env vars missing. Will proceed but might fail during parsing.")
 
     # Create a DB record immediately
     candidate_record = CandidateDB(status="processing", full_name="Processing...")
@@ -99,7 +115,7 @@ async def upload_resume(background_tasks: BackgroundTasks, file: UploadFile = Fi
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        background_tasks.add_task(_process_resume_task, candidate_record.id, file_path)
+        background_tasks.add_task(_process_resume_task, candidate_record.id, file_path, ai_config_dict)
         
         return {
             "message": "Resume upload accepted, processing in background.",

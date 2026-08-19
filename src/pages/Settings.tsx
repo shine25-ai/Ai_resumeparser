@@ -4,12 +4,14 @@ import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, A
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
+import AIConfiguration from '../components/AIConfiguration';
+import AppConfiguration from '../components/AppConfiguration';
 import InterviewTypeManagement from '../components/InterviewTypeManagement';
 
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes') || 'config';
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'interviewTypes'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes'>(initialTab);
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -114,44 +116,60 @@ export default function Settings() {
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl mb-8 border border-slate-200">
         <button
           onClick={() => { setActiveTab('config'); setSearchParams({ tab: 'config' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-            activeTab === 'config'
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'config'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
+            }`}
         >
           <SettingsIcon className="w-4 h-4" />
           Email Configuration
         </button>
         <button
           onClick={() => { setActiveTab('templates'); setSearchParams({ tab: 'templates' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-            activeTab === 'templates'
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'templates'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
+            }`}
         >
           <FileText className="w-4 h-4" />
           Mail Templates
         </button>
         <button
           onClick={() => { setActiveTab('roles'); setSearchParams({ tab: 'roles' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-            activeTab === 'roles'
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'roles'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
+            }`}
         >
           <Shield className="w-4 h-4" />
           Roles & Access Control
         </button>
         <button
+          onClick={() => setActiveTab('ai_config')}
+          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'ai_config'
+              ? 'bg-white text-purple-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+        >
+          <Server className="w-4 h-4" />
+          AI Configuration
+        </button>
+        <button
+          onClick={() => setActiveTab('app_config')}
+          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'app_config'
+              ? 'bg-white text-emerald-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+        >
+          <SettingsIcon className="w-4 h-4" />
+          App Configuration
+        </button>
+        <button
           onClick={() => { setActiveTab('interviewTypes'); setSearchParams({ tab: 'interviewTypes' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-            activeTab === 'interviewTypes'
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'interviewTypes'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
+            }`}
         >
           <Layers className="w-4 h-4" />
           Interview Types
@@ -185,7 +203,7 @@ export default function Settings() {
                       type="text"
                       required
                       value={config.smtp_server}
-                      onChange={e => setConfig({...config, smtp_server: e.target.value})}
+                      onChange={e => setConfig({ ...config, smtp_server: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                       placeholder="smtp.gmail.com"
                     />
@@ -200,7 +218,7 @@ export default function Settings() {
                       type="number"
                       required
                       value={config.smtp_port}
-                      onChange={e => setConfig({...config, smtp_port: parseInt(e.target.value)})}
+                      onChange={e => setConfig({ ...config, smtp_port: parseInt(e.target.value) })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                       placeholder="587"
                     />
@@ -215,7 +233,7 @@ export default function Settings() {
                       type="text"
                       required
                       value={config.smtp_username}
-                      onChange={e => setConfig({...config, smtp_username: e.target.value})}
+                      onChange={e => setConfig({ ...config, smtp_username: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                       placeholder="hr@company.com"
                     />
@@ -232,7 +250,7 @@ export default function Settings() {
                       type="password"
                       required={!config.smtp_password_set}
                       value={config.smtp_password}
-                      onChange={e => setConfig({...config, smtp_password: e.target.value})}
+                      onChange={e => setConfig({ ...config, smtp_password: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                       placeholder={config.smtp_password_set ? "Enter new password to change" : "Enter SMTP password"}
                     />
@@ -247,7 +265,7 @@ export default function Settings() {
                       type="text"
                       required
                       value={config.sender_name}
-                      onChange={e => setConfig({...config, sender_name: e.target.value})}
+                      onChange={e => setConfig({ ...config, sender_name: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                       placeholder="HR Department"
                     />
@@ -262,7 +280,7 @@ export default function Settings() {
                       type="email"
                       required
                       value={config.sender_email}
-                      onChange={e => setConfig({...config, sender_email: e.target.value})}
+                      onChange={e => setConfig({ ...config, sender_email: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                       placeholder="no-reply@company.com"
                     />
@@ -271,11 +289,11 @@ export default function Settings() {
               </div>
 
               <div className="flex items-center gap-8 py-4 border-t border-slate-200">
-                <div className="flex items-center gap-3 cursor-pointer" onClick={() => setConfig({...config, use_tls: !config.use_tls})}>
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => setConfig({ ...config, use_tls: !config.use_tls })}>
                   {config.use_tls ? <ToggleRight className="w-8 h-8 text-indigo-600" /> : <ToggleLeft className="w-8 h-8 text-slate-400" />}
                   <span className="text-slate-700 font-medium">Use TLS</span>
                 </div>
-                <div className="flex items-center gap-3 cursor-pointer" onClick={() => setConfig({...config, use_ssl: !config.use_ssl})}>
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => setConfig({ ...config, use_ssl: !config.use_ssl })}>
                   {config.use_ssl ? <ToggleRight className="w-8 h-8 text-indigo-600" /> : <ToggleLeft className="w-8 h-8 text-slate-400" />}
                   <span className="text-slate-700 font-medium">Use SSL</span>
                 </div>
@@ -303,14 +321,14 @@ export default function Settings() {
             </div>
             <div className="flex items-end gap-4">
               <div className="flex-1">
-                 <label className="block text-sm font-medium text-slate-700 mb-2">Test Email Address</label>
-                 <input
-                    type="email"
-                    value={testEmail}
-                    onChange={e => setTestEmail(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-                    placeholder="test@example.com"
-                  />
+                <label className="block text-sm font-medium text-slate-700 mb-2">Test Email Address</label>
+                <input
+                  type="email"
+                  value={testEmail}
+                  onChange={e => setTestEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                  placeholder="test@example.com"
+                />
               </div>
               <button
                 onClick={handleTestEmail}
@@ -326,8 +344,12 @@ export default function Settings() {
         <MailTemplates />
       ) : activeTab === 'roles' ? (
         <RoleManagement />
+      ) : activeTab === 'ai_config' ? (
+        <AIConfiguration />
       ) : (
-        <InterviewTypeManagement />
+        <AppConfiguration />
+      ) : (
+      <InterviewTypeManagement />
       )}
     </div>
   );
