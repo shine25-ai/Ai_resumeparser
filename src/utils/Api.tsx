@@ -423,9 +423,11 @@ export const updateResume = async (resumeId: string, updateData: any) => {
 };
 
 // INTERVIEW INTERFACES & API FUNCTIONS
+import { RECOMMENDATION_OPTIONS } from "../types/interview";
 import type {
   InterviewTypeEnum,
   InterviewStatusEnum,
+  InterviewRecommendationEnum,
   InterviewerItem,
   ClientFeedbackItem,
   InterviewItem,
@@ -444,9 +446,11 @@ import type {
   CheckConflictResponse,
 } from "../types/interview";
 
+export { RECOMMENDATION_OPTIONS };
 export type {
   InterviewTypeEnum,
   InterviewStatusEnum,
+  InterviewRecommendationEnum,
   InterviewerItem,
   ClientFeedbackItem,
   InterviewItem,

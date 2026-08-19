@@ -885,9 +885,9 @@ export default function InterviewDashboard() {
 
                         {recommendation && (
                           <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                            recommendation === "Selected" || recommendation === "Hire" || recommendation === "Strong Hire"
+                            ["Selected", "Hire", "Strong Hire", "Recommended", "Offer Accepted", "Offer to Be Released", "Shortlisted"].includes(recommendation)
                               ? "bg-emerald-100 text-emerald-800"
-                              : recommendation === "Hold"
+                              : ["Hold", "On Hold", "Pending", "Need Further Evaluation", "Reschedule Required"].includes(recommendation)
                               ? "bg-amber-100 text-amber-800"
                               : "bg-rose-100 text-rose-800"
                           }`}>

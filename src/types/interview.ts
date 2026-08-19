@@ -8,6 +8,27 @@ export type InterviewStatusEnum =
   | "RESCHEDULED"
   | "NO_SHOW";
 
+export const RECOMMENDATION_OPTIONS = [
+  "Selected",
+  "Rejected",
+  "On Hold",
+  "Shortlisted",
+  "Pending",
+  "Need Further Evaluation",
+  "Withdrawn",
+  "No Show",
+  "Reschedule Required",
+  "Recommended",
+  "Not Recommended",
+  "Offer to Be Released",
+  "Offer Accepted",
+  "Offer Rejected",
+] as const;
+
+export type InterviewRecommendationEnum =
+  | typeof RECOMMENDATION_OPTIONS[number]
+  | (string & {});
+
 export interface SkillRatingItem {
   skill_name: string;
   rating: number; // 1 to 5 stars

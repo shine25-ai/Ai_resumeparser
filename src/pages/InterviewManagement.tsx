@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
-  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, MAIL_TEMPLATES_URL,
+  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, MAIL_TEMPLATES_URL, RECOMMENDATION_OPTIONS,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile, type InterviewTypeItem
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
@@ -2665,10 +2665,9 @@ export default function InterviewManagement() {
                       onChange={(e) => setScheduleForm({ ...scheduleForm, recommendation: e.target.value })}
                       className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2.5 text-amber-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer shadow-2xs"
                     >
-                      <option value="Selected">🟢 Selected</option>
-                      <option value="Rejected">🔴 Rejected</option>
-                      <option value="Pending">🟡 Pending Decision</option>
-                      <option value="Hold">🟣 On Hold</option>
+                      {RECOMMENDATION_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -3373,10 +3372,9 @@ export default function InterviewManagement() {
                             onChange={(e) => setEditForm({ ...editForm, recommendation: e.target.value })}
                             className="w-full bg-white border border-amber-200 rounded-xl px-3.5 py-2 text-amber-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
                           >
-                            <option value="Selected">🟢 Selected</option>
-                            <option value="Rejected">🔴 Rejected</option>
-                            <option value="Pending">🟡 Pending Decision</option>
-                            <option value="Hold">🟣 On Hold</option>
+                            {RECOMMENDATION_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -3645,10 +3643,9 @@ export default function InterviewManagement() {
                           onChange={(e) => setEditForm({ ...editForm, client_recommendation: e.target.value })}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-teal-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-[11px] cursor-pointer"
                         >
-                          <option value="Selected">🟢 Selected</option>
-                          <option value="Rejected">🔴 Rejected</option>
-                          <option value="Next Round">🔄 Next Round</option>
-                          <option value="Hold">🟣 On Hold</option>
+                          {RECOMMENDATION_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -4484,10 +4481,9 @@ export default function InterviewManagement() {
                                   onChange={(e) => handleFeedbackInterviewerItemChange(idx, "recommendation", e.target.value)}
                                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-emerald-700 focus:bg-white focus:outline-none cursor-pointer"
                                 >
-                                  <option value="Selected">🟢 Selected</option>
-                                  <option value="Rejected">🔴 Rejected</option>
-                                  <option value="Pending">🟡 Pending</option>
-                                  <option value="Hold">Hold</option>
+                                  {RECOMMENDATION_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
                                 </select>
                               </div>
                             </div>
@@ -4714,10 +4710,9 @@ export default function InterviewManagement() {
                                   onChange={(e) => handleFeedbackClientItemChange(idx, "client_recommendation", e.target.value)}
                                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-teal-700 focus:bg-white focus:outline-none cursor-pointer"
                                 >
-                                  <option value="Selected">🟢 Selected</option>
-                                  <option value="Rejected">🔴 Rejected</option>
-                                  <option value="Next Round">🔄 Next Round</option>
-                                  <option value="Hold">Hold</option>
+                                  {RECOMMENDATION_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
                                 </select>
                               </div>
                             </div>
