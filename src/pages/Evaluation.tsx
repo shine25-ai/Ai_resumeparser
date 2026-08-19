@@ -177,7 +177,7 @@ export default function Evaluation() {
     try {
       const formData = new FormData();
       formData.append("file", docFile);
-      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      const token = localStorage.getItem("access_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(

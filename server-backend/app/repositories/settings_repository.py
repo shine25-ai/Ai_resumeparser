@@ -1,6 +1,6 @@
 from typing import Optional
 from app.core.database import get_database
-from app.models.settings import EmailConfigModel
+from app.models.settings import EmailConfigModel, AIConfigModel, AppConfigModel
 
 class SettingsRepository:
     def __init__(self):
@@ -19,6 +19,40 @@ class SettingsRepository:
         
         await self.collection.update_one(
             {"type": "email_config"},
+            {"$set": config_dict},
+            upsert=True
+        )
+        return config
+
+    async def get_ai_config(self) -> Optional[AIConfigModel]:
+        doc = await self.collection.find_one({"type": "ai_config"})
+        if doc:
+            return AIConfigModel(**doc)
+        return None
+
+    async def save_ai_config(self, config: AIConfigModel) -> AIConfigModel:
+        config_dict = config.model_dump()
+        config_dict["type"] = "ai_config"
+        
+        await self.collection.update_one(
+            {"type": "ai_config"},
+            {"$set": config_dict},
+            upsert=True
+        )
+        return config
+
+    async def get_app_config(self) -> Optional[AppConfigModel]:
+        doc = await self.collection.find_one({"type": "app_config"})
+        if doc:
+            return AppConfigModel(**doc)
+        return None
+
+    async def save_app_config(self, config: AppConfigModel) -> AppConfigModel:
+        config_dict = config.model_dump()
+        config_dict["type"] = "app_config"
+        
+        await self.collection.update_one(
+            {"type": "app_config"},
             {"$set": config_dict},
             upsert=True
         )

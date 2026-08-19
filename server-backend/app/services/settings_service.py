@@ -1,7 +1,7 @@
 from typing import Optional
 from app.repositories.settings_repository import SettingsRepository
-from app.models.settings import EmailConfigModel
-from app.schemas.settings import EmailConfigCreate, EmailConfigResponse
+from app.models.settings import EmailConfigModel, AIConfigModel, AppConfigModel
+from app.schemas.settings import EmailConfigCreate, EmailConfigResponse, AIConfigCreate, AIConfigResponse, AppConfigCreate, AppConfigResponse
 from app.utils.encryption import encrypt_password
 
 class SettingsService:
@@ -49,4 +49,58 @@ class SettingsService:
             use_tls=saved_config.use_tls,
             use_ssl=saved_config.use_ssl,
             smtp_password_set=True
+        )
+
+    async def get_ai_config(self) -> Optional[AIConfigResponse]:
+        config = await self.repository.get_ai_config()
+        if not config:
+            return None
+            
+        return AIConfigResponse(
+            provider=config.provider,
+            base_url=config.base_url,
+            model_name=config.model_name,
+            api_key_set=bool(config.api_key)
+        )
+
+    async def save_ai_config(self, config_data: AIConfigCreate) -> AIConfigResponse:
+        encrypted_key = encrypt_password(config_data.api_key) if config_data.api_key else ""
+        
+        model = AIConfigModel(
+            provider=config_data.provider,
+            api_key=encrypted_key,
+            base_url=config_data.base_url,
+            model_name=config_data.model_name
+        )
+        
+        saved_config = await self.repository.save_ai_config(model)
+        
+        return AIConfigResponse(
+            provider=saved_config.provider,
+            base_url=saved_config.base_url,
+            model_name=saved_config.model_name,
+            api_key_set=bool(saved_config.api_key)
+        )
+
+    async def get_app_config(self) -> Optional[AppConfigResponse]:
+        config = await self.repository.get_app_config()
+        if not config:
+            return AppConfigResponse(enable_bulk_parsing=True, bulk_parsing_limit=5)
+            
+        return AppConfigResponse(
+            enable_bulk_parsing=config.enable_bulk_parsing,
+            bulk_parsing_limit=config.bulk_parsing_limit
+        )
+
+    async def save_app_config(self, config_data: AppConfigCreate) -> AppConfigResponse:
+        model = AppConfigModel(
+            enable_bulk_parsing=config_data.enable_bulk_parsing,
+            bulk_parsing_limit=config_data.bulk_parsing_limit
+        )
+        
+        saved_config = await self.repository.save_app_config(model)
+        
+        return AppConfigResponse(
+            enable_bulk_parsing=saved_config.enable_bulk_parsing,
+            bulk_parsing_limit=saved_config.bulk_parsing_limit
         )
