@@ -1090,6 +1090,7 @@ export default function InterviewManagement() {
       job_location: item.job_location || "",
       job_type: item.job_type || "Full Time",
       interview_type: item.interview_type || "TECHNICAL",
+      interview_type_id: item.interview_type_id || "",
       round_number: item.round_number || 1,
       scheduled_date: item.scheduled_date || "",
       scheduled_time: item.scheduled_time || "",
