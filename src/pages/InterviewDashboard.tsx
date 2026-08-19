@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   Calendar, Clock, CheckCircle2, UserCheck, AlertCircle,
-  ChevronDown, Plus, Eye, MoreVertical, Search, ArrowRight, RefreshCw, X, Mail,
+  ChevronDown, Plus, Eye, MoreVertical, Search, ArrowRight, RefreshCw, X,
   History, Star
 } from "lucide-react";
 import {
