@@ -71,6 +71,7 @@ export default function Settings() {
       setConfig(prev => ({ ...prev, ...data, smtp_password: '' })); // clear password field
       setMessage({ type: 'success', text: 'Email configuration saved successfully.' });
     } catch (error) {
+      console.error('Failed to save configuration:', error);
       setMessage({ type: 'error', text: 'Failed to save configuration.' });
     } finally {
       setSaving(false);
@@ -346,10 +347,10 @@ export default function Settings() {
         <RoleManagement />
       ) : activeTab === 'ai_config' ? (
         <AIConfiguration />
-      ) : (
+      ) : activeTab === 'app_config' ? (
         <AppConfiguration />
       ) : (
-      <InterviewTypeManagement />
+        <InterviewTypeManagement />
       )}
     </div>
   );
