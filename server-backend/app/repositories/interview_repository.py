@@ -67,6 +67,7 @@ class InterviewRepository(BaseRepository):
         search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        recommendation: Optional[str] = None,
     ) -> Dict[str, Any]:
         import re
 
@@ -105,6 +106,16 @@ class InterviewRepository(BaseRepository):
             val = status.value if hasattr(status, "value") else str(status)
             if val and val.upper() != "ALL":
                 and_conditions.append({"status": val})
+
+        if recommendation and recommendation.strip() and recommendation.strip().upper() != "ALL":
+            rec_val = recommendation.strip()
+            and_conditions.append({
+                "$or": [
+                    {"recommendation": {"$regex": f"^{re.escape(rec_val)}$", "$options": "i"}},
+                    {"client_recommendation": {"$regex": f"^{re.escape(rec_val)}$", "$options": "i"}},
+                    {"ai_recommendation": {"$regex": f"^{re.escape(rec_val)}$", "$options": "i"}},
+                ]
+            })
 
         if interview_type_id and interview_type_id.strip() and interview_type_id.strip().upper() != "ALL":
             and_conditions.append({"interview_type_id": interview_type_id.strip()})
@@ -171,6 +182,7 @@ class InterviewRepository(BaseRepository):
         search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        recommendation: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
@@ -189,6 +201,7 @@ class InterviewRepository(BaseRepository):
             search=search,
             date_from=date_from,
             date_to=date_to,
+            recommendation=recommendation,
         )
 
         return await self.find_many(
@@ -214,6 +227,7 @@ class InterviewRepository(BaseRepository):
         search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        recommendation: Optional[str] = None,
     ) -> int:
         """Count total interviews matching criteria."""
         query = self._build_filter_query(
@@ -230,6 +244,7 @@ class InterviewRepository(BaseRepository):
             search=search,
             date_from=date_from,
             date_to=date_to,
+            recommendation=recommendation,
         )
         return await self.count(query=query)
 

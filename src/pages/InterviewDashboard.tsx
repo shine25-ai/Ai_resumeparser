@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, CheckCircle2, UserCheck, AlertCircle,
   ChevronDown, Plus, Eye, MoreVertical, Search, ArrowRight, RefreshCw, X,
@@ -96,13 +97,14 @@ const getInterviewTypeLabel = (typeStr?: string, typesList?: InterviewTypeItem[]
 };
 
 export default function InterviewDashboard() {
+  const navigate = useNavigate();
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPeriod, setSelectedPeriod] = useState<string>("This Month");
 
   // Archive Filter state for completed/past grid
-  const [archiveFilter, setArchiveFilter] = useState<"ALL" | "COMPLETED" | "PAST">("ALL");
+  const [archiveFilter, setArchiveFilter] = useState<"ALL" | "COMPLETED" | "PAST" | "RESCHEDULE_REQUIRED">("ALL");
 
   // Candidate Details Modal state
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
@@ -227,13 +229,23 @@ export default function InterviewDashboard() {
     (item) => item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED"
   );
 
-  // Archive sessions combined (Completed + Past/Missed)
+  // 5. RESCHEDULE REQUIRED INTERVIEWS: recommendation / client_recommendation / ai_recommendation === "Reschedule Required"
+  const rescheduleRequiredInterviews = interviews.filter((item) => {
+    const rec = (item.recommendation || item.client_recommendation || item.ai_recommendation || "").trim();
+    return rec === "Reschedule Required" || rec.toLowerCase().includes("reschedule");
+  });
+
+  // Archive sessions combined (Completed + Past/Missed + Reschedule Required)
   const archiveList = interviews.filter((item) => {
     const isCompleted = item.status === "COMPLETED";
     const isPast = item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED";
+    const rec = (item.recommendation || item.client_recommendation || item.ai_recommendation || "").trim();
+    const isRescheduleReq = rec === "Reschedule Required" || rec.toLowerCase().includes("reschedule");
+
     if (archiveFilter === "COMPLETED") return isCompleted;
     if (archiveFilter === "PAST") return isPast;
-    return isCompleted || isPast;
+    if (archiveFilter === "RESCHEDULE_REQUIRED") return isRescheduleReq;
+    return isCompleted || isPast || isRescheduleReq;
   });
 
   // Calculate top metric card values dynamically
@@ -241,6 +253,7 @@ export default function InterviewDashboard() {
   const scheduledCount = upcomingInterviews.length;
   const completedCount = completedInterviews.length;
   const pastMissedCount = pastOrMissedInterviews.length;
+  const rescheduleRequiredCount = rescheduleRequiredInterviews.length;
   const selectedCount = interviews.filter(
     (i) => i.recommendation === "Selected" || i.recommendation === "Hire" || i.recommendation === "Strong Hire" || i.client_recommendation === "Selected"
   ).length;
@@ -251,6 +264,20 @@ export default function InterviewDashboard() {
     setSelectedCandidateName(item.candidate_name);
     setIsDetailsModalOpen(true);
     setOpenMenuId(null);
+  };
+
+  const handleAssignInterview = (item: InterviewItem) => {
+    navigate("/interviews", {
+      state: {
+        scheduleCandidate: {
+          candidate_id: item.candidate_id || item.id,
+          candidate_name: item.candidate_name,
+          candidate_email: item.candidate_email,
+          resume_id: item.resume_id,
+          job_title: item.job_title,
+        },
+      },
+    });
   };
 
   const checkScheduleTimeConflict = async (params: {
@@ -759,7 +786,7 @@ export default function InterviewDashboard() {
           </div>
 
           {/* Filter Pills */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto flex-wrap sm:flex-nowrap">
             <button
               onClick={() => setArchiveFilter("ALL")}
               className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
@@ -768,7 +795,7 @@ export default function InterviewDashboard() {
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              All History ({completedCount + pastMissedCount})
+              All History ({archiveList.length})
             </button>
 
             <button
@@ -791,6 +818,17 @@ export default function InterviewDashboard() {
               }`}
             >
               Past / Missed ({pastMissedCount})
+            </button>
+
+            <button
+              onClick={() => setArchiveFilter("RESCHEDULE_REQUIRED")}
+              className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                archiveFilter === "RESCHEDULE_REQUIRED"
+                  ? "bg-rose-600 text-white shadow-2xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Reschedule Required ({rescheduleRequiredCount})
             </button>
           </div>
         </div>
@@ -816,6 +854,7 @@ export default function InterviewDashboard() {
 
               const rating = item.rating || item.client_rating;
               const recommendation = item.recommendation || item.client_recommendation || item.ai_recommendation;
+              const isRescheduleReq = (recommendation || "").trim().toLowerCase().includes("reschedule");
 
               return (
                 <div
@@ -823,6 +862,8 @@ export default function InterviewDashboard() {
                   className={`border rounded-2xl p-3.5 transition-all flex flex-col justify-between space-y-3 ${
                     isCompleted
                       ? "bg-emerald-50/20 border-emerald-200/80 hover:border-emerald-300 hover:shadow-xs"
+                      : isRescheduleReq
+                      ? "bg-rose-50/20 border-rose-200/80 hover:border-rose-300 hover:shadow-xs"
                       : "bg-amber-50/20 border-amber-200/80 hover:border-amber-300 hover:shadow-xs"
                   }`}
                 >
@@ -830,7 +871,11 @@ export default function InterviewDashboard() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className={`w-8 h-8 rounded-full text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
-                        isCompleted ? "bg-gradient-to-tr from-emerald-600 to-teal-600" : "bg-gradient-to-tr from-amber-500 to-orange-500"
+                        isCompleted
+                          ? "bg-gradient-to-tr from-emerald-600 to-teal-600"
+                          : isRescheduleReq
+                          ? "bg-gradient-to-tr from-rose-500 to-red-600"
+                          : "bg-gradient-to-tr from-amber-500 to-orange-500"
                       }`}>
                         {initialChar}
                       </div>
@@ -848,6 +893,10 @@ export default function InterviewDashboard() {
                     {isCompleted ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
                         <CheckCircle2 size={11} /> Completed
+                      </span>
+                    ) : isRescheduleReq ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
+                        <RefreshCw size={11} /> Reschedule Required
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
@@ -873,8 +922,8 @@ export default function InterviewDashboard() {
                       <span className="font-semibold text-slate-800">{interviewerName}</span>
                     </div>
 
-                    {/* Evaluation Details if completed */}
-                    {isCompleted && (
+                    {/* Evaluation Details if completed or has recommendation */}
+                    {(isCompleted || rating || recommendation) && (
                       <div className="pt-1 mt-1 border-t border-slate-100 flex items-center justify-between">
                         {rating ? (
                           <div className="flex items-center gap-1 text-amber-500 font-extrabold text-[11px]">
@@ -887,7 +936,7 @@ export default function InterviewDashboard() {
                           <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
                             ["Selected", "Hire", "Strong Hire", "Recommended", "Offer Accepted", "Offer to Be Released", "Shortlisted"].includes(recommendation)
                               ? "bg-emerald-100 text-emerald-800"
-                              : ["Hold", "On Hold", "Pending", "Need Further Evaluation", "Reschedule Required"].includes(recommendation)
+                              : ["Hold", "On Hold", "Pending", "Need Further Evaluation"].includes(recommendation)
                               ? "bg-amber-100 text-amber-800"
                               : "bg-rose-100 text-rose-800"
                           }`}>
@@ -898,11 +947,17 @@ export default function InterviewDashboard() {
                     )}
                   </div>
 
-                  {/* Card Footer Button */}
-                  <div className="pt-1 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 font-medium">
-                      ID: {item.id?.substring(0, 8)}...
-                    </span>
+                  {/* Card Footer Buttons */}
+                  <div className="pt-1 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => handleAssignInterview(item)}
+                      className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2.5 py-1 rounded-xl transition-all cursor-pointer shadow-2xs"
+                      title="Assign / Schedule Interview Round"
+                    >
+                      <Plus size={13} className="stroke-[2.5]" />
+                      <span>Assign Interview</span>
+                    </button>
+
                     <button
                       onClick={() => handleOpenDetails(item)}
                       className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/70 border border-indigo-200/80 px-2.5 py-1 rounded-xl transition-all cursor-pointer"

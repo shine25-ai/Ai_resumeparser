@@ -665,6 +665,7 @@ export const getInterviews = async (params: {
   search?: string;
   date_from?: string;
   date_to?: string;
+  recommendation?: string;
   page?: number;
   skip?: number;
   limit?: number;
@@ -684,6 +685,7 @@ export const getInterviews = async (params: {
   if (params.search) queryParts.push(`search=${encodeURIComponent(params.search)}`);
   if (params.date_from) queryParts.push(`date_from=${encodeURIComponent(params.date_from)}`);
   if (params.date_to) queryParts.push(`date_to=${encodeURIComponent(params.date_to)}`);
+  if (params.recommendation) queryParts.push(`recommendation=${encodeURIComponent(params.recommendation)}`);
   if (params.page !== undefined) queryParts.push(`page=${params.page}`);
   if (params.skip !== undefined) queryParts.push(`skip=${params.skip}`);
   if (params.limit !== undefined) queryParts.push(`limit=${params.limit}`);

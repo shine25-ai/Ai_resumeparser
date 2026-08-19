@@ -64,6 +64,7 @@ export default function InterviewManagement() {
   const [scheduledDateFilter, setScheduledDateFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [recommendationFilter, setRecommendationFilter] = useState<string>("All");
 
   // Bulk Selection & Modal State
   const [selectedInterviewIds, setSelectedInterviewIds] = useState<string[]>([]);
@@ -847,13 +848,15 @@ export default function InterviewManagement() {
     targetEmail = emailFilter,
     targetDate = scheduledDateFilter,
     targetType = typeFilter,
-    targetStatus = statusFilter
+    targetStatus = statusFilter,
+    targetRecommendation = recommendationFilter
   ) => {
     setLoading(true);
     setError(null);
     try {
       const activeType = targetType !== "All" ? targetType : undefined;
       const activeStatus = targetStatus !== "All" ? targetStatus : undefined;
+      const activeRecommendation = targetRecommendation !== "All" ? targetRecommendation : undefined;
 
       const filterParams: any = {
         page: targetPage,
@@ -864,6 +867,7 @@ export default function InterviewManagement() {
         scheduled_date: targetDate.trim() || undefined,
         interview_type: activeType,
         status: activeStatus,
+        recommendation: activeRecommendation,
       };
 
       if (isClientUser && currentUser) {
@@ -909,7 +913,7 @@ export default function InterviewManagement() {
   const location = useLocation();
 
   useEffect(() => {
-    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter);
+    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter);
 
     if (location.state && location.state.scheduleCandidate) {
       const cand = location.state.scheduleCandidate;
@@ -923,7 +927,7 @@ export default function InterviewManagement() {
       }));
       setIsScheduleOpen(true);
     }
-  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, location.state]);
+  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, location.state]);
 
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
@@ -1011,7 +1015,10 @@ export default function InterviewManagement() {
     if (["Hold", "On Hold", "Pending", "Need Further Evaluation", "Reschedule Required"].includes(r)) {
       return "bg-amber-50 border-amber-200 text-amber-800 font-bold";
     }
-    return "bg-rose-50 border-rose-200 text-rose-700 font-bold";
+    if (["Rejected", "Not Recommended", "Withdrawn", "No Show", "Offer Rejected"].includes(r)) {
+      return "bg-rose-50 border-rose-200 text-rose-700 font-bold";
+    }
+    return "bg-slate-100 border-slate-200 text-slate-700 font-medium";
   };
 
   // Schedule Submit
@@ -1948,7 +1955,7 @@ export default function InterviewManagement() {
           </div>
 
           {/* Specific Field Filters Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-slate-200/80 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-slate-200/80 text-xs">
             {/* Candidate Name Filter */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Name</label>
@@ -2029,6 +2036,26 @@ export default function InterviewManagement() {
                 <option value="COMPLETED">Completed</option>
                 <option value="RESCHEDULED">Rescheduled</option>
                 <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+
+            {/* Recommendation Filter */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Recommendation</label>
+              <select
+                value={recommendationFilter}
+                onChange={(e) => {
+                  setRecommendationFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              >
+                <option value="All">All Recommendations</option>
+                {RECOMMENDATION_OPTIONS.map((rec) => (
+                  <option key={rec} value={rec}>
+                    {rec}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

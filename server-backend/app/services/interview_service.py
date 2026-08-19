@@ -278,6 +278,7 @@ class InterviewService:
         search: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        recommendation: Optional[str] = None,
         page: int = 1,
         limit: int = 10,
         skip: Optional[int] = None,
@@ -302,6 +303,7 @@ class InterviewService:
             search=search,
             date_from=date_from,
             date_to=date_to,
+            recommendation=recommendation,
             skip=skip,
             limit=limit,
         )
@@ -319,6 +321,7 @@ class InterviewService:
             search=search,
             date_from=date_from,
             date_to=date_to,
+            recommendation=recommendation,
         )
         items = [InterviewResponse.model_validate(i) for i in interviews]
         total_pages = math.ceil(total / limit) if limit > 0 else 1
