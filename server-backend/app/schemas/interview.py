@@ -4,7 +4,7 @@ Pydantic schemas for Interview entity operations, scheduling, feedback, and resp
 
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
-from app.utils.enums import InterviewStatus, InterviewType
+from app.utils.enums import InterviewStatus
 
 
 class SkillRatingItem(BaseModel):
@@ -80,7 +80,7 @@ class InterviewCreateRequest(BaseModel):
     job_location: Optional[str] = None
     job_type: Optional[str] = None
 
-    interview_type: str = "TECHNICAL"
+    interview_type: Optional[str] = None
     interview_type_id: Optional[str] = None
     round_number: int = 1
 
@@ -150,7 +150,7 @@ class InterviewBatchCreateRequest(BaseModel):
     job_location: Optional[str] = None
     job_type: Optional[str] = None
 
-    interview_type: str = "TECHNICAL"
+    interview_type: Optional[str] = None
     interview_type_id: Optional[str] = None
     round_number: int = 1
 
@@ -359,7 +359,7 @@ class InterviewResponse(BaseModel):
     job_location: Optional[str] = None
     job_type: Optional[str] = None
 
-    interview_type: str = "TECHNICAL"
+    interview_type: Optional[str] = None
     interview_type_id: Optional[str] = None
     round_number: int
 

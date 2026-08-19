@@ -7,7 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 from app.repositories.base_repository import BaseRepository
 from app.utils.constants import INTERVIEWS_COLLECTION
-from app.utils.enums import InterviewStatus, InterviewType
+from app.utils.enums import InterviewStatus
 from app.utils.helpers import utc_now
 
 
@@ -59,6 +59,7 @@ class InterviewRepository(BaseRepository):
         client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
+        interview_type_id: Optional[str] = None,
         job_title: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
@@ -105,11 +106,19 @@ class InterviewRepository(BaseRepository):
             if val and val.upper() != "ALL":
                 and_conditions.append({"status": val})
 
+        if interview_type_id and interview_type_id.strip() and interview_type_id.strip().upper() != "ALL":
+            and_conditions.append({"interview_type_id": interview_type_id.strip()})
+
         if interview_type:
             val = interview_type.value if hasattr(interview_type, "value") else str(interview_type)
             if val and val.upper() != "ALL":
-                # Matches exact type or case-insensitive enum format
-                and_conditions.append({"interview_type": {"$regex": f"^{re.escape(val)}$", "$options": "i"}})
+                # Matches exact type, case-insensitive code, or interview_type_id
+                and_conditions.append({
+                    "$or": [
+                        {"interview_type": {"$regex": f"^{re.escape(val)}$", "$options": "i"}},
+                        {"interview_type_id": val},
+                    ]
+                })
 
         if job_title and job_title.strip():
             and_conditions.append({"job_title": {"$regex": re.escape(job_title.strip()), "$options": "i"}})
@@ -133,6 +142,7 @@ class InterviewRepository(BaseRepository):
                     {"interviewer_name": s_regex},
                     {"client_name": s_regex},
                     {"interview_type": s_regex},
+                    {"interview_type_id": s_regex},
                 ]
             })
 
@@ -153,6 +163,7 @@ class InterviewRepository(BaseRepository):
         client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
+        interview_type_id: Optional[str] = None,
         job_title: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
@@ -170,6 +181,7 @@ class InterviewRepository(BaseRepository):
             client_id=client_id,
             status=status,
             interview_type=interview_type,
+            interview_type_id=interview_type_id,
             job_title=job_title,
             name=name,
             email=email,
@@ -194,6 +206,7 @@ class InterviewRepository(BaseRepository):
         client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
+        interview_type_id: Optional[str] = None,
         job_title: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
@@ -209,6 +222,7 @@ class InterviewRepository(BaseRepository):
             client_id=client_id,
             status=status,
             interview_type=interview_type,
+            interview_type_id=interview_type_id,
             job_title=job_title,
             name=name,
             email=email,

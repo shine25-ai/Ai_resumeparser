@@ -953,9 +953,12 @@ export const getFeedbackQuestionsFromBackend = async (interviewType?: string) =>
   return resData.data || resData;
 };
 
-export const getNextRoundNumber = async (candidateId: string, interviewType?: string) => {
+export const getNextRoundNumber = async (candidateId: string, interviewType?: string, interviewTypeId?: string) => {
   const token = localStorage.getItem("access_token") || "";
-  const query = interviewType ? `?interview_type=${encodeURIComponent(interviewType)}` : "";
+  const params = new URLSearchParams();
+  if (interviewType) params.append("interview_type", interviewType);
+  if (interviewTypeId) params.append("interview_type_id", interviewTypeId);
+  const query = params.toString() ? `?${params.toString()}` : "";
   const response = await fetch(`${INTERVIEWS_URL}/candidate/${candidateId}/next-round-number${query}`, {
     method: "GET",
     headers: {

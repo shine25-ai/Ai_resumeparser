@@ -1090,14 +1090,7 @@ export default function JDMatch() {
                             </option>
                           ))
                         ) : (
-                          <>
-                            <option value="TECHNICAL">💻 TECHNICAL</option>
-                            <option value="HR">👥 HR SCREENING</option>
-                            <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                            <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                            <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                            <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
-                          </>
+                          <option value="TECHNICAL">Technical Round</option>
                         )}
                       </select>
                     </div>

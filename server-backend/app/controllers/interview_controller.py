@@ -17,7 +17,7 @@ from app.schemas.interview import (
     SendInterviewEmailRequest,
 )
 from app.services.interview_service import InterviewService
-from app.utils.enums import InterviewStatus, InterviewType
+from app.utils.enums import InterviewStatus
 from app.utils.response import success_response
 
 
@@ -77,6 +77,7 @@ class InterviewController:
         client_id: Optional[str] = None,
         status: Optional[Any] = None,
         interview_type: Optional[Any] = None,
+        interview_type_id: Optional[str] = None,
         job_title: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
@@ -95,6 +96,7 @@ class InterviewController:
             client_id=client_id,
             status=status,
             interview_type=interview_type,
+            interview_type_id=interview_type_id,
             job_title=job_title,
             name=name,
             email=email,
@@ -199,9 +201,13 @@ class InterviewController:
             message="Feedback questions retrieved successfully.",
         )
 
-    async def get_next_round_number(self, candidate_id: str, interview_type: Optional[str] = None) -> JSONResponse:
+    async def get_next_round_number(
+        self, candidate_id: str, interview_type: Optional[str] = None, interview_type_id: Optional[str] = None
+    ) -> JSONResponse:
         """Get calculated next round number for a candidate."""
-        res = await self.interview_service.get_next_round_number(candidate_id, interview_type=interview_type)
+        res = await self.interview_service.get_next_round_number(
+            candidate_id, interview_type=interview_type, interview_type_id=interview_type_id
+        )
         return success_response(
             data=res,
             message="Next round number calculated successfully.",

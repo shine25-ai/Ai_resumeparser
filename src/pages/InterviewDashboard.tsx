@@ -5,8 +5,8 @@ import {
   History, Star
 } from "lucide-react";
 import {
-  getInterviews, createInterview, getUsers, checkInterviewConflict,
-  type InterviewItem, type InterviewTypeEnum, type UserProfile
+  getInterviews, createInterview, getUsers, checkInterviewConflict, getInterviewTypes,
+  type InterviewItem, type InterviewTypeEnum, type UserProfile, type InterviewTypeItem
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 
@@ -77,8 +77,14 @@ const getInterviewTypeBadgeClass = (typeStr?: string) => {
   }
 };
 
-const getInterviewTypeLabel = (typeStr?: string) => {
+const getInterviewTypeLabel = (typeStr?: string, typesList?: InterviewTypeItem[]) => {
   if (!typeStr) return "Technical Round";
+  if (typesList && typesList.length > 0) {
+    const matched = typesList.find(
+      (t) => t.code.toUpperCase() === typeStr.toUpperCase() || t.id === typeStr || t.name.toUpperCase() === typeStr.toUpperCase()
+    );
+    if (matched) return matched.name;
+  }
   const t = typeStr.toUpperCase();
   if (t === "TECHNICAL") return "Technical Round";
   if (t === "HR" || t === "INITIAL_SCREENING") return "HR Round";
@@ -110,6 +116,7 @@ export default function InterviewDashboard() {
   // Schedule Interview Modal State
   const [isScheduleOpen, setIsScheduleOpen] = useState<boolean>(false);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
+  const [interviewTypes, setInterviewTypes] = useState<InterviewTypeItem[]>([]);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
   // Floating Toast State
@@ -133,6 +140,7 @@ export default function InterviewDashboard() {
     candidate_email: "",
     job_title: "",
     interview_type: "TECHNICAL" as InterviewTypeEnum,
+    interview_type_id: "",
     round_number: 1,
     scheduled_date: new Date().toISOString().split("T")[0],
     scheduled_time: "10:00",
@@ -168,7 +176,31 @@ export default function InterviewDashboard() {
   useEffect(() => {
     fetchDashboardData();
     getUsers().then(setSystemUsers).catch(() => {});
+    getInterviewTypes().then((types) => {
+      if (Array.isArray(types) && types.length > 0) {
+        setInterviewTypes(types);
+        const first = types[0];
+        setScheduleForm((prev) => ({
+          ...prev,
+          interview_type: first.code,
+          interview_type_id: first.id,
+        }));
+      }
+    }).catch(() => {});
   }, []);
+
+  // Close action popup menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId && !(event.target as HTMLElement).closest(".action-menu-container")) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [openMenuId]);
 
   const todayStr = new Date().toISOString().split("T")[0];
 
@@ -182,9 +214,9 @@ export default function InterviewDashboard() {
     return isFutureOrToday && isNotCompleted && (nameMatch || jobMatch || interviewerMatch);
   });
 
-  // 2. TODAY'S SCHEDULE: scheduled_date === todayStr & status !== CANCELLED
+  // 2. TODAY'S SCHEDULE: scheduled_date === todayStr & status !== COMPLETED & status !== CANCELLED
   const todaysSchedule = interviews.filter(
-    (item) => item.scheduled_date === todayStr && item.status !== "CANCELLED"
+    (item) => item.scheduled_date === todayStr && item.status !== "COMPLETED" && item.status !== "CANCELLED"
   );
 
   // 3. COMPLETED INTERVIEWS: status === COMPLETED
@@ -265,6 +297,7 @@ export default function InterviewDashboard() {
         candidate_email: scheduleForm.candidate_email || undefined,
         job_title: scheduleForm.job_title,
         interview_type: scheduleForm.interview_type,
+        interview_type_id: scheduleForm.interview_type_id || undefined,
         round_number: scheduleForm.round_number,
         scheduled_date: scheduleForm.scheduled_date,
         scheduled_time: scheduleForm.scheduled_time,
@@ -573,7 +606,7 @@ export default function InterviewDashboard() {
 
                         {/* Actions Column */}
                         <td className="py-2.5 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1 relative">
+                          <div className="flex items-center justify-center gap-1 relative action-menu-container">
                             {/* View Eye Button */}
                             <button
                               onClick={() => handleOpenDetails(item)}
@@ -593,21 +626,15 @@ export default function InterviewDashboard() {
 
                             {/* Dropdown Menu Popup */}
                             {openMenuId === item.id && (
-                              <div className="absolute right-0 top-7 z-30 w-40 bg-white border border-slate-200 rounded-xl shadow-lg py-1 text-left animate-in fade-in duration-150">
-                                <button
-                                  onClick={() => handleOpenDetails(item)}
-                                  className="w-full px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
-                                >
-                                  <Eye size={13} /> View Details
-                                </button>
+                              <div className="absolute right-0 top-7 z-30 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 text-left animate-in fade-in duration-150">
                                 <button
                                   onClick={() => {
                                     setOpenMenuId(null);
-                                    showToast(`Candidate ${candidateName} interview details ready`, "info");
+                                    handleOpenDetails(item);
                                   }}
-                                  className="w-full px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
+                                  className="w-full px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 cursor-pointer"
                                 >
-                                  <Mail size={13} /> Send Email
+                                  <Eye size={13} /> View Details
                                 </button>
                               </div>
                             )}
@@ -967,15 +994,27 @@ export default function InterviewDashboard() {
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Interview Type</label>
                   <select
-                    value={scheduleForm.interview_type}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, interview_type: e.target.value as InterviewTypeEnum })}
+                    value={scheduleForm.interview_type_id || scheduleForm.interview_type}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const matched = interviewTypes.find(t => t.id === val || t.code === val);
+                      setScheduleForm((prev) => ({
+                        ...prev,
+                        interview_type: matched ? matched.code : val,
+                        interview_type_id: matched ? matched.id : "",
+                      }));
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-indigo-700 font-bold focus:outline-none focus:bg-white focus:border-indigo-500 cursor-pointer"
                   >
-                    <option value="TECHNICAL">💻 TECHNICAL</option>
-                    <option value="HR">👥 HR SCREENING</option>
-                    <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                    <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                    <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
+                    {interviewTypes.length > 0 ? (
+                      interviewTypes.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.code})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="TECHNICAL">Technical Round</option>
+                    )}
                   </select>
                 </div>
               </div>

@@ -5,7 +5,7 @@ Interview entity model representation for MongoDB document persistence.
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from app.utils.enums import InterviewStatus, InterviewType
+from app.utils.enums import InterviewStatus
 from app.utils.helpers import generate_uuid, utc_now
 
 
@@ -27,7 +27,7 @@ class InterviewDocument(BaseModel):
     job_type: Optional[str] = None  # Full Time / Part Time / Contract / Remote / Hybrid
 
     # Interview Details
-    interview_type: str = "TECHNICAL"
+    interview_type: Optional[str] = None
     interview_type_id: Optional[str] = None
     round_number: int = 1
 

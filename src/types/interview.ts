@@ -1,15 +1,4 @@
-export type InterviewTypeEnum =
-  | "TECHNICAL"
-  | "HR"
-  | "MANAGERIAL"
-  | "CULTURE_FIT"
-  | "FINAL_ROUND"
-  | "INITIAL_SCREENING"
-  | "CODING_TEST"
-  | "CLIENT_ROUND"
-  | "SYSTEM_DESIGN"
-  | "BEHAVIORAL"
-  | (string & {});
+export type InterviewTypeEnum = string;
 
 export type InterviewStatusEnum =
   | "PENDING"

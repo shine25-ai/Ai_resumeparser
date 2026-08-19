@@ -44,7 +44,6 @@ const getMatchedUserId = (
 };
 
 export default function InterviewManagement() {
-  const [activeTab, setActiveTab] = useState<string>("All");
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [candidatesList, setCandidatesList] = useState<any[]>([]);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
@@ -664,7 +663,7 @@ export default function InterviewManagement() {
     });
   };
 
-  const navTabs = ["All", "Technical", "HR", "Managerial", "Culture Fit", "Final Round", "Initial Screening"];
+
 
   // File Upload State & Handlers for Modals (Uploads directly to S3)
   const [isUploadingScheduleFile, setIsUploadingScheduleFile] = useState(false);
@@ -832,13 +831,12 @@ export default function InterviewManagement() {
     targetEmail = emailFilter,
     targetDate = scheduledDateFilter,
     targetType = typeFilter,
-    targetStatus = statusFilter,
-    targetTab = activeTab
+    targetStatus = statusFilter
   ) => {
     setLoading(true);
     setError(null);
     try {
-      const activeType = targetType !== "All" ? targetType : (targetTab !== "All" ? targetTab : undefined);
+      const activeType = targetType !== "All" ? targetType : undefined;
       const activeStatus = targetStatus !== "All" ? targetStatus : undefined;
 
       const filterParams: any = {
@@ -895,7 +893,7 @@ export default function InterviewManagement() {
   const location = useLocation();
 
   useEffect(() => {
-    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, activeTab);
+    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter);
 
     if (location.state && location.state.scheduleCandidate) {
       const cand = location.state.scheduleCandidate;
@@ -909,7 +907,7 @@ export default function InterviewManagement() {
       }));
       setIsScheduleOpen(true);
     }
-  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, activeTab, location.state]);
+  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, location.state]);
 
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
@@ -937,11 +935,7 @@ export default function InterviewManagement() {
   // Filtered interviews showing current round only per candidate
   const latestCandidateInterviews = getLatestInterviewsPerCandidate(interviews);
 
-  const filteredInterviews = latestCandidateInterviews.filter((item) => {
-    if (activeTab === "All") return true;
-    const tabNorm = activeTab.toUpperCase().replace(/\s+/g, "_");
-    return item.interview_type === tabNorm || item.interview_type.includes(tabNorm);
-  });
+  const filteredInterviews = latestCandidateInterviews;
 
   // Checkbox Selection Handlers for Bulk Feedback Update
   const isAllSelected = filteredInterviews.length > 0 && filteredInterviews.every((i) => selectedInterviewIds.includes(i.id));
@@ -1674,10 +1668,11 @@ export default function InterviewManagement() {
       console.warn("Failed to check active interview status from backend:", err);
     }
 
-    const defaultType = "TECHNICAL" as InterviewTypeEnum;
+    const defaultType = (interviewTypes[0]?.code || "TECHNICAL") as InterviewTypeEnum;
+    const defaultTypeId = interviewTypes[0]?.id || item.interview_type_id || "";
     let nextRoundNum = (item.round_number || 1) + 1;
     try {
-      const res = await getNextRoundNumber(item.candidate_id, defaultType);
+      const res = await getNextRoundNumber(item.candidate_id, defaultType, defaultTypeId);
       if (res && res.next_round_number) {
         nextRoundNum = res.next_round_number;
       }
@@ -1709,7 +1704,7 @@ export default function InterviewManagement() {
       job_location: item.job_location || "",
       job_type: item.job_type || "Full Time",
       interview_type: defaultType,
-      interview_type_id: matchedDefaultType?.id || item.interview_type_id || "",
+      interview_type_id: matchedDefaultType?.id || defaultTypeId,
       round_number: nextRoundNum,
       scheduled_date: new Date().toISOString().split("T")[0],
       scheduled_time: "10:00",
@@ -1750,7 +1745,7 @@ export default function InterviewManagement() {
     setNextRoundForm((prev) => ({ ...prev, interview_type: selectedCode as InterviewTypeEnum, interview_type_id: selectedId }));
     if (selectedInterview?.candidate_id) {
       try {
-        const res = await getNextRoundNumber(selectedInterview.candidate_id, selectedCode);
+        const res = await getNextRoundNumber(selectedInterview.candidate_id, selectedCode, selectedId);
         if (res && res.next_round_number) {
           setNextRoundForm((prev) => ({ ...prev, round_number: res.next_round_number, notes: `Next Round (${selectedCode} R${res.next_round_number}) follow-up for ${prev.candidate_name}` }));
         }
@@ -1982,11 +1977,11 @@ export default function InterviewManagement() {
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
               >
                 <option value="All">All Types</option>
-                <option value="HR_SCREENING">HR Screening</option>
-                <option value="TECHNICAL">Technical R1 / R2</option>
-                <option value="MANAGERIAL">Managerial</option>
-                <option value="CULTURE_FIT">Culture Fit</option>
-                <option value="FINAL_ROUND">Final Round</option>
+                {interviewTypes && interviewTypes.filter((t) => t.is_active !== false).map((t) => (
+                  <option key={t.id} value={t.code}>
+                    {t.name}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -2010,25 +2005,9 @@ export default function InterviewManagement() {
             </div>
           </div>
         </div>
-        {/* Navigation Filter Tabs Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-4 overflow-x-auto gap-4">
-          <div className="flex items-center gap-6 overflow-x-auto">
-            {navTabs.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`text-xs font-bold transition-colors whitespace-nowrap relative pb-4 -mb-4 cursor-pointer ${activeTab === tab ? "text-indigo-600" : "text-slate-500 hover:text-slate-800"
-                  }`}
-              >
-                {tab}
-                {activeTab === tab && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full"></span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {selectedInterviewIds.length > 0 && (
+        {/* Bulk Actions Header if candidates selected */}
+        {selectedInterviewIds.length > 0 && (
+          <div className="flex justify-end pt-2 pb-1">
             <button
               onClick={() => setIsBulkFeedbackOpen(true)}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap"
@@ -2036,8 +2015,8 @@ export default function InterviewManagement() {
               <Sparkles size={16} />
               Bulk Feedback Update ({selectedInterviewIds.length})
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Interviews Data Table */}
         {loading ? (
@@ -2051,7 +2030,7 @@ export default function InterviewManagement() {
           </div>
         ) : filteredInterviews.length === 0 ? (
           <div className="text-center py-12 text-slate-500 text-xs space-y-2">
-            <p>No interviews found for tab "{activeTab}".</p>
+            <p>No interviews found matching criteria.</p>
             <button
               onClick={() => setIsScheduleOpen(true)}
               className="text-indigo-600 hover:underline font-semibold cursor-pointer"
@@ -2571,14 +2550,7 @@ export default function InterviewManagement() {
                             </option>
                           ))
                         ) : (
-                          <>
-                            <option value="TECHNICAL">💻 TECHNICAL</option>
-                            <option value="HR">👥 HR SCREENING</option>
-                            <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                            <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                            <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                            <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
-                          </>
+                          <option value="TECHNICAL">Technical Round</option>
                         )}
                       </select>
                     </div>
@@ -3239,14 +3211,7 @@ export default function InterviewManagement() {
                               </option>
                             ))
                           ) : (
-                            <>
-                              <option value="TECHNICAL">💻 TECHNICAL</option>
-                              <option value="HR">👥 HR SCREENING</option>
-                              <option value="MANAGERIAL">👔 MANAGERIAL</option>
-                              <option value="CULTURE_FIT">🌟 CULTURE FIT</option>
-                              <option value="FINAL_ROUND">🏆 FINAL ROUND</option>
-                              <option value="INITIAL_SCREENING">📋 INITIAL SCREENING</option>
-                            </>
+                            <option value="TECHNICAL">Technical Round</option>
                           )}
                         </select>
                       </div>
@@ -5380,18 +5345,7 @@ export default function InterviewManagement() {
                           </option>
                         ))
                       ) : (
-                        <>
-                          <option value="TECHNICAL">💻 TECHNICAL ROUND</option>
-                          <option value="CLIENT_ROUND">🏢 CLIENT ROUND</option>
-                          <option value="SYSTEM_DESIGN">🏗️ SYSTEM DESIGN</option>
-                          <option value="CODING_TEST">⌨️ CODING TEST / LIVE PAIRING</option>
-                          <option value="HR">👥 HR INTERVIEW</option>
-                          <option value="MANAGERIAL">👔 MANAGERIAL ROUND</option>
-                          <option value="CULTURE_FIT">🤝 CULTURE FIT</option>
-                          <option value="BEHAVIORAL">🧠 BEHAVIORAL ASSESSMENT</option>
-                          <option value="FINAL_ROUND">🏆 FINAL EXECUTIVE ROUND</option>
-                          <option value="INITIAL_SCREENING">📞 INITIAL SCREENING</option>
-                        </>
+                        <option value="TECHNICAL">Technical Round</option>
                       )}
                     </select>
                   </div>
