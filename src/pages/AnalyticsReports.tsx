@@ -3,6 +3,32 @@ import { ChevronDown, ArrowUpRight, Loader2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ANALYTICS_REPORTS_URL } from "../utils/Api";
 
+interface StatItem {
+  label: string;
+  value: string | number;
+  change: string;
+}
+
+interface ResumeSourceItem {
+  name: string;
+  count: number;
+  color: string;
+  percentage: string;
+}
+
+interface TopSkillItem {
+  name: string;
+  count: number;
+  width: string;
+}
+
+interface ExpDistributionItem {
+  name: string;
+  count: number;
+  color: string;
+  percentage: string;
+}
+
 export default function AnalyticsReports() {
   const [timeRange] = useState("This Month");
   const [loading, setLoading] = useState(true);
@@ -48,14 +74,12 @@ export default function AnalyticsReports() {
     );
   }
 
-  const {
-    stats = [],
-    resumeSourceData = [],
-    pipelineTrendData = [],
-    topSkills = [],
-    expDistribution = [],
-    successRate = 0
-  } = data;
+  const stats: StatItem[] = data.stats || [];
+  const resumeSourceData: ResumeSourceItem[] = data.resumeSourceData || [];
+  const pipelineTrendData: any[] = data.pipelineTrendData || [];
+  const topSkills: TopSkillItem[] = data.topSkills || [];
+  const expDistribution: ExpDistributionItem[] = data.expDistribution || [];
+  const successRate: number = data.successRate ?? 0;
 
   return (
     <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans">
@@ -73,7 +97,7 @@ export default function AnalyticsReports() {
 
       {/* Top 5 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {stats.map((stat, i) => (
+        {stats.map((stat: StatItem, i: number) => (
           <div key={i} className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
             <span className="text-xs font-semibold text-slate-500 block">{stat.label}</span>
             <div className="text-2xl font-extrabold text-slate-900">{stat.value}</div>
@@ -105,21 +129,21 @@ export default function AnalyticsReports() {
                     paddingAngle={3}
                     dataKey="count"
                   >
-                    {resumeSourceData.map((entry, index) => (
+                    {resumeSourceData.map((entry: ResumeSourceItem, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-sm font-bold text-slate-900">{stats.find((s:any) => s.label === "Total Resumes")?.value || "0"}</span>
+                <span className="text-sm font-bold text-slate-900">{stats.find((s: StatItem) => s.label === "Total Resumes")?.value || "0"}</span>
                 <span className="text-[10px] text-slate-500 font-medium">Total</span>
               </div>
             </div>
 
             {/* Legend List */}
             <div className="space-y-2 w-full sm:w-auto">
-              {resumeSourceData.map((item, i) => (
+              {resumeSourceData.map((item: ResumeSourceItem, i: number) => (
                 <div key={i} className="flex items-center justify-between gap-4 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
@@ -167,7 +191,7 @@ export default function AnalyticsReports() {
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <h3 className="text-xs font-bold text-slate-900">Top Skills in Demand</h3>
           <div className="space-y-3">
-            {topSkills.map((item, idx) => (
+            {topSkills.map((item: TopSkillItem, idx: number) => (
               <div key={idx} className="space-y-1">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-semibold text-slate-700">{item.name}</span>
@@ -198,7 +222,7 @@ export default function AnalyticsReports() {
                     paddingAngle={3}
                     dataKey="count"
                   >
-                    {expDistribution.map((entry, index) => (
+                    {expDistribution.map((entry: ExpDistributionItem, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -208,7 +232,7 @@ export default function AnalyticsReports() {
 
             {/* Legend List */}
             <div className="space-y-2 w-full sm:w-auto">
-              {expDistribution.map((item, i) => (
+              {expDistribution.map((item: ExpDistributionItem, i: number) => (
                 <div key={i} className="flex items-center justify-between gap-4 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
@@ -255,3 +279,4 @@ export default function AnalyticsReports() {
     </div>
   );
 }
+
