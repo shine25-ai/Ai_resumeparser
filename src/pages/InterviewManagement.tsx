@@ -876,9 +876,8 @@ export default function InterviewManagement() {
         filterParams.interviewer_id = currentUser.id || currentUser.email || currentUser.full_name;
       }
 
-      const [interviewData, resumesData, usersData, typesData] = await Promise.all([
+      const [interviewData, usersData, typesData] = await Promise.all([
         getInterviews(filterParams),
-        getResumes().catch(() => []),
         getUsers().catch(() => []),
         getInterviewTypes().catch(() => []),
       ]);
@@ -896,9 +895,6 @@ export default function InterviewManagement() {
       setInterviews(items);
       setTotalCount(items.length < total && (isClientUser || isInterviewerUser) ? items.length : total);
       setTotalPages(computedTotalPages);
-
-      const resumes = Array.isArray(resumesData) ? resumesData : resumesData?.resumes || [];
-      setCandidatesList(resumes);
 
       const userList = Array.isArray(usersData) ? usersData : (usersData as any)?.users || [];
       setSystemUsers(userList);
@@ -928,6 +924,22 @@ export default function InterviewManagement() {
       setIsScheduleOpen(true);
     }
   }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, location.state]);
+
+  // Fetch candidate resumes list ONLY when Schedule Interview modal is opened
+  useEffect(() => {
+    if (isScheduleOpen && candidatesList.length === 0) {
+      getResumes({ page: 1, limit: 100 })
+        .then((resumesData) => {
+          const resumes = Array.isArray(resumesData)
+            ? resumesData
+            : resumesData?.resumes || (resumesData as any)?.data?.resumes || [];
+          setCandidatesList(resumes);
+        })
+        .catch((err) => {
+          console.error("Failed to load candidate resumes for schedule modal:", err);
+        });
+    }
+  }, [isScheduleOpen, candidatesList.length]);
 
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
