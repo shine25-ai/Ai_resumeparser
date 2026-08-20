@@ -876,9 +876,8 @@ export default function InterviewManagement() {
         filterParams.interviewer_id = currentUser.id || currentUser.email || currentUser.full_name;
       }
 
-      const [interviewData, resumesData, usersData, typesData] = await Promise.all([
+      const [interviewData, usersData, typesData] = await Promise.all([
         getInterviews(filterParams),
-        getResumes().catch(() => []),
         getUsers().catch(() => []),
         getInterviewTypes().catch(() => []),
       ]);
@@ -896,9 +895,6 @@ export default function InterviewManagement() {
       setInterviews(items);
       setTotalCount(items.length < total && (isClientUser || isInterviewerUser) ? items.length : total);
       setTotalPages(computedTotalPages);
-
-      const resumes = Array.isArray(resumesData) ? resumesData : resumesData?.resumes || [];
-      setCandidatesList(resumes);
 
       const userList = Array.isArray(usersData) ? usersData : (usersData as any)?.users || [];
       setSystemUsers(userList);
@@ -929,6 +925,22 @@ export default function InterviewManagement() {
     }
   }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, location.state]);
 
+  // Fetch candidate resumes list ONLY when Schedule Interview modal is opened
+  useEffect(() => {
+    if (isScheduleOpen && candidatesList.length === 0) {
+      getResumes({ page: 1, limit: 100 })
+        .then((resumesData) => {
+          const resumes = Array.isArray(resumesData)
+            ? resumesData
+            : resumesData?.resumes || (resumesData as any)?.data?.resumes || [];
+          setCandidatesList(resumes);
+        })
+        .catch((err) => {
+          console.error("Failed to load candidate resumes for schedule modal:", err);
+        });
+    }
+  }, [isScheduleOpen, candidatesList.length]);
+
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
     const map = new Map<string, InterviewItem>();
@@ -957,6 +969,11 @@ export default function InterviewManagement() {
 
   const filteredInterviews = latestCandidateInterviews;
 
+  // Keep totalCount state in sync with current filtered candidate rows
+  useEffect(() => {
+    setTotalCount(filteredInterviews.length);
+  }, [filteredInterviews.length]);
+
   // Checkbox Selection Handlers for Bulk Feedback Update
   const isAllSelected = filteredInterviews.length > 0 && filteredInterviews.every((i) => selectedInterviewIds.includes(i.id));
 
@@ -976,15 +993,32 @@ export default function InterviewManagement() {
 
 
   // Calculate live stats based on current active candidate rounds
-  const techCount = latestCandidateInterviews.filter((i) => i.interview_type === "TECHNICAL").length;
-  const hrCount = latestCandidateInterviews.filter((i) => i.interview_type === "HR").length;
-  const managerialCount = latestCandidateInterviews.filter((i) => i.interview_type === "MANAGERIAL").length;
-  const scheduledCount = latestCandidateInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING").length;
+  const isTechType = (type?: string) => {
+    const t = (type || "").toUpperCase();
+    return t === "TECHNICAL" || t === "APTITUDE" || t === "CODING" || t === "ASSESSMENT" || (t !== "HR" && t !== "MANAGERIAL");
+  };
+  const isHrType = (type?: string) => (type || "").toUpperCase() === "HR";
+  const isManagerialType = (type?: string) => (type || "").toUpperCase() === "MANAGERIAL";
+
+  const techInterviews = latestCandidateInterviews.filter((i) => isTechType(i.interview_type));
+  const hrInterviews = latestCandidateInterviews.filter((i) => isHrType(i.interview_type));
+  const managerialInterviews = latestCandidateInterviews.filter((i) => isManagerialType(i.interview_type));
+
+  const techCount = techInterviews.length;
+  const activeTechCount = techInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
+
+  const hrCount = hrInterviews.length;
+  const activeHrCount = hrInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
+
+  const managerialCount = managerialInterviews.length;
+  const activeManagerialCount = managerialInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
+
+  const scheduledCount = latestCandidateInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
 
   const stats = [
-    { label: "Technical Interviews", value: techCount, status: `${techCount} Active` },
-    { label: "HR Interviews", value: hrCount, status: `${hrCount} Active` },
-    { label: "Managerial Interviews", value: managerialCount, status: `${managerialCount} Active` },
+    { label: "Technical Interviews", value: techCount, status: `${activeTechCount} Active` },
+    { label: "HR Interviews", value: hrCount, status: `${activeHrCount} Active` },
+    { label: "Managerial Interviews", value: managerialCount, status: `${activeManagerialCount} Active` },
     { label: "Scheduled / Pending", value: scheduledCount, status: `${scheduledCount} Upcoming` },
   ];
 

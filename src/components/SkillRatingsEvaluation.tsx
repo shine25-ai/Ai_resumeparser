@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Star, Plus, Trash2, Cpu, CheckCircle2, Award, Sparkles } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Star, Plus, Trash2, Cpu, CheckCircle2, Award, Sparkles, AlertCircle } from "lucide-react";
 import type { SkillRatingItem, CategoryScoreItem } from "../types/interview";
 import { getSkillsEvaluations, saveSkillsEvaluation, deleteSkillsEvaluation } from "../utils/Api";
 
@@ -36,22 +36,66 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   // Input state for adding new evaluation categories manually
   const [newCatName, setNewCatName] = useState("");
   const [newCatWeight, setNewCatWeight] = useState<number>(20);
+  const [weightError, setWeightError] = useState<string | null>(null);
+  const [showCatSuggestions, setShowCatSuggestions] = useState(false);
 
   // Suggestion list state & dropdown visibility
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Fetch all templates from the database on mount
+  const selectedSkillName = skillRatings[selectedSkillIndex]?.skill_name || "";
+
+  // Fetch active template (with categories) for selectedSkillName if not already loaded
   useEffect(() => {
-    const fetchTemplates = async () => {
-      try {
-        const data = await getSkillsEvaluations();
-        setSkillTemplates(data || []);
-      } catch (err) {
-        console.error("Failed to load skills evaluations templates:", err);
-      }
-    };
-    fetchTemplates();
-  }, []);
+    if (!selectedSkillName) return;
+    const existingTemplate = skillTemplates.find(
+      (t) => t.skill_name.toLowerCase() === selectedSkillName.toLowerCase()
+    );
+    // If template not loaded or template categories missing, fetch full template details
+    if (!existingTemplate || !existingTemplate.categories) {
+      getSkillsEvaluations(selectedSkillName, true)
+        .then((data) => {
+          if (data && data.length > 0) {
+            setSkillTemplates((prev) => {
+              const map = new Map();
+              prev.forEach((t) => map.set(t.skill_name.toLowerCase(), t));
+              data.forEach((t) => map.set(t.skill_name.toLowerCase(), t));
+              return Array.from(map.values());
+            });
+          }
+        })
+        .catch((err) => console.error("Error fetching template for skill:", err));
+    }
+  }, [selectedSkillName, skillTemplates]);
+
+  // Debounced backend search when typing in skill input field (lightweight, excludes categories)
+  useEffect(() => {
+    const query = newSkillName.trim();
+    if (!query) return;
+
+    const timer = setTimeout(() => {
+      getSkillsEvaluations(query, false)
+        .then((data) => {
+          if (data && data.length > 0) {
+            setSkillTemplates((prev) => {
+              const map = new Map();
+              prev.forEach((t) => map.set(t.skill_name.toLowerCase(), t));
+              data.forEach((t) => {
+                const existing = map.get(t.skill_name.toLowerCase());
+                // Keep existing categories if already loaded
+                map.set(t.skill_name.toLowerCase(), {
+                  ...t,
+                  categories: existing?.categories || t.categories,
+                });
+              });
+              return Array.from(map.values());
+            });
+          }
+        })
+        .catch((err) => console.error("Error searching skill templates:", err));
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [newSkillName]);
 
   // Filter existing skills from database templates based on user input (e.g. "JA" -> "JAVA")
   const filteredSuggestions = React.useMemo(() => {
@@ -65,8 +109,6 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     );
   }, [newSkillName, skillTemplates, skillRatings]);
 
-  const selectedSkillName = skillRatings[selectedSkillIndex]?.skill_name || "";
-
   // Get active template corresponding to selected skill
   const activeTemplate = React.useMemo(() => {
     if (!selectedSkillName) return null;
@@ -75,54 +117,79 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     );
   }, [selectedSkillName, skillTemplates]);
 
-  // Compute categories to display in the table based on active template, and sync with parent categoryScores
+  // Compute categories to display in the table strictly for the currently selected skill
   const activeCategories: CategoryScoreItem[] = React.useMemo(() => {
     if (!selectedSkillName) return [];
+    const selectedSkillLower = selectedSkillName.trim().toLowerCase();
+    const templateCatNames = (activeTemplate?.categories || []).map((t: any) =>
+      (t.category || "").trim().toLowerCase()
+    );
+
+    return (categoryScores || [])
+      .filter((c) => {
+        if (!c.category || !c.category.trim()) return false;
+        const catLower = c.category.trim().toLowerCase();
+        const itemSkillLower = (c as any).skill_name ? (c as any).skill_name.trim().toLowerCase() : "";
+
+        // 1. If category item has explicit skill_name, check if it matches active skill
+        if (itemSkillLower) {
+          return itemSkillLower === selectedSkillLower;
+        }
+
+        // 2. Fallback for untagged items: match if category belongs to activeTemplate's category list for this skill
+        if (templateCatNames.includes(catLower)) {
+          return true;
+        }
+
+        // 3. Fallback: if only 1 skill in skillRatings, associate it with that skill
+        if (skillRatings.length === 1 && skillRatings[0].skill_name.trim().toLowerCase() === selectedSkillLower) {
+          return true;
+        }
+
+        return false;
+      })
+      .map((c) => {
+        const rating = c.rating || 1;
+        const weightage = c.weightage || 0;
+        const score =
+          c.score !== undefined
+            ? c.score
+            : Math.round((rating / 5) * weightage * 10) / 10;
+        return {
+          ...c,
+          skill_name: (c as any).skill_name || selectedSkillName,
+          rating,
+          weightage,
+          score,
+        };
+      });
+  }, [selectedSkillName, activeTemplate, categoryScores, skillRatings]);
+
+  // Filter template categories for the active skill based on user input for suggestion dropdown
+  const filteredCategorySuggestions = React.useMemo(() => {
+    if (!selectedSkillName) return [];
     const templateCats = activeTemplate?.categories || [];
+    const existingCatNames = activeCategories.map((c) => c.category.toLowerCase());
+    const query = newCatName.trim().toLowerCase();
 
-    return templateCats.map((tCat: any) => {
-      const matched = categoryScores.find(
-        (c) => c.category.toLowerCase() === tCat.category.toLowerCase()
-      );
-      return {
-        category: tCat.category,
-        weightage: tCat.weightage,
-        rating: matched ? matched.rating : 1,
-        score: matched ? matched.score : Math.round((1 / 5) * tCat.weightage * 10) / 10,
-        feedback: matched?.feedback || "",
-      };
+    return templateCats.filter((tCat: any) => {
+      const isNotAdded = !existingCatNames.includes(tCat.category.toLowerCase());
+      if (!isNotAdded) return false;
+      if (!query) return true; // Show all available template categories on focus
+      return tCat.category.toLowerCase().includes(query);
     });
-  }, [selectedSkillName, activeTemplate, categoryScores]);
+  }, [selectedSkillName, activeTemplate, activeCategories, newCatName]);
 
-  // Ensure that all categories in the active template exist in the parent's categoryScores
-  useEffect(() => {
-    if (!selectedSkillName || !onChangeCategoryScores || !categoryScores) return;
-    const templateCats = activeTemplate?.categories || [];
-    let updated = [...categoryScores];
-    let needsUpdate = false;
-
-    templateCats.forEach((tCat: any) => {
-      const exists = updated.some(
-        (c) => c.category.toLowerCase() === tCat.category.toLowerCase()
-      );
-      if (!exists) {
-        needsUpdate = true;
-        updated.push({
-          category: tCat.category,
-          weightage: tCat.weightage,
-          rating: 1,
-          score: Math.round((1 / 5) * tCat.weightage * 10) / 10,
-          feedback: "",
-        });
-      }
-    });
-
-    if (needsUpdate) {
-      onChangeCategoryScores(updated);
+  const handleSelectCatSuggestion = (catItem: { category: string; weightage: number }) => {
+    setNewCatName(catItem.category);
+    if (catItem.weightage) {
+      setNewCatWeight(catItem.weightage);
     }
-  }, [selectedSkillName, activeTemplate]);
+    setShowCatSuggestions(false);
+    setWeightError(null);
+  };
 
-  // Compute active AI Score
+  // Compute active AI Score for selected skill
   const activeAiScore = React.useMemo(() => {
     if (activeCategories.length === 0) return 0;
     const totalScore = activeCategories.reduce((sum, item) => sum + (item.score || 0), 0);
@@ -146,12 +213,24 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
 
   const handleSaveTemplateInternal = async (skillName: string, categories: any[]) => {
     try {
+      // Strictly deduplicate categories case-insensitively before sending payload
+      const uniqueCats: any[] = [];
+      const seenNames = new Set<string>();
+
+      (categories || []).forEach((c: any) => {
+        const catNameLower = (c.category || "").trim().toLowerCase();
+        if (catNameLower && !seenNames.has(catNameLower)) {
+          seenNames.add(catNameLower);
+          uniqueCats.push({
+            category: c.category.trim(),
+            weightage: c.weightage,
+          });
+        }
+      });
+
       const payload = {
         skill_name: skillName,
-        categories: categories.map((c: any) => ({
-          category: c.category,
-          weightage: c.weightage,
-        })),
+        categories: uniqueCats,
       };
 
       const result = await saveSkillsEvaluation(payload);
@@ -238,6 +317,11 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     }
   };
 
+  // Clear weightage error when selected skill changes
+  useEffect(() => {
+    setWeightError(null);
+  }, [selectedSkillIndex, selectedSkillName]);
+
   const handleSkillRatingChange = (index: number, newRating: number) => {
     const updated = [...skillRatings];
     updated[index] = { ...updated[index], rating: newRating };
@@ -245,89 +329,200 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   };
 
   const handleCategoryRatingChange = (catName: string, newRating: number, weightage: number) => {
-    if (!onChangeCategoryScores) return;
+    if (!onChangeCategoryScores || !selectedSkillName) return;
     const newScore = Math.round((newRating / 5) * weightage * 10) / 10;
+    const selectedSkillLower = selectedSkillName.trim().toLowerCase();
+    const catNameLower = catName.trim().toLowerCase();
 
-    const index = categoryScores.findIndex(
-      (c) => c.category.toLowerCase() === catName.toLowerCase()
-    );
+    const index = categoryScores.findIndex((c) => {
+      const cCatLower = (c.category || "").trim().toLowerCase();
+      const cSkillLower = (c as any).skill_name ? (c as any).skill_name.trim().toLowerCase() : "";
+      return cCatLower === catNameLower && (!cSkillLower || cSkillLower === selectedSkillLower);
+    });
 
     const updated = [...categoryScores];
     if (index > -1) {
       updated[index] = {
         ...updated[index],
+        skill_name: (updated[index] as any).skill_name || selectedSkillName,
         rating: newRating,
         score: newScore,
       };
     } else {
       updated.push({
+        skill_name: selectedSkillName,
         category: catName,
         weightage,
         rating: newRating,
         score: newScore,
         feedback: "",
-      });
+      } as any);
     }
     onChangeCategoryScores(updated);
+  };
+
+  // Debounce timer for weightage input template saves
+  const saveTemplateDebounceTimerRef = useRef<any>(null);
+
+  const saveTemplateDebounced = (skillName: string, categories: any[]) => {
+    if (saveTemplateDebounceTimerRef.current) {
+      clearTimeout(saveTemplateDebounceTimerRef.current);
+    }
+    saveTemplateDebounceTimerRef.current = setTimeout(() => {
+      handleSaveTemplateInternal(skillName, categories);
+    }, 400);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (saveTemplateDebounceTimerRef.current) {
+        clearTimeout(saveTemplateDebounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCategoryWeightageChange = (catName: string, rawVal: number) => {
+    if (!selectedSkillName) return;
+    const selectedSkillLower = selectedSkillName.trim().toLowerCase();
+    const catNameLower = catName.trim().toLowerCase();
+
+    const otherTotal = activeCategories
+      .filter((c) => (c.category || "").trim().toLowerCase() !== catNameLower)
+      .reduce((sum, item) => sum + item.weightage, 0);
+
+    const maxAllowed = Math.max(0, 100 - otherTotal);
+    let newWeight = Math.max(0, isNaN(rawVal) ? 0 : rawVal);
+
+    if (newWeight > maxAllowed) {
+      setWeightError(
+        `Total weightage cannot exceed 100%. Max allowed weightage for "${catName}" is ${maxAllowed}% (Other categories total: ${otherTotal}%). Please reduce another category weightage first.`
+      );
+      newWeight = maxAllowed;
+    } else {
+      setWeightError(null);
+    }
+
+    const currentCats = activeTemplate?.categories || [];
+    const updatedCats = currentCats.map((c: any) => {
+      if ((c.category || "").trim().toLowerCase() === catNameLower) {
+        return { ...c, weightage: newWeight };
+      }
+      return c;
+    });
+
+    // Debounce backend template save so typing digits does not trigger multiple API requests
+    saveTemplateDebounced(selectedSkillName, updatedCats);
+
+    if (onChangeCategoryScores) {
+      const updatedScores = categoryScores.map((c) => {
+        const cCatLower = (c.category || "").trim().toLowerCase();
+        const cSkillLower = (c as any).skill_name ? (c as any).skill_name.trim().toLowerCase() : "";
+
+        if (cCatLower === catNameLower && (!cSkillLower || cSkillLower === selectedSkillLower)) {
+          const rating = c.rating || 1;
+          const newScore = Math.round((rating / 5) * newWeight * 10) / 10;
+          return {
+            ...c,
+            skill_name: (c as any).skill_name || selectedSkillName,
+            weightage: newWeight,
+            score: newScore,
+          };
+        }
+        return c;
+      });
+      onChangeCategoryScores(updatedScores);
+    }
   };
 
   const handleAddCategory = async () => {
     if (!newCatName.trim() || !selectedSkillName) return;
     const catName = newCatName.trim();
+    const catNameLower = catName.toLowerCase();
 
-    // Check duplicate
+    // Check duplicate in active categories currently displayed
     const exists = activeCategories.some(
-      (c) => c.category.toLowerCase() === catName.toLowerCase()
+      (c) => (c.category || "").trim().toLowerCase() === catNameLower
     );
     if (exists) {
-      alert("This category already exists for the selected skill.");
+      setWeightError(`Category "${catName}" is already added to this evaluation.`);
       return;
     }
 
-    const newCatItem = {
-      category: catName,
-      weightage: newCatWeight,
-    };
+    if (newCatWeight <= 0) {
+      setWeightError("Category weightage must be greater than 0%.");
+      return;
+    }
 
+    const currentTotal = activeCategories.reduce((sum, item) => sum + item.weightage, 0);
+
+    if (currentTotal + newCatWeight > 100) {
+      const available = Math.max(0, 100 - currentTotal);
+      setWeightError(
+        `Cannot add category "${catName}". Total template weightage cannot exceed 100% (Current total: ${currentTotal}%). Please reduce existing category weightages first.${
+          available > 0 ? ` Maximum available weightage to add is ${available}%.` : ""
+        }`
+      );
+      return;
+    }
+
+    setWeightError(null);
+
+    // Update backend template list without appending duplicate category names
     const currentCats = activeTemplate?.categories || [];
-    const updatedCats = [...currentCats, newCatItem];
+    const catExistsInTemplate = currentCats.some(
+      (c: any) => (c.category || "").trim().toLowerCase() === catNameLower
+    );
+
+    let updatedCats: any[];
+    if (catExistsInTemplate) {
+      updatedCats = currentCats.map((c: any) => {
+        if ((c.category || "").trim().toLowerCase() === catNameLower) {
+          return { ...c, weightage: newCatWeight };
+        }
+        return c;
+      });
+    } else {
+      updatedCats = [...currentCats, { category: catName, weightage: newCatWeight }];
+    }
 
     await handleSaveTemplateInternal(selectedSkillName, updatedCats);
 
-    // Add to parent categoryScores
+    // Add to parent categoryScores tagged with selectedSkillName
     if (onChangeCategoryScores) {
       const newScore = Math.round((1 / 5) * newCatWeight * 10) / 10;
       onChangeCategoryScores([
         ...categoryScores,
         {
+          skill_name: selectedSkillName,
           category: catName,
           weightage: newCatWeight,
           rating: 1,
           score: newScore,
           feedback: "",
-        },
+        } as any,
       ]);
     }
 
     setNewCatName("");
   };
 
-  const handleRemoveCategory = async (catName: string) => {
-    if (!selectedSkillName) return;
+  const handleRemoveCategory = (catName: string) => {
+    setWeightError(null);
+    if (!selectedSkillName || !onChangeCategoryScores) return;
+    const selectedSkillLower = selectedSkillName.trim().toLowerCase();
+    const catNameLower = catName.trim().toLowerCase();
 
-    const currentCats = activeTemplate?.categories || [];
-    const updatedCats = currentCats.filter(
-      (c: any) => c.category.toLowerCase() !== catName.toLowerCase()
+    // Remove category only for the selected skill from parent categoryScores
+    onChangeCategoryScores(
+      categoryScores.filter((c) => {
+        const cCatLower = (c.category || "").trim().toLowerCase();
+        const cSkillLower = (c as any).skill_name ? (c as any).skill_name.trim().toLowerCase() : "";
+        if (cCatLower === catNameLower && (!cSkillLower || cSkillLower === selectedSkillLower)) {
+          return false;
+        }
+        return true;
+      })
     );
-
-    await handleSaveTemplateInternal(selectedSkillName, updatedCats);
-
-    // Remove from parent categoryScores
-    if (onChangeCategoryScores) {
-      onChangeCategoryScores(
-        categoryScores.filter((c) => c.category.toLowerCase() !== catName.toLowerCase())
-      );
-    }
   };
 
   const totalWeightage = activeCategories.reduce((sum, item) => sum + item.weightage, 0);
@@ -548,7 +743,25 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                     activeCategories.map((cat, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2 px-3 font-semibold text-slate-900 text-xs">{cat.category}</td>
-                        <td className="py-2 px-3 font-semibold text-slate-600 text-xs">{cat.weightage}%</td>
+                        <td className="py-2 px-3">
+                          {!readOnly ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={cat.weightage}
+                                onChange={(e) =>
+                                  handleCategoryWeightageChange(cat.category, Number(e.target.value))
+                                }
+                                className="w-16 bg-white border border-slate-300 rounded-md px-2 py-0.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                              />
+                              <span className="text-xs font-extrabold text-slate-500">%</span>
+                            </div>
+                          ) : (
+                            <span className="font-semibold text-slate-600 text-xs">{cat.weightage}%</span>
+                          )}
+                        </td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-1">
                             {[1, 2, 3, 4, 5].map((sVal) => (
@@ -601,29 +814,83 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
             <div className="flex justify-between items-center bg-slate-50 p-2 px-3 rounded-lg border border-slate-100 text-xs">
               <span className="font-bold text-slate-600">Total Template Weightage:</span>
               <span
-                className={`font-black px-2 py-0.5 rounded-full ${totalWeightage === 100
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : "bg-amber-50 text-amber-700 border border-amber-200"
-                  }`}
+                className={`font-black px-2 py-0.5 rounded-full ${
+                  totalWeightage === 100
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : totalWeightage > 100
+                    ? "bg-rose-50 text-rose-700 border border-rose-200 font-extrabold"
+                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                }`}
               >
                 {totalWeightage}% {totalWeightage !== 100 && "(Recommended: 100%)"}
               </span>
             </div>
 
+            {/* Weightage Warning / Error Alert */}
+            {weightError && (
+              <div className="flex items-center justify-between gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs px-3.5 py-2.5 rounded-xl font-semibold shadow-2xs animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={16} className="shrink-0 text-rose-600" />
+                  <span>{weightError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWeightError(null)}
+                  className="text-rose-500 hover:text-rose-900 font-bold text-sm px-1.5 py-0.5 rounded hover:bg-rose-100 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Add Category Form */}
             {!readOnly && (
               <div className="bg-slate-50/50 border border-dashed border-slate-200 rounded-xl p-3 flex flex-wrap items-end gap-3.5">
-                <div className="flex-1 min-w-[200px] space-y-1">
+                <div className="flex-1 min-w-[200px] space-y-1 relative">
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">
                     New Category Name
                   </label>
-                  <input
-                    type="text"
-                    value={newCatName}
-                    onChange={(e) => setNewCatName(e.target.value)}
-                    placeholder="e.g. Memory Management, API Design"
-                    className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={newCatName}
+                      onChange={(e) => {
+                        setNewCatName(e.target.value);
+                        setShowCatSuggestions(true);
+                      }}
+                      onFocus={() => setShowCatSuggestions(true)}
+                      onBlur={() => {
+                        setTimeout(() => setShowCatSuggestions(false), 200);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddCategory())}
+                      placeholder={`Type or select category for ${selectedSkillName || "Skill"}`}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+
+                    {showCatSuggestions && filteredCategorySuggestions.length > 0 && (
+                      <ul className="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-52 overflow-y-auto py-1 text-xs font-medium text-slate-800 animate-in fade-in duration-150">
+                        <li className="px-3 py-1 text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider bg-indigo-50/60 border-b border-slate-100 flex items-center justify-between">
+                          <span>Template Suggestions for {selectedSkillName}</span>
+                          <span className="text-[9px] font-bold text-slate-400">Click to select</span>
+                        </li>
+                        {filteredCategorySuggestions.map((catItem: any, idx: number) => (
+                          <li
+                            key={idx}
+                            onMouseDown={(e) => {
+                              e.preventDefault(); // prevent blur before click handles
+                              handleSelectCatSuggestion(catItem);
+                            }}
+                            className="px-3 py-2 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer flex items-center justify-between transition-colors border-b border-slate-50 last:border-0"
+                          >
+                            <span className="font-bold text-slate-900 text-xs">{catItem.category}</span>
+                            <span className="text-[10px] font-black text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-full shrink-0 ml-2">
+                              {catItem.weightage}% Weightage
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
 
                 <div className="w-28 space-y-1">

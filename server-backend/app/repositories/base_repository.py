@@ -37,14 +37,18 @@ class BaseRepository:
     async def find_many(
         self,
         query: Optional[Dict[str, Any]] = None,
+        projection: Optional[Dict[str, Any]] = None,
         skip: int = 0,
         limit: int = 100,
         sort_by: Optional[str] = None,
         descending: bool = True,
     ) -> List[Dict[str, Any]]:
-        """Find multiple documents matching query with pagination and sorting."""
+        """Find multiple documents matching query with pagination, projection, and sorting."""
         query = query or {}
-        cursor = self.collection.find(query).skip(skip).limit(limit)
+        if projection:
+            cursor = self.collection.find(query, projection).skip(skip).limit(limit)
+        else:
+            cursor = self.collection.find(query).skip(skip).limit(limit)
 
         if sort_by:
             direction = -1 if descending else 1

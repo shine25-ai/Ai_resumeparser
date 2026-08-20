@@ -36,6 +36,7 @@ export interface SkillRatingItem {
 }
 
 export interface CategoryScoreItem {
+  skill_name?: string;
   category: string;
   weightage: number; // e.g. 20 (for 20%)
   rating: number; // 1 to 5

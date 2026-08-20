@@ -2,6 +2,7 @@
 SkillsEvaluation controller handling request routing payloads and responses wrapping.
 """
 
+from typing import Optional
 from fastapi import HTTPException, status
 from app.services.skills_evaluation_service import SkillsEvaluationService
 from app.schemas.skills_evaluation import SkillsEvaluationCreate
@@ -14,9 +15,13 @@ class SkillsEvaluationController:
     def __init__(self, service: SkillsEvaluationService):
         self.service = service
 
-    async def list_templates(self, skip: int = 0, limit: int = 100) -> dict:
-        """List all templates."""
-        templates = await self.service.list_templates(skip=skip, limit=limit)
+    async def list_templates(
+        self, search: Optional[str] = None, include_categories: bool = False, skip: int = 0, limit: int = 100
+    ) -> dict:
+        """List all templates, optionally filtered by search query and category inclusion."""
+        templates = await self.service.list_templates(
+            search=search, include_categories=include_categories, skip=skip, limit=limit
+        )
         return {"success": True, "data": templates}
 
     async def get_template(self, skill_id: str) -> dict:

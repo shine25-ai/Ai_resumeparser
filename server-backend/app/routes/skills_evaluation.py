@@ -2,6 +2,7 @@
 FastAPI router definition for skills evaluation CRUD endpoints.
 """
 
+from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
@@ -28,12 +29,16 @@ def get_skills_evaluation_controller(db: AsyncIOMotorDatabase = Depends(get_data
     summary="List all skills evaluation templates",
 )
 async def list_templates(
+    search: Optional[str] = Query(None, description="Search term for skill_name"),
+    include_categories: bool = Query(False, description="Include categories array in response"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     controller: SkillsEvaluationController = Depends(get_skills_evaluation_controller),
     current_user: dict = Depends(get_current_active_user),
 ):
-    return await controller.list_templates(skip=skip, limit=limit)
+    return await controller.list_templates(
+        search=search, include_categories=include_categories, skip=skip, limit=limit
+    )
 
 
 @router.get(
