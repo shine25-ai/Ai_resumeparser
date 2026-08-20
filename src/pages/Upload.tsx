@@ -193,6 +193,8 @@ export default function Upload() {
       setParsingStep(1);
       setParsingProgress(10);
       
+      const startTime = Date.now();
+      
       try {
         const formData = new FormData();
         formData.append('file', currentFile);
@@ -276,12 +278,17 @@ export default function Upload() {
           throw new Error("Parsing timed out after 8 minutes. Please try again.");
         }
 
+        const endTime = Date.now();
+        const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
+
         setParsingProgress(100);
-        allResults.push({ ...finalResult, originalFilename: currentFile.name, parseStatus: 'success' });
+        allResults.push({ ...finalResult, originalFilename: currentFile.name, parseStatus: 'success', parseDuration: durationSeconds });
         
       } catch (e: any) {
+        const endTime = Date.now();
+        const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
         lastErrorMsg = e.message || "Failed to parse upload";
-        allResults.push({ originalFilename: currentFile.name, parseStatus: 'error', errorMsg: lastErrorMsg });
+        allResults.push({ originalFilename: currentFile.name, parseStatus: 'error', errorMsg: lastErrorMsg, parseDuration: durationSeconds });
       }
     }
     
@@ -759,11 +766,22 @@ export default function Upload() {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-900">
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <CheckCircle2 className="text-emerald-600" size={20} /> Extracted Resume Information
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">Module 2 – AI Resume Parsing Results</p>
+              <div className="flex items-center gap-4">
+                {parsedResponse?.fromBulkResults && (
+                  <button 
+                    onClick={() => setParsedResponse({ isBulk: true, results: parsedResponse.fromBulkResults })}
+                    className="flex items-center justify-center p-1.5 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-500 hover:text-slate-700 transition-colors cursor-pointer shadow-sm"
+                    title="Back to Bulk List"
+                  >
+                    <span className="text-lg leading-none font-bold">←</span>
+                  </button>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <CheckCircle2 className="text-emerald-600" size={20} /> Extracted Resume Information
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Module 2 – AI Resume Parsing Results</p>
+                </div>
               </div>
               <button
                 onClick={() => setShowModal(false)}
@@ -782,15 +800,26 @@ export default function Upload() {
                       <div>
                         <p className="text-sm font-bold text-slate-900">{res.originalFilename}</p>
                         {res.parseStatus === 'success' ? (
-                          <p className="text-xs text-emerald-600 font-medium mt-1">Successfully parsed • {res.parsed_data?.full_name}</p>
+                          <div className="mt-1 flex items-center gap-3">
+                            <p className="text-xs text-emerald-600 font-medium">Successfully parsed • {res.parsed_data?.full_name}</p>
+                            <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono">{res.parseDuration}s</span>
+                            <button 
+                              onClick={() => setParsedResponse({ ...res, fromBulkResults: parsedResponse.results })}
+                              className="text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer"
+                            >
+                              View Details
+                            </button>
+                          </div>
                         ) : (
-                          <p className="text-xs text-rose-600 font-medium mt-1">Failed: {res.errorMsg}</p>
+                          <div className="mt-1 flex items-center gap-3">
+                            <p className="text-xs text-rose-600 font-medium">Failed: {res.errorMsg}</p>
+                            <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono">{res.parseDuration}s</span>
+                          </div>
                         )}
                       </div>
-                      {res.parseStatus === 'success' && (
+                      {res.parseStatus === 'success' ? (
                         <CheckCircle2 className="text-emerald-500 w-5 h-5" />
-                      )}
-                      {res.parseStatus === 'error' && (
+                      ) : (
                         <AlertCircle className="text-rose-500 w-5 h-5" />
                       )}
                     </div>
