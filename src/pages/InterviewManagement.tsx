@@ -992,35 +992,7 @@ export default function InterviewManagement() {
   };
 
 
-  // Calculate live stats based on current active candidate rounds
-  const isTechType = (type?: string) => {
-    const t = (type || "").toUpperCase();
-    return t === "TECHNICAL" || t === "APTITUDE" || t === "CODING" || t === "ASSESSMENT" || (t !== "HR" && t !== "MANAGERIAL");
-  };
-  const isHrType = (type?: string) => (type || "").toUpperCase() === "HR";
-  const isManagerialType = (type?: string) => (type || "").toUpperCase() === "MANAGERIAL";
 
-  const techInterviews = latestCandidateInterviews.filter((i) => isTechType(i.interview_type));
-  const hrInterviews = latestCandidateInterviews.filter((i) => isHrType(i.interview_type));
-  const managerialInterviews = latestCandidateInterviews.filter((i) => isManagerialType(i.interview_type));
-
-  const techCount = techInterviews.length;
-  const activeTechCount = techInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
-
-  const hrCount = hrInterviews.length;
-  const activeHrCount = hrInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
-
-  const managerialCount = managerialInterviews.length;
-  const activeManagerialCount = managerialInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
-
-  const scheduledCount = latestCandidateInterviews.filter((i) => i.status === "SCHEDULED" || i.status === "PENDING" || i.status === "RESCHEDULED").length;
-
-  const stats = [
-    { label: "Technical Interviews", value: techCount, status: `${activeTechCount} Active` },
-    { label: "HR Interviews", value: hrCount, status: `${activeHrCount} Active` },
-    { label: "Managerial Interviews", value: managerialCount, status: `${activeManagerialCount} Active` },
-    { label: "Scheduled / Pending", value: scheduledCount, status: `${scheduledCount} Upcoming` },
-  ];
 
   // Helper for Status Badge Styling
   const getStatusBadge = (status: string) => {
@@ -1923,17 +1895,6 @@ export default function InterviewManagement() {
             Schedule Interview
           </button>
         </div>
-      </div>
-
-      {/* 4 Stat Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-        {stats.map((stat, i) => (
-          <div key={i} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-            <span className="text-xs font-semibold text-slate-500 block">{stat.label}</span>
-            <div className="text-3xl font-extrabold text-slate-900">{stat.value}</div>
-            <span className="text-xs font-medium text-slate-500 block">{stat.status}</span>
-          </div>
-        ))}
       </div>
 
       {/* Main Table Card Wrapper */}
