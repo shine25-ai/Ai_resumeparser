@@ -1,48 +1,61 @@
-import { useState } from "react";
-import { ChevronDown, ArrowUpRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ChevronDown, ArrowUpRight, Loader2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { ANALYTICS_REPORTS_URL } from "../utils/Api";
 
 export default function AnalyticsReports() {
   const [timeRange] = useState("This Month");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<any>(null);
 
-  const stats = [
-    { label: "Total Resumes", value: "2,453", change: "+18.5%", color: "text-emerald-400" },
-    { label: "Shortlisted", value: "845", change: "+12.4%", color: "text-emerald-400" },
-    { label: "Interviewed", value: "234", change: "+15.6%", color: "text-emerald-400" },
-    { label: "Offers", value: "18", change: "+20.0%", color: "text-emerald-400" },
-    { label: "Joined", value: "12", change: "+11.1%", color: "text-emerald-400" },
-  ];
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+        const response = await fetch(ANALYTICS_REPORTS_URL, { headers });
+        if (!response.ok) {
+          throw new Error("Failed to fetch analytics data");
+        }
+        const result = await response.json();
+        setData(result.data || result);
+      } catch (err: any) {
+        setError(err.message || "An error occurred");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAnalytics();
+  }, []);
 
-  const resumeSourceData = [
-    { name: "Naukri", percentage: "35%", count: 858, color: "#2563eb" },
-    { name: "LinkedIn", percentage: "28%", count: 686, color: "#06b6d4" },
-    { name: "Referral", percentage: "15%", count: 367, color: "#f97316" },
-    { name: "Company Website", percentage: "12%", count: 294, color: "#eab308" },
-    { name: "Others", percentage: "10%", count: 248, color: "#10b981" },
-  ];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="animate-spin text-indigo-600 w-8 h-8" />
+      </div>
+    );
+  }
 
-  const pipelineTrendData = [
-    { date: "1 May", Resumes: 500, Shortlisted: 250, Interviewed: 100, Offers: 20 },
-    { date: "7 May", Resumes: 650, Shortlisted: 380, Interviewed: 180, Offers: 50 },
-    { date: "14 May", Resumes: 780, Shortlisted: 420, Interviewed: 240, Offers: 80 },
-    { date: "21 May", Resumes: 880, Shortlisted: 550, Interviewed: 310, Offers: 120 },
-    { date: "28 May", Resumes: 950, Shortlisted: 680, Interviewed: 380, Offers: 180 },
-  ];
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-rose-600">
+        <p>Error loading analytics: {error}</p>
+      </div>
+    );
+  }
 
-  const topSkills = [
-    { name: "Java", count: 328, width: "w-full" },
-    { name: "Python", count: 274, width: "w-[83%]" },
-    { name: "React", count: 245, width: "w-[74%]" },
-    { name: "AWS", count: 198, width: "w-[60%]" },
-    { name: "SQL", count: 176, width: "w-[53%]" },
-  ];
-
-  const expDistribution = [
-    { name: "0-2 Yrs", percentage: "22%", color: "#2563eb" },
-    { name: "2-5 Yrs", percentage: "32%", color: "#06b6d4" },
-    { name: "5-8 Yrs", percentage: "26%", color: "#10b981" },
-    { name: "8+ Yrs", percentage: "20%", color: "#f59e0b" },
-  ];
+  const {
+    stats = [],
+    resumeSourceData = [],
+    pipelineTrendData = [],
+    topSkills = [],
+    expDistribution = [],
+    successRate = 0
+  } = data;
 
   return (
     <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans">
@@ -99,7 +112,7 @@ export default function AnalyticsReports() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-sm font-bold text-slate-900">2,453</span>
+                <span className="text-sm font-bold text-slate-900">{stats.find((s:any) => s.label === "Total Resumes")?.value || "0"}</span>
                 <span className="text-[10px] text-slate-500 font-medium">Total</span>
               </div>
             </div>
@@ -183,7 +196,7 @@ export default function AnalyticsReports() {
                     innerRadius={36}
                     outerRadius={56}
                     paddingAngle={3}
-                    dataKey="percentage"
+                    dataKey="count"
                   >
                     {expDistribution.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
@@ -232,7 +245,7 @@ export default function AnalyticsReports() {
               />
             </svg>
             <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-lg font-black text-slate-900">70%</span>
+              <span className="text-lg font-black text-slate-900">{successRate}%</span>
             </div>
           </div>
 
