@@ -3,7 +3,7 @@ Pydantic schemas for SkillsEvaluation entity representations, creation, and upda
 """
 
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CategoryWeightageSchema(BaseModel):
@@ -17,13 +17,28 @@ class SkillsEvaluationCreate(BaseModel):
     skill_name: str = Field(..., min_length=1, max_length=100)
     categories: List[CategoryWeightageSchema] = Field(default_factory=list)
 
+    @field_validator("categories")
+    @classmethod
+    def validate_unique_categories_per_skill(
+        cls, v: List[CategoryWeightageSchema]
+    ) -> List[CategoryWeightageSchema]:
+        """Ensure categories within the same skill template contain no duplicate category names (case-insensitive)."""
+        seen = set()
+        unique_list = []
+        for cat in v:
+            cat_clean = cat.category.strip().lower()
+            if cat_clean not in seen:
+                seen.add(cat_clean)
+                unique_list.append(cat)
+        return unique_list
+
 
 class SkillsEvaluationResponse(BaseModel):
     """Response DTO for skill categories template."""
 
     id: str
     skill_name: str
-    categories: List[CategoryWeightageSchema] = Field(default_factory=list)
+    categories: Optional[List[CategoryWeightageSchema]] = None
     created_at: str
     updated_at: str
 

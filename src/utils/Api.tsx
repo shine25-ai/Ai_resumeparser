@@ -1211,9 +1211,21 @@ export interface SkillsEvaluationResponseData {
   updated_at: string;
 }
 
-export const getSkillsEvaluations = async (): Promise<SkillsEvaluationResponseData[]> => {
+export const getSkillsEvaluations = async (
+  search?: string,
+  includeCategories: boolean = false
+): Promise<SkillsEvaluationResponseData[]> => {
   const token = localStorage.getItem("access_token") || "";
-  const response = await fetch(SKILLS_EVALUATIONS_URL, {
+  const params = new URLSearchParams();
+  if (search && search.trim()) {
+    params.append("search", search.trim());
+  }
+  if (includeCategories) {
+    params.append("include_categories", "true");
+  }
+
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+  const response = await fetch(`${SKILLS_EVALUATIONS_URL}${queryString}`, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,

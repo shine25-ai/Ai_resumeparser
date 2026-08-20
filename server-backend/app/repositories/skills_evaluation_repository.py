@@ -19,3 +19,25 @@ class SkillsEvaluationRepository(BaseRepository):
         import re
         regex = re.compile(f"^{re.escape(skill_name)}$", re.IGNORECASE)
         return await self.find_one({"skill_name": {"$regex": regex}})
+
+    async def search_by_skill_name(
+        self, search: str, include_categories: bool = False, skip: int = 0, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Search skills evaluation templates by partial skill_name (case-insensitive), optionally excluding categories."""
+        projection = None if include_categories else {"categories": 0}
+
+        if not search or not search.strip():
+            return await self.find_many(
+                projection=projection, skip=skip, limit=limit, sort_by="skill_name", descending=False
+            )
+
+        import re
+        regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
+        return await self.find_many(
+            query={"skill_name": {"$regex": regex}},
+            projection=projection,
+            skip=skip,
+            limit=limit,
+            sort_by="skill_name",
+            descending=False,
+        )
