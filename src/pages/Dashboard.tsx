@@ -13,6 +13,8 @@ export default function Dashboard() {
   const [statusData, setStatusData] = useState<any[]>([]);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [upcomingInterviews, setUpcomingInterviews] = useState<any[]>([]);
+  const [seniorityData, setSeniorityData] = useState<any[]>([]);
+  const [domainData, setDomainData] = useState<any[]>([]);
   const [totalPipeline, setTotalPipeline] = useState<number>(0);
 
   useEffect(() => {
@@ -39,6 +41,8 @@ export default function Dashboard() {
         setStatusData(data.statusData || []);
         setRecentActivities(data.recentActivities || []);
         setUpcomingInterviews(data.upcomingInterviews || []);
+        setSeniorityData(data.seniorityDistribution || []);
+        setDomainData(data.domainDistribution || []);
         
         let sum = 0;
         if (data.statusData) {
@@ -186,6 +190,93 @@ export default function Dashboard() {
             {/* Legend List */}
             <div className="space-y-2.5 w-full sm:w-auto">
               {statusData.map((item, i) => (
+                <div key={i} className="flex items-center justify-between gap-6 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
+                    <span className="font-semibold text-slate-700">{item.name}</span>
+                  </div>
+                  <span className="text-slate-500 font-medium">{item.percentage} ({item.count})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Demographics Row: Seniority & Domain */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Seniority Distribution */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h2 className="text-base font-bold text-slate-900 mb-4">Seniority Distribution</h2>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="relative w-48 h-48 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={seniorityData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={3}
+                    dataKey="count"
+                  >
+                    {seniorityData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute flex flex-col items-center justify-center text-center">
+                <span className="text-lg font-bold text-slate-900">{seniorityData.reduce((acc, item) => acc + item.count, 0)}</span>
+                <span className="text-xs text-slate-500 font-medium">Total</span>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 w-full sm:w-auto">
+              {seniorityData.map((item, i) => (
+                <div key={i} className="flex items-center justify-between gap-6 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
+                    <span className="font-semibold text-slate-700">{item.name}</span>
+                  </div>
+                  <span className="text-slate-500 font-medium">{item.percentage} ({item.count})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Domain Distribution */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h2 className="text-base font-bold text-slate-900 mb-4">Domain Specialization</h2>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="relative w-48 h-48 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={domainData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={3}
+                    dataKey="count"
+                  >
+                    {domainData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute flex flex-col items-center justify-center text-center">
+                <span className="text-lg font-bold text-slate-900">{domainData.reduce((acc, item) => acc + item.count, 0)}</span>
+                <span className="text-xs text-slate-500 font-medium">Total</span>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 w-full sm:w-auto">
+              {domainData.map((item, i) => (
                 <div key={i} className="flex items-center justify-between gap-6 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>

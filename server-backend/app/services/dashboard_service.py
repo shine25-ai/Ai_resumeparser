@@ -122,10 +122,41 @@ class DashboardService:
                 "candidate": inv.get("candidate_name", "Unknown")
             })
 
+        # 5. Seniority Distribution
+        seniority_pipeline = [
+            {"$match": {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}},
+            {"$group": {"_id": "$parsed_data.seniority", "count": {"$sum": 1}}}
+        ]
+        seniority_results = await resumes_coll.aggregate(seniority_pipeline).to_list(None)
+        
+        seniorityDistribution = []
+        colors = ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#64748b"]
+        for i, s in enumerate(seniority_results):
+            name = s["_id"] or "Not Specified"
+            count = s["count"]
+            pct = f"{round((count / total_resumes) * 100) if total_resumes > 0 else 0}%"
+            seniorityDistribution.append({"name": name, "percentage": pct, "count": count, "color": colors[i % len(colors)]})
+            
+        # 6. Domain Distribution
+        domain_pipeline = [
+            {"$match": {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}},
+            {"$group": {"_id": "$parsed_data.primary_domain", "count": {"$sum": 1}}}
+        ]
+        domain_results = await resumes_coll.aggregate(domain_pipeline).to_list(None)
+        
+        domainDistribution = []
+        for i, d in enumerate(domain_results):
+            name = d["_id"] or "Not Specified"
+            count = d["count"]
+            pct = f"{round((count / total_resumes) * 100) if total_resumes > 0 else 0}%"
+            domainDistribution.append({"name": name, "percentage": pct, "count": count, "color": colors[(i+2) % len(colors)]})
+
         return {
             "stats": stats,
             "pipelineData": pipelineData,
             "statusData": statusData,
             "recentActivities": recentActivities,
-            "upcomingInterviews": upcomingInterviews
+            "upcomingInterviews": upcomingInterviews,
+            "seniorityDistribution": seniorityDistribution,
+            "domainDistribution": domainDistribution
         }

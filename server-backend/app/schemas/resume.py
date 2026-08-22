@@ -17,6 +17,9 @@ class HRUpdateSchema(BaseModel):
     communication: Optional[float] = None
     problem_solving: Optional[float] = None
     skill_weaknesses: Optional[List[str]] = None
+    architecture_and_design_capabilities: Optional[float] = None
+    resume_red_flags: Optional[List[str]] = None
+    interview_focus_areas: Optional[List[str]] = None
     updated_at: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
