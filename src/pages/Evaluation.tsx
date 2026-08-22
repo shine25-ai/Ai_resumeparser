@@ -131,6 +131,10 @@ export default function Evaluation() {
   const resumeSourceInformerName = candidate?.resume_source_informer_name || "N/A";
   const aiScore = evalData.ai_technical_score ?? 0;
   const expLevel = evalData.experience_level || "Not Specified";
+  const seniority = parsed.seniority || expLevel;
+  const currentRole = parsed.current_role || "Role Not Specified";
+  const primaryDomain = parsed.primary_domain || "Domain Not Specified";
+  const specialization = parsed.specialization || "";
   const scoreLabel = evalData.recommendation || (aiScore >= 80 ? "Highly Recommended Candidate" : aiScore >= 60 ? "Suitable Candidate" : "Needs Review");
 
   const totalExp = parsed.total_experience_years !== undefined && parsed.total_experience_years !== null
@@ -144,7 +148,14 @@ export default function Evaluation() {
   const frameworks = parsed.frameworks || [];
   const databases = parsed.databases || [];
   const cloudTech = parsed.cloud_tech || [];
-  const allSkills = [...new Set([...primarySkills, ...frameworks, ...databases, ...cloudTech, ...(parsed.skills || [])])];
+  const programmingLanguages = parsed.programming_languages || [];
+  const devopsAndInfra = parsed.devops_and_infrastructure || [];
+  const otherTechnologies = parsed.other_technologies || [];
+  const allSkills = [...new Set([
+    ...primarySkills, ...frameworks, ...databases, ...cloudTech,
+    ...programmingLanguages, ...devopsAndInfra, ...otherTechnologies,
+    ...(parsed.skills || [])
+  ])];
 
   const s3Url = candidate?.s3_url || "";
   const experiences = parsed.experience || [];
@@ -157,6 +168,10 @@ export default function Evaluation() {
   const personality = evalData.personality_analysis || {};
   const careerAnalysis = evalData.career_analysis || {};
 
+  const originalArchitecture = evalData.architecture_and_design_capabilities;
+  const originalInterviewFocus = evalData.interview_focus_areas || [];
+  const originalRedFlags = evalData.resume_red_flags || [];
+
   // HR Updates array handling
   const hrUpdatesList: any[] = candidate?.hr_updates || [];
   const latestHrUpdate = hrUpdatesList.length > 0 ? hrUpdatesList[hrUpdatesList.length - 1] : null;
@@ -167,9 +182,12 @@ export default function Evaluation() {
   const activeJobHopping = latestHrUpdate?.job_hopping_risk ?? careerAnalysis.job_hopping_risk ?? null;
   const activeCommunication = latestHrUpdate?.communication ?? personality.communication ?? null;
   const activeProblemSolving = latestHrUpdate?.problem_solving ?? personality.problem_solving ?? null;
+  const activeArchitecture = latestHrUpdate?.architecture_and_design_capabilities ?? originalArchitecture ?? null;
 
   const activeWeaknesses: string[] = latestHrUpdate?.skill_weaknesses ?? originalSkillWeaknesses;
   const activeUpskilling: string[] = latestHrUpdate?.recommended_upskilling ?? (careerAnalysis.recommended_upskilling || []);
+  const activeInterviewFocus: string[] = latestHrUpdate?.interview_focus_areas ?? originalInterviewFocus;
+  const activeRedFlags: string[] = latestHrUpdate?.resume_red_flags ?? originalRedFlags;
 
   const handleUploadDoc = async () => {
     if (!docFile || !candidate?.id) return;
@@ -212,8 +230,11 @@ export default function Evaluation() {
       job_hopping_risk: activeJobHopping !== null ? String(activeJobHopping) : "",
       communication: activeCommunication !== null ? String(activeCommunication) : "",
       problem_solving: activeProblemSolving !== null ? String(activeProblemSolving) : "",
+      architecture_and_design_capabilities: activeArchitecture !== null ? String(activeArchitecture) : "",
       recommended_upskilling: Array.isArray(activeUpskilling) ? activeUpskilling.join(", ") : "",
       skill_weaknesses: Array.isArray(activeWeaknesses) ? activeWeaknesses.join(", ") : "",
+      interview_focus_areas: Array.isArray(activeInterviewFocus) ? activeInterviewFocus.join(", ") : "",
+      resume_red_flags: Array.isArray(activeRedFlags) ? activeRedFlags.join(", ") : "",
     });
     setIsEditModalOpen(true);
   };
@@ -237,11 +258,18 @@ export default function Evaluation() {
           job_hopping_risk: editForm.job_hopping_risk !== "" ? Number(editForm.job_hopping_risk) : undefined,
           communication: editForm.communication !== "" ? Number(editForm.communication) : undefined,
           problem_solving: editForm.problem_solving !== "" ? Number(editForm.problem_solving) : undefined,
+          architecture_and_design_capabilities: editForm.architecture_and_design_capabilities || undefined,
           recommended_upskilling: editForm.recommended_upskilling
             ? editForm.recommended_upskilling.split(",").map((s) => s.trim()).filter(Boolean)
             : [],
           skill_weaknesses: editForm.skill_weaknesses
             ? editForm.skill_weaknesses.split(",").map((s) => s.trim()).filter(Boolean)
+            : [],
+          interview_focus_areas: editForm.interview_focus_areas
+            ? editForm.interview_focus_areas.split(",").map((s) => s.trim()).filter(Boolean)
+            : [],
+          resume_red_flags: editForm.resume_red_flags
+            ? editForm.resume_red_flags.split(",").map((s) => s.trim()).filter(Boolean)
             : [],
         },
       };
@@ -371,11 +399,20 @@ export default function Evaluation() {
                 {status}
               </span>
               <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                {expLevel} Level
+                {seniority}
               </span>
+              {primaryDomain !== "Domain Not Specified" && (
+                <span className="bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                  {primaryDomain}
+                </span>
+              )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-2 text-xs text-slate-500">
+            <div className="text-sm font-semibold text-slate-700 mt-1">
+              {currentRole} {specialization ? `• ${specialization}` : ""}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-2 text-xs text-slate-500 mt-2">
               <div className="flex items-center gap-1.5">
                 <Mail size={14} className="text-slate-500" />
                 <span>{email}</span>
@@ -540,9 +577,50 @@ export default function Evaluation() {
                       <span className="text-[11px] text-slate-500 font-medium">{exp.duration || "N/A"}</span>
                     </div>
                     {exp.responsibilities && (
-                      <p className="text-xs text-slate-700 leading-relaxed">
-                        {Array.isArray(exp.responsibilities) ? exp.responsibilities.join(" ") : exp.responsibilities}
-                      </p>
+                      <div className="pt-1">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">Responsibilities</span>
+                        <p className="text-xs text-slate-700 leading-relaxed mt-1">
+                          {Array.isArray(exp.responsibilities) ? exp.responsibilities.join(" ") : exp.responsibilities}
+                        </p>
+                      </div>
+                    )}
+                    {exp.technologies_used && Array.isArray(exp.technologies_used) && exp.technologies_used.length > 0 && (
+                      <div className="pt-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Technologies Used</span>
+                        <div className="flex flex-wrap gap-1">
+                          {exp.technologies_used.map((t: string, ti: number) => (
+                            <span key={ti} className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {exp.achievements && Array.isArray(exp.achievements) && exp.achievements.length > 0 && (
+                      <div className="pt-2">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">Key Achievements</span>
+                        <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5">
+                          {exp.achievements.map((ach: string, ai: number) => (
+                            <li key={ai}>{ach}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {exp.leadership_responsibilities && (
+                      <div className="pt-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">Leadership Responsibilities</span>
+                        <p className="text-xs text-slate-700 leading-relaxed mt-1">{exp.leadership_responsibilities}</p>
+                      </div>
+                    )}
+                    {(exp.business_domain || exp.team_size) && (
+                      <div className="flex gap-4 pt-2 border-t border-slate-200 mt-2">
+                        {exp.business_domain && (
+                          <div className="text-[10px]"><span className="font-bold text-slate-500">Domain:</span> <span className="text-slate-700">{exp.business_domain}</span></div>
+                        )}
+                        {exp.team_size && (
+                          <div className="text-[10px]"><span className="font-bold text-slate-500">Team Size:</span> <span className="text-slate-700">{exp.team_size}</span></div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -607,6 +685,45 @@ export default function Evaluation() {
               </div>
             )}
 
+            {programmingLanguages.length > 0 && (
+              <div>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold font-mono">Programming Languages</span>
+                <div className="flex flex-wrap gap-2">
+                  {programmingLanguages.map((s: string, i: number) => (
+                    <span key={i} className="bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {devopsAndInfra.length > 0 && (
+              <div>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold font-mono">DevOps & Infrastructure</span>
+                <div className="flex flex-wrap gap-2">
+                  {devopsAndInfra.map((s: string, i: number) => (
+                    <span key={i} className="bg-orange-50 border border-orange-200 text-orange-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {otherTechnologies.length > 0 && (
+              <div>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold font-mono">Other Technologies</span>
+                <div className="flex flex-wrap gap-2">
+                  {otherTechnologies.map((s: string, i: number) => (
+                    <span key={i} className="bg-slate-100 border border-slate-300 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {allSkills.length > 0 ? (
               <div>
                 <span className="text-xs text-slate-500 block mb-2 font-semibold">All Skills</span>
@@ -638,8 +755,31 @@ export default function Evaluation() {
                       {proj.role && <span className="text-[10px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">{proj.role}</span>}
                     </div>
                     {proj.description && <p className="text-xs text-slate-700 leading-relaxed">{proj.description}</p>}
+                    
+                    {(proj.architecture || proj.scale) && (
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 mt-2">
+                        {proj.architecture && (
+                          <div className="text-[10px]"><span className="font-bold text-slate-500 uppercase block mb-0.5">Architecture</span> <span className="text-slate-700">{proj.architecture}</span></div>
+                        )}
+                        {proj.scale && (
+                          <div className="text-[10px]"><span className="font-bold text-slate-500 uppercase block mb-0.5">Scale</span> <span className="text-slate-700">{proj.scale}</span></div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {(proj.business_impact || proj.candidate_ownership) && (
+                      <div className="grid grid-cols-1 gap-2 pt-2">
+                        {proj.business_impact && (
+                          <div className="text-[10px]"><span className="font-bold text-emerald-600 uppercase block mb-0.5">Business Impact</span> <span className="text-slate-700">{proj.business_impact}</span></div>
+                        )}
+                        {proj.candidate_ownership && (
+                          <div className="text-[10px]"><span className="font-bold text-indigo-600 uppercase block mb-0.5">Ownership</span> <span className="text-slate-700">{proj.candidate_ownership}</span></div>
+                        )}
+                      </div>
+                    )}
+
                     {proj.tech_stack && Array.isArray(proj.tech_stack) && (
-                      <div className="flex flex-wrap gap-1 pt-1">
+                      <div className="flex flex-wrap gap-1 pt-2">
                         {proj.tech_stack.map((t: string, ti: number) => (
                           <span key={ti} className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded">
                             {t}
@@ -736,6 +876,13 @@ export default function Evaluation() {
                     <span className="font-bold text-amber-600">{careerAnalysis.job_hopping_risk || "N/A"}</span>
                   </div>
 
+                  {originalArchitecture && (
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                      <span className="text-slate-500 font-semibold block text-[11px]">Architecture & Design Capabilities</span>
+                      <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">{originalArchitecture}</p>
+                    </div>
+                  )}
+
                   <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
                     <span className="text-slate-500 font-semibold block text-[11px]">Skill Strengths</span>
                     {originalSkillStrengths && originalSkillStrengths.length > 0 ? (
@@ -778,6 +925,36 @@ export default function Evaluation() {
                       </div>
                     ) : (
                       <span className="text-slate-400 text-[11px]">None flagged</span>
+                    )}
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-slate-500 font-semibold block text-[11px]">Resume Red Flags</span>
+                    {originalRedFlags && originalRedFlags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {originalRedFlags.map((item: string, i: number) => (
+                          <span key={i} className="bg-red-100 text-red-800 border border-red-300 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-[11px]">None detected</span>
+                    )}
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-slate-500 font-semibold block text-[11px]">Interview Focus Areas</span>
+                    {originalInterviewFocus && originalInterviewFocus.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {originalInterviewFocus.map((item: string, i: number) => (
+                          <span key={i} className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-[11px]">None specified</span>
                     )}
                   </div>
                 </div>
@@ -841,9 +1018,16 @@ export default function Evaluation() {
                       <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200">
                         <span className="text-slate-500 font-medium">Job Hopping Risk</span>
                         <span className="font-bold text-emerald-600">
-                          {latestHrUpdate.job_hopping_risk !== undefined ? `${latestHrUpdate.job_hopping_risk}%` : "N/A"}
+                          {latestHrUpdate.job_hopping_risk !== undefined ? latestHrUpdate.job_hopping_risk : "N/A"}
                         </span>
                       </div>
+
+                      {latestHrUpdate.architecture_and_design_capabilities && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                          <span className="text-slate-500 font-semibold block text-[11px]">Architecture & Design Capabilities</span>
+                          <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">{latestHrUpdate.architecture_and_design_capabilities}</p>
+                        </div>
+                      )}
 
                       <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
                         <span className="text-slate-500 font-semibold block text-[11px]">Recommended Upskilling</span>
@@ -872,6 +1056,36 @@ export default function Evaluation() {
                           </div>
                         ) : (
                           <span className="text-slate-400 text-[11px]">None flagged</span>
+                        )}
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 font-semibold block text-[11px]">Resume Red Flags</span>
+                        {latestHrUpdate.resume_red_flags && Array.isArray(latestHrUpdate.resume_red_flags) && latestHrUpdate.resume_red_flags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {latestHrUpdate.resume_red_flags.map((item: string, i: number) => (
+                              <span key={i} className="bg-red-100 text-red-800 border border-red-300 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">None detected</span>
+                        )}
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 font-semibold block text-[11px]">Interview Focus Areas</span>
+                        {latestHrUpdate.interview_focus_areas && Array.isArray(latestHrUpdate.interview_focus_areas) && latestHrUpdate.interview_focus_areas.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {latestHrUpdate.interview_focus_areas.map((item: string, i: number) => (
+                              <span key={i} className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">None specified</span>
                         )}
                       </div>
 
@@ -990,6 +1204,47 @@ export default function Evaluation() {
                         </td>
                         <td className="py-2.5 px-4 text-rose-700 font-semibold">
                           {latestHrUpdate.skill_weaknesses && Array.isArray(latestHrUpdate.skill_weaknesses) && latestHrUpdate.skill_weaknesses.length > 0 ? latestHrUpdate.skill_weaknesses.join(", ") : "None"}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            HR Updated
+                          </span>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Architecture & Design</td>
+                        <td className="py-2.5 px-4 text-indigo-700 whitespace-pre-wrap">{originalArchitecture || "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 whitespace-pre-wrap">{latestHrUpdate.architecture_and_design_capabilities || "N/A"}</td>
+                        <td className="py-2.5 px-4">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            HR Updated
+                          </span>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Resume Red Flags</td>
+                        <td className="py-2.5 px-4 text-indigo-700">
+                          {originalRedFlags && originalRedFlags.length > 0 ? originalRedFlags.join(", ") : "None"}
+                        </td>
+                        <td className="py-2.5 px-4 text-rose-700 font-semibold">
+                          {latestHrUpdate.resume_red_flags && Array.isArray(latestHrUpdate.resume_red_flags) && latestHrUpdate.resume_red_flags.length > 0 ? latestHrUpdate.resume_red_flags.join(", ") : "None"}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            HR Updated
+                          </span>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Interview Focus Areas</td>
+                        <td className="py-2.5 px-4 text-indigo-700">
+                          {originalInterviewFocus && originalInterviewFocus.length > 0 ? originalInterviewFocus.join(", ") : "None"}
+                        </td>
+                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
+                          {latestHrUpdate.interview_focus_areas && Array.isArray(latestHrUpdate.interview_focus_areas) && latestHrUpdate.interview_focus_areas.length > 0 ? latestHrUpdate.interview_focus_areas.join(", ") : "None"}
                         </td>
                         <td className="py-2.5 px-4">
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
@@ -1255,6 +1510,17 @@ export default function Evaluation() {
                   </div>
 
                   <div className="sm:col-span-2">
+                    <label className="block text-slate-600 mb-1 font-semibold">Arch. & Design Capabilities</label>
+                    <textarea
+                      rows={3}
+                      value={editForm.architecture_and_design_capabilities || ""}
+                      onChange={(e) => setEditForm({ ...editForm, architecture_and_design_capabilities: e.target.value })}
+                      placeholder="Candidate demonstrated strong knowledge of microservices..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-y"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
                     <label className="block text-slate-600 mb-1 font-semibold">Job Hopping Risk (Score / Rating)</label>
                     <input
                       type="number"
@@ -1285,6 +1551,28 @@ export default function Evaluation() {
                       value={editForm.skill_weaknesses}
                       onChange={(e) => setEditForm({ ...editForm, skill_weaknesses: e.target.value })}
                       placeholder="GraphQL, Microservices"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-slate-600 mb-1 font-semibold">Interview Focus Areas (Comma-separated)</label>
+                    <input
+                      type="text"
+                      value={editForm.interview_focus_areas || ""}
+                      onChange={(e) => setEditForm({ ...editForm, interview_focus_areas: e.target.value })}
+                      placeholder="System Design, Core Java"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-slate-600 mb-1 font-semibold">Resume Red Flags (Comma-separated)</label>
+                    <input
+                      type="text"
+                      value={editForm.resume_red_flags || ""}
+                      onChange={(e) => setEditForm({ ...editForm, resume_red_flags: e.target.value })}
+                      placeholder="Frequent job changes, Gap in employment"
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>

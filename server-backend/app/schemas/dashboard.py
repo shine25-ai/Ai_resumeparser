@@ -35,5 +35,7 @@ class DashboardMetricsResponse(BaseModel):
     stats: List[StatItem]
     pipelineData: List[PipelineItem]
     statusData: List[StatusItem]
+    seniorityDistribution: Optional[List[StatusItem]] = []
+    domainDistribution: Optional[List[StatusItem]] = []
     recentActivities: List[ActivityItem]
     upcomingInterviews: List[UpcomingInterviewItem]

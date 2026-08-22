@@ -175,11 +175,10 @@ export default function CandidateDatabase() {
           <div className="flex items-center gap-3 self-end sm:self-auto">
             <button
               onClick={() => setShowFilterModal(!showFilterModal)}
-              className={`flex items-center gap-2 border px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer ${
-                nameFilter || emailFilter || roleFilter || expFilter
+              className={`flex items-center gap-2 border px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer ${nameFilter || emailFilter || roleFilter || expFilter
                   ? "bg-indigo-50 border-indigo-300 text-indigo-700"
                   : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-              }`}
+                }`}
             >
               <Filter size={14} />
               <span>Filters</span>
@@ -298,7 +297,7 @@ export default function CandidateDatabase() {
                 <th className="py-3 px-3">Name & Email</th>
                 <th className="py-3 px-3">Role</th>
                 <th className="py-3 px-3">Experience</th>
-                <th className="py-3 px-3">Match %</th>
+                <th className="py-3 px-3">AI Score %</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-3">Last Updated</th>
                 <th className="py-3 px-3 text-right">Actions</th>
@@ -494,11 +493,10 @@ export default function CandidateDatabase() {
                 <button
                   key={pageNum}
                   onClick={() => setPage(pageNum)}
-                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    page === pageNum
+                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${page === pageNum
                       ? "bg-indigo-600 text-white shadow-xs"
                       : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                  }`}
+                    }`}
                 >
                   {pageNum}
                 </button>
