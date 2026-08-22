@@ -324,10 +324,10 @@ class ResumeService:
 
     def _extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from PDF using PyMuPDF (fitz)."""
-        text_parts = []
+        text_parts: List[str] = []
         with fitz.open(file_path) as doc:
             for page in doc:
-                text_parts.append(page.get_text())
+                text_parts.append(str(page.get_text()))
         return "\n".join(text_parts).strip()
 
     def _extract_text_from_docx(self, file_path: str) -> str:
