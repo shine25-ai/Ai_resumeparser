@@ -41,6 +41,9 @@ export default function Evaluation() {
     problem_solving: "",
     recommended_upskilling: "",
     skill_weaknesses: "",
+    architecture_and_design_capabilities: "",
+    interview_focus_areas: "",
+    resume_red_flags: "",
   });
 
   // Fetch list of resumes to populate candidate dropdown
@@ -260,16 +263,16 @@ export default function Evaluation() {
           problem_solving: editForm.problem_solving !== "" ? Number(editForm.problem_solving) : undefined,
           architecture_and_design_capabilities: editForm.architecture_and_design_capabilities || undefined,
           recommended_upskilling: editForm.recommended_upskilling
-            ? editForm.recommended_upskilling.split(",").map((s) => s.trim()).filter(Boolean)
+            ? editForm.recommended_upskilling.split(",").map((s: string) => s.trim()).filter(Boolean)
             : [],
           skill_weaknesses: editForm.skill_weaknesses
-            ? editForm.skill_weaknesses.split(",").map((s) => s.trim()).filter(Boolean)
+            ? editForm.skill_weaknesses.split(",").map((s: string) => s.trim()).filter(Boolean)
             : [],
           interview_focus_areas: editForm.interview_focus_areas
-            ? editForm.interview_focus_areas.split(",").map((s) => s.trim()).filter(Boolean)
+            ? editForm.interview_focus_areas.split(",").map((s: string) => s.trim()).filter(Boolean)
             : [],
           resume_red_flags: editForm.resume_red_flags
-            ? editForm.resume_red_flags.split(",").map((s) => s.trim()).filter(Boolean)
+            ? editForm.resume_red_flags.split(",").map((s: string) => s.trim()).filter(Boolean)
             : [],
         },
       };
