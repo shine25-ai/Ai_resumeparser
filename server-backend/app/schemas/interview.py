@@ -534,3 +534,14 @@ class InterviewCheckConflictResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InterviewCancelRequest(BaseModel):
+    """Payload for canceling an interview session."""
+
+    send_email: bool = False
+    reason: Optional[str] = None
+    email_recipients: Optional[List[str]] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+

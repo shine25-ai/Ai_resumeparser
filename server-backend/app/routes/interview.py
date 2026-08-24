@@ -13,6 +13,7 @@ from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
+    InterviewCancelRequest,
     InterviewCheckConflictRequest,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
@@ -333,4 +334,21 @@ async def send_interview_mail(
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.send_interview_email(interview_id, payload)
+
+
+@router.post(
+    "/{interview_id}/cancel",
+    status_code=status.HTTP_200_OK,
+    summary="Cancel interview session",
+    description="Update interview status to CANCELLED with optional cancellation reason and email notification.",
+)
+async def cancel_interview(
+    interview_id: str,
+    payload: InterviewCancelRequest,
+    current_user: dict = Depends(get_current_active_user_optional),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    user_id = current_user.get("id") if current_user and isinstance(current_user, dict) else None
+    return await controller.cancel_interview(interview_id, payload, user_id=user_id)
+
 

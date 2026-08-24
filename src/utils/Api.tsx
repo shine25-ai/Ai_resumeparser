@@ -618,6 +618,36 @@ export const checkInterviewConflictGet = async (payload: CheckConflictPayload): 
   return resData.data || resData;
 };
 
+export interface CancelInterviewPayload {
+  send_email?: boolean;
+  reason?: string;
+  email_recipients?: string[];
+}
+
+export const cancelInterview = async (
+  interviewId: string,
+  payload: CancelInterviewPayload = {}
+): Promise<any> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEWS_URL}/${interviewId}/cancel`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    throw new Error(resData.detail || resData.message || "Failed to cancel interview session");
+  }
+
+  return resData.data || resData;
+};
+
 export const checkInterviewConflict = async (payload: CheckConflictPayload): Promise<CheckConflictResponse> => {
   const token = localStorage.getItem("access_token") || "";
   try {

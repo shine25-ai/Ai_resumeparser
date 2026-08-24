@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
+    InterviewCancelRequest,
     InterviewCheckConflictRequest,
     InterviewCreateRequest,
     InterviewFeedbackRequest,
@@ -222,4 +223,18 @@ class InterviewController:
             data=res,
             message="Candidate active status checked successfully.",
         )
+
+    async def cancel_interview(
+        self,
+        interview_id: str,
+        payload: InterviewCancelRequest,
+        user_id: Optional[str] = None,
+    ) -> JSONResponse:
+        """Cancel an interview session with optional cancellation reason and email dispatch."""
+        res = await self.interview_service.cancel_interview(interview_id, payload, updated_by=user_id)
+        return success_response(
+            data=res.model_dump(),
+            message="Interview cancelled successfully.",
+        )
+
 

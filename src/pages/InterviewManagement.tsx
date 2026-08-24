@@ -2,10 +2,10 @@ import { useEffect, useState, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight, MoreVertical
+  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight, MoreVertical, XCircle
 } from "lucide-react";
 import {
-  getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, getResumes, getUsers,
+  getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, cancelInterview, getResumes, getUsers,
   sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, MAIL_TEMPLATES_URL, RECOMMENDATION_OPTIONS,
   type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile, type InterviewTypeItem
 } from "../utils/Api";
@@ -171,6 +171,37 @@ export default function InterviewManagement() {
   });
   const [sendMailLoading, setSendMailLoading] = useState<boolean>(false);
   const [sendMailStatus, setSendMailStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Cancel Interview Modal States
+  const [cancelTargetInterview, setCancelTargetInterview] = useState<InterviewItem | null>(null);
+  const [cancelReason, setCancelReason] = useState<string>("");
+  const [cancelSendEmail, setCancelSendEmail] = useState<boolean>(true);
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
+
+  const handleOpenCancelModal = (interview: InterviewItem) => {
+    setCancelTargetInterview(interview);
+    setCancelReason("");
+    setCancelSendEmail(true);
+  };
+
+  const handleConfirmCancelInterview = async () => {
+    if (!cancelTargetInterview) return;
+    setIsCancelling(true);
+    try {
+      await cancelInterview(cancelTargetInterview.id, {
+        send_email: cancelSendEmail,
+        reason: cancelReason,
+      });
+      showToast(`Successfully cancelled interview session for ${cancelTargetInterview.candidate_name}!`, "success");
+      setCancelTargetInterview(null);
+      fetchAllData();
+    } catch (err: any) {
+      console.error("Cancel interview error:", err);
+      alert(err.message || "Failed to cancel interview.");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   // Send Email Modal Multiple Recipients States
   const [interviewerMailRecipients, setInterviewerMailRecipients] = useState<
@@ -2324,14 +2355,24 @@ export default function InterviewManagement() {
                               <span>Schedule Next Round</span>
                             </button>
 
-                            <div className="border-t border-slate-100 my-1"></div>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                handleOpenCancelModal(row);
+                              }}
+                              disabled={row.status === "CANCELLED"}
+                              className="w-full px-3.5 py-2 text-rose-700 hover:bg-rose-50 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <XCircle size={14} className="text-rose-600" />
+                              <span>Cancel Interview</span>
+                            </button>
 
                             <button
                               onClick={() => {
                                 setOpenActionMenuId(null);
                                 handleOpenDelete(row);
                               }}
-                              className="w-full px-3.5 py-2 text-rose-600 hover:bg-rose-50 font-bold flex items-center gap-2.5 transition-colors cursor-pointer"
+                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-rose-50 hover:text-rose-600 font-bold flex items-center gap-2.5 transition-colors cursor-pointer"
                             >
                               <Trash2 size={14} className="text-rose-600" />
                               <span>Delete Interview</span>
@@ -2424,6 +2465,124 @@ export default function InterviewManagement() {
           </div>
         </div>
       </div>
+
+      {/* CANCEL INTERVIEW CONFIRMATION POPUP MODAL */}
+      {cancelTargetInterview && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-2xl relative text-slate-900">
+            {/* Modal Header */}
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-100 text-rose-600 rounded-2xl">
+                  <XCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Cancel Interview Session</h3>
+                  <p className="text-xs text-slate-500">Confirm cancellation of scheduled interview round</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCancelTargetInterview(null)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Candidate & Session Info Details */}
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                <span className="font-extrabold text-slate-900 text-sm">{cancelTargetInterview.candidate_name}</span>
+                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                  Round {cancelTargetInterview.round_number} ({cancelTargetInterview.interview_type || "Technical"})
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-slate-700 pt-1">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Email</span>
+                  <span className="font-semibold text-slate-900 truncate block">{cancelTargetInterview.candidate_email || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Job Role</span>
+                  <span className="font-semibold text-slate-900 truncate block">{cancelTargetInterview.job_title}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Scheduled Date & Time</span>
+                  <span className="font-semibold text-indigo-600">
+                    {cancelTargetInterview.scheduled_date} at {formatTimeTo12Hour(cancelTargetInterview.scheduled_time)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Interviewer</span>
+                  <span className="font-semibold text-slate-900 truncate block">{cancelTargetInterview.interviewer_name || "Assigned Manager"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cancellation Reason Textarea */}
+            <div className="space-y-1.5 text-xs">
+              <label className="block font-bold text-slate-800">
+                Reason for Cancellation <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <textarea
+                placeholder="Enter cancellation reason (e.g. Candidate requested reschedule, Position filled, Profile mismatch)..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 text-xs font-medium"
+              />
+            </div>
+
+            {/* Send Email Checkbox */}
+            <div className="bg-rose-50/50 border border-rose-200 p-3.5 rounded-2xl flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="cancelSendEmail"
+                checked={cancelSendEmail}
+                onChange={(e) => setCancelSendEmail(e.target.checked)}
+                className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500 cursor-pointer shrink-0"
+              />
+              <label htmlFor="cancelSendEmail" className="text-xs font-bold text-slate-800 cursor-pointer select-none">
+                Dispatch Cancellation Email Notification
+                {cancelTargetInterview.candidate_email && (
+                  <span className="block text-[11px] font-normal text-slate-500">
+                    Will send email to <strong className="text-rose-700">{cancelTargetInterview.candidate_email}</strong> & interviewer
+                  </span>
+                )}
+              </label>
+            </div>
+
+            {/* Action Buttons: Cancel vs Confirm OK */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setCancelTargetInterview(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel / Keep Session
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelInterview}
+                disabled={isCancelling}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              >
+                {isCancelling ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Cancelling Session...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={14} />
+                    <span>Confirm Cancellation (OK)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SCHEDULE INTERVIEW MODAL (EXACT 2x2 COLORFUL CARD UI) */}
       {isScheduleOpen && (
