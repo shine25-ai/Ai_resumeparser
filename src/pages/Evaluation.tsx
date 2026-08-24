@@ -16,6 +16,7 @@ export default function Evaluation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("Experience");
+  const [selectedInterviewIdx, setSelectedInterviewIdx] = useState<number>(0);
 
   // Actions dropdown & Edit Modal states
   const [isActionsOpen, setIsActionsOpen] = useState(false);
@@ -178,6 +179,25 @@ export default function Evaluation() {
   // HR Updates array handling
   const hrUpdatesList: any[] = candidate?.hr_updates || [];
   const latestHrUpdate = hrUpdatesList.length > 0 ? hrUpdatesList[hrUpdatesList.length - 1] : null;
+
+  // Multi-interview rounds array handling
+  const candidateInterviews: any[] = candidate?.interviews && Array.isArray(candidate.interviews) && candidate.interviews.length > 0
+    ? candidate.interviews
+    : candidate?.latest_interview ? [candidate.latest_interview] : [];
+
+  const activeInterview = candidateInterviews[selectedInterviewIdx] || candidateInterviews[0] || candidate?.latest_interview || null;
+
+  // Calculate average overall score combining AI Technical Score and active Interview Score if available
+  let rawInterviewScoreNum: number | null = null;
+  if (activeInterview?.ai_score !== undefined && activeInterview?.ai_score !== null) {
+    rawInterviewScoreNum = Number(activeInterview.ai_score);
+  } else if (activeInterview?.rating !== undefined && activeInterview?.rating !== null) {
+    rawInterviewScoreNum = (Number(activeInterview.rating) / 5) * 100;
+  }
+
+  const overallAverageScore = rawInterviewScoreNum !== null && !isNaN(rawInterviewScoreNum)
+    ? Math.round((aiScore + rawInterviewScoreNum) / 2)
+    : aiScore;
 
   // Active score values (favoring HR Update values if provided, falling back to original AI evaluation values)
   const activeLeadership = latestHrUpdate?.leadership_score ?? personality.leadership ?? null;
@@ -467,79 +487,197 @@ export default function Evaluation() {
           </div>
         </div>
 
-        {/* AI Profile Score Card (1 col) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-slate-900">AI Technical Score</h3>
-            <div className="flex items-baseline gap-1">
-              <span className="text-3xl font-extrabold text-slate-900">{aiScore}</span>
-              <span className="text-xs text-slate-500 font-semibold">/100</span>
+        {/* Score Overview Card (1 col) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
+          {/* Top Title & Circular Progress Ring (Displaying Combined Avg Score) */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Combined Avg Score</span>
+              <span className="text-xs font-bold text-emerald-600 mt-0.5 block">{scoreLabel}</span>
             </div>
-            <span className="text-xs font-bold text-emerald-600 block">{scoreLabel}</span>
+            <div className="relative w-11 h-11 flex items-center justify-center shrink-0" title={`Combined Average Score: ${overallAverageScore}%`}>
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                <path
+                  className="text-slate-100"
+                  strokeWidth="3.5"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path
+                  className="text-emerald-600 stroke-current"
+                  strokeWidth="3.5"
+                  strokeDasharray={`${overallAverageScore}, 100`}
+                  strokeLinecap="round"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+              <span className="absolute text-[10px] font-extrabold text-slate-800">{overallAverageScore}%</span>
+            </div>
           </div>
 
-          {/* Gauge Ring Visual */}
-          <div className="relative w-20 h-20 flex items-center justify-center">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-              <path
-                className="text-slate-200"
-                strokeWidth="3.5"
-                stroke="currentColor"
-                fill="none"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                className="text-emerald-600 stroke-current"
-                strokeWidth="3.5"
-                strokeDasharray={`${aiScore}, 100`}
-                strokeLinecap="round"
-                fill="none"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
+          {/* Scores Row */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* AI Technical Score Box */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 block truncate">AI Tech Score</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-extrabold text-slate-900">{aiScore}</span>
+                <span className="text-xs text-slate-500 font-semibold">/100</span>
+              </div>
+            </div>
+
+            {/* Interview AI Score Box */}
+            <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 space-y-1">
+              <span className="text-[11px] font-semibold text-blue-700 block truncate">Interview Score</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-extrabold text-blue-700">
+                  {activeInterview?.ai_score !== undefined && activeInterview?.ai_score !== null
+                    ? activeInterview.ai_score
+                    : activeInterview?.rating !== undefined && activeInterview?.rating !== null
+                      ? activeInterview.rating
+                      : "N/A"}
+                </span>
+                {activeInterview?.ai_score !== undefined && activeInterview?.ai_score !== null && (
+                  <span className="text-xs text-blue-600 font-semibold">%</span>
+                )}
+                {(activeInterview?.ai_score === undefined || activeInterview?.ai_score === null) && activeInterview?.rating !== undefined && activeInterview?.rating !== null && (
+                  <span className="text-xs text-blue-600 font-semibold">/5</span>
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* Interview Status Footer */}
+          {activeInterview && (
+            <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+              <span className="text-[11px] font-medium text-slate-500">Interview Status</span>
+              <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                {activeInterview.status || "Completed"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Metrics Row: Total Experience & HR / Evaluation Overview */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 divide-x divide-slate-200">
-        <div className="space-y-1">
-          <span className="text-xs font-semibold text-slate-500">Total Experience</span>
-          <div className="text-base font-extrabold text-slate-900">{totalExp}</div>
-        </div>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+        {/* Top Row: Experience & Personality Scores */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 divide-x divide-slate-200">
+          <div className="space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Total Experience</span>
+            <div className="text-base font-extrabold text-slate-900">{totalExp}</div>
+          </div>
 
-        <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-500">Leadership Score</span>
-          <div className="text-base font-extrabold text-indigo-600">
-            {activeLeadership !== null ? `${activeLeadership}%` : "N/A"}
+          <div className="pl-6 space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Leadership Score</span>
+            <div className="text-base font-extrabold text-indigo-600">
+              {activeLeadership !== null ? `${activeLeadership}%` : "N/A"}
+            </div>
+          </div>
+
+          <div className="pl-6 space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Team Player</span>
+            <div className="text-base font-extrabold text-emerald-600">
+              {activeTeamPlayer !== null ? `${activeTeamPlayer}%` : "N/A"}
+            </div>
+          </div>
+
+          <div className="pl-6 space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Communication</span>
+            <div className="text-base font-extrabold text-blue-600">
+              {activeCommunication !== null ? `${activeCommunication}%` : "N/A"}
+            </div>
+          </div>
+
+          <div className="pl-6 space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Problem Solving</span>
+            <div className="text-base font-extrabold text-purple-600">
+              {activeProblemSolving !== null ? `${activeProblemSolving}%` : "N/A"}
+            </div>
+          </div>
+
+          <div className="pl-6 space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Job Hopping Risk</span>
+            <div className="text-base font-extrabold text-amber-600">
+              {activeJobHopping !== null ? (typeof activeJobHopping === "number" ? `${activeJobHopping}%` : activeJobHopping) : "N/A"}
+            </div>
           </div>
         </div>
 
-        <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-500">Team Player</span>
-          <div className="text-base font-extrabold text-emerald-600">
-            {activeTeamPlayer !== null ? `${activeTeamPlayer}%` : "N/A"}
-          </div>
-        </div>
+        {/* Bottom Row: Interview Evaluation Metrics Overview */}
+        <div className="pt-4 border-t border-slate-100 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-600"></span> Interview Evaluation Overview
+            </span>
 
-        <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-500">Communication</span>
-          <div className="text-base font-extrabold text-blue-600">
-            {activeCommunication !== null ? `${activeCommunication}%` : "N/A"}
-          </div>
-        </div>
+            {/* Round Selector Pills if multiple interviews exist */}
+            {candidateInterviews.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto">
+                {candidateInterviews.map((inv: any, idx: number) => {
+                  const roundNum = inv.round_number || idx + 1;
+                  const typeName = inv.interview_type || inv.job_title || `Round ${roundNum}`;
+                  const isSelected = selectedInterviewIdx === idx;
+                  const roundScore = inv.ai_score !== undefined && inv.ai_score !== null ? `${inv.ai_score}%` : inv.rating !== undefined ? `${inv.rating}/5` : "Pending";
+                  return (
+                    <button
+                      key={inv.id || idx}
+                      onClick={() => setSelectedInterviewIdx(idx)}
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                        isSelected
+                          ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>R{roundNum}: {typeName}</span>
+                      <span className={`text-[9px] px-1 py-0.2 rounded font-extrabold ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>
+                        {roundScore}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-        <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-500">Problem Solving</span>
-          <div className="text-base font-extrabold text-purple-600">
-            {activeProblemSolving !== null ? `${activeProblemSolving}%` : "N/A"}
+            {activeInterview && candidateInterviews.length <= 1 && (
+              <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                {activeInterview.status || "Assigned"}
+              </span>
+            )}
           </div>
-        </div>
 
-        <div className="pl-6 space-y-1">
-          <span className="text-xs font-semibold text-slate-500">Job Hopping Risk</span>
-          <div className="text-base font-extrabold text-amber-600">
-            {activeJobHopping !== null ? (typeof activeJobHopping === "number" ? `${activeJobHopping}%` : activeJobHopping) : "N/A"}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Interviewer Rating</span>
+              <div className="text-base font-extrabold text-blue-600">
+                {activeInterview?.rating !== undefined && activeInterview?.rating !== null ? `${activeInterview.rating} / 5` : "N/A"}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Interview AI Score</span>
+              <div className="text-base font-extrabold text-indigo-600">
+                {activeInterview?.ai_score !== undefined && activeInterview?.ai_score !== null ? `${activeInterview.ai_score}%` : "N/A"}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Recommendation</span>
+              <div className="pt-0.5">
+                <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold px-2.5 py-0.5 rounded-md truncate max-w-full">
+                  {activeInterview?.recommendation || activeInterview?.client_recommendation || "Pending"}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Client Rating</span>
+              <div className="text-base font-extrabold text-purple-600">
+                {activeInterview?.client_rating !== undefined && activeInterview?.client_rating !== null ? `${activeInterview.client_rating} / 5` : "N/A"}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -822,11 +960,11 @@ export default function Evaluation() {
         {activeTab === "Analysis" && (
           <div className="space-y-6 font-sans">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Brain size={16} className="text-indigo-600" /> AI Evaluation & HR Update Comparison
+              <Brain size={16} className="text-indigo-600" /> AI Evaluation, HR Update & Interview Scores Comparison
             </h3>
 
-            {/* Side-by-side Dual Cards Grid: Original AI vs HR Updates */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 3-Column Side-by-Side Cards Grid: Original AI vs HR Updates vs Interview Scores */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* 1. Original AI Evaluation Baseline Card */}
               <div className="p-5 rounded-2xl bg-slate-50 border border-indigo-200 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-3">
@@ -841,31 +979,31 @@ export default function Evaluation() {
                   </span>
                 </div>
 
-                {/* Scores Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-[11px] text-slate-500 block font-medium">Leadership</span>
+                {/* Scores Grid (2x2 layout for optimal card width alignment) */}
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-semibold truncate">Leadership</span>
                     <div className="text-base font-extrabold text-indigo-600">
                       {personality.leadership !== undefined ? `${personality.leadership}%` : "N/A"}
                     </div>
                   </div>
 
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-[11px] text-slate-500 block font-medium">Team Player</span>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-semibold truncate">Team Player</span>
                     <div className="text-base font-extrabold text-emerald-600">
                       {personality.team_player !== undefined ? `${personality.team_player}%` : "N/A"}
                     </div>
                   </div>
 
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-[11px] text-slate-500 block font-medium">Communication</span>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-semibold truncate">Communication</span>
                     <div className="text-base font-extrabold text-blue-600">
                       {personality.communication !== undefined ? `${personality.communication}%` : "N/A"}
                     </div>
                   </div>
 
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-[11px] text-slate-500 block font-medium">Problem Solving</span>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[11px] text-slate-500 block font-semibold truncate">Problem Solving</span>
                     <div className="text-base font-extrabold text-purple-600">
                       {personality.problem_solving !== undefined ? `${personality.problem_solving}%` : "N/A"}
                     </div>
@@ -986,30 +1124,30 @@ export default function Evaluation() {
                 {latestHrUpdate ? (
                   <>
                     {/* Scores Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                        <span className="text-[11px] text-slate-500 block font-medium">Leadership Score</span>
+                    <div className="grid grid-cols-2 gap-2.5 text-xs">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Leadership Score</span>
                         <div className="text-base font-extrabold text-indigo-600">
                           {latestHrUpdate.leadership_score !== undefined ? `${latestHrUpdate.leadership_score}%` : "N/A"}
                         </div>
                       </div>
 
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                        <span className="text-[11px] text-slate-500 block font-medium">Team Player</span>
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Team Player</span>
                         <div className="text-base font-extrabold text-emerald-600">
                           {latestHrUpdate.team_player !== undefined ? `${latestHrUpdate.team_player}%` : "N/A"}
                         </div>
                       </div>
 
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                        <span className="text-[11px] text-slate-500 block font-medium">Communication</span>
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Communication</span>
                         <div className="text-base font-extrabold text-blue-600">
                           {latestHrUpdate.communication !== undefined ? `${latestHrUpdate.communication}%` : "N/A"}
                         </div>
                       </div>
 
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                        <span className="text-[11px] text-slate-500 block font-medium">Problem Solving</span>
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Problem Solving</span>
                         <div className="text-base font-extrabold text-purple-600">
                           {latestHrUpdate.problem_solving !== undefined ? `${latestHrUpdate.problem_solving}%` : "N/A"}
                         </div>
@@ -1111,13 +1249,219 @@ export default function Evaluation() {
                   </div>
                 )}
               </div>
+
+              {/* 3. Assigned Interview Evaluation & Scores Card */}
+              <div className="p-5 rounded-2xl bg-slate-50 border border-blue-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                    <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                      Assigned Interview Evaluation & Scores
+                    </h4>
+                  </div>
+                  {activeInterview ? (
+                    <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                      {activeInterview.status || "Assigned"}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
+                      Not Assigned
+                    </span>
+                  )}
+                </div>
+
+                {/* Round Selector Pills if multiple interview rounds exist */}
+                {candidateInterviews.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200">
+                    {candidateInterviews.map((inv: any, idx: number) => {
+                      const roundNum = inv.round_number || idx + 1;
+                      const typeName = inv.interview_type || inv.job_title || `Round ${roundNum}`;
+                      const isSelected = selectedInterviewIdx === idx;
+                      const roundScore = inv.ai_score !== undefined && inv.ai_score !== null ? `${inv.ai_score}%` : inv.rating !== undefined ? `${inv.rating}/5` : "Pending";
+                      return (
+                        <button
+                          key={inv.id || idx}
+                          onClick={() => setSelectedInterviewIdx(idx)}
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                            isSelected
+                              ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span>R{roundNum}: {typeName}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>
+                            {roundScore}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {activeInterview ? (
+                  <>
+                    {/* Header info bar */}
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1 text-xs">
+                      <div className="font-bold text-slate-900 flex justify-between items-center">
+                        <span>{activeInterview.job_title || "Assigned Interview Session"}</span>
+                        {activeInterview.round_number && (
+                          <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-semibold">
+                            Round {activeInterview.round_number} ({activeInterview.interview_type || "Technical"})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-0.5 text-[11px] text-slate-600 pt-1">
+                        {activeInterview.interviewer_name && (
+                          <span>Interviewer: <strong className="text-slate-800">{activeInterview.interviewer_name}</strong></span>
+                        )}
+                        {activeInterview.scheduled_date && (
+                          <span>Date: <strong className="text-indigo-700">{activeInterview.scheduled_date} {activeInterview.scheduled_time || ""}</strong></span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Scores Grid */}
+                    <div className="grid grid-cols-2 gap-2.5 text-xs">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Interviewer Rating</span>
+                        <div className="text-base font-extrabold text-blue-600">
+                          {activeInterview.rating !== undefined && activeInterview.rating !== null ? `${activeInterview.rating} / 5` : "N/A"}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Interview AI Score</span>
+                        <div className="text-base font-extrabold text-indigo-600">
+                          {activeInterview.ai_score !== undefined && activeInterview.ai_score !== null ? `${activeInterview.ai_score}%` : "N/A"}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Recommendation</span>
+                        <div className="pt-0.5">
+                          <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold px-2 py-0.5 rounded-md truncate max-w-full">
+                            {activeInterview.recommendation || activeInterview.client_recommendation || "Pending"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] text-slate-500 block font-semibold truncate">Client Rating</span>
+                        <div className="text-base font-extrabold text-purple-600">
+                          {activeInterview.client_rating !== undefined && activeInterview.client_rating !== null ? `${activeInterview.client_rating} / 5` : "N/A"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Details, Category Scores & Strengths */}
+                    <div className="space-y-3 text-xs pt-1">
+                      {activeInterview.feedback && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                          <span className="text-slate-500 font-semibold block text-[11px]">Interviewer Feedback / Notes</span>
+                          <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">{activeInterview.feedback}</p>
+                        </div>
+                      )}
+
+                      {/* Category Evaluation Scores Breakdown */}
+                      {activeInterview.category_scores && Array.isArray(activeInterview.category_scores) && activeInterview.category_scores.length > 0 && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                          <span className="text-slate-500 font-semibold block text-[11px]">Category Evaluation Breakdown</span>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {activeInterview.category_scores.map((cat: any, cIdx: number) => (
+                              <div key={cIdx} className="flex justify-between items-center text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                <span className="font-medium text-slate-700 truncate max-w-[180px]">{cat.category}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {cat.weightage && <span className="text-slate-400 text-[10px]">W: {cat.weightage}%</span>}
+                                  <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                    {cat.rating !== undefined ? `${cat.rating} / 5` : `${cat.score}`}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Client Feedback & Review */}
+                      {(activeInterview.client_feedback || activeInterview.client_recommendation || activeInterview.client_rating) && (
+                        <div className="bg-white p-3 rounded-xl border border-purple-200 bg-purple-50/30 space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-purple-700 font-bold block text-[11px]">Client Review ({activeInterview.client_name || "Client"})</span>
+                            {activeInterview.client_recommendation && (
+                              <span className="bg-purple-100 text-purple-800 border border-purple-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                {activeInterview.client_recommendation}
+                              </span>
+                            )}
+                          </div>
+                          {activeInterview.client_feedback && (
+                            <p className="text-slate-700 text-[11px] leading-relaxed whitespace-pre-wrap">{activeInterview.client_feedback}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 font-semibold block text-[11px]">Interview Strengths</span>
+                        {activeInterview.strengths && Array.isArray(activeInterview.strengths) && activeInterview.strengths.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {activeInterview.strengths.map((item: string, i: number) => (
+                              <span key={i} className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">None flagged</span>
+                        )}
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 font-semibold block text-[11px]">Interview Weaknesses</span>
+                        {activeInterview.weaknesses && Array.isArray(activeInterview.weaknesses) && activeInterview.weaknesses.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {activeInterview.weaknesses.map((item: string, i: number) => (
+                              <span key={i} className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] px-2 py-0.5 rounded-md font-medium">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">None flagged</span>
+                        )}
+                      </div>
+
+                      {activeInterview.skill_ratings && Array.isArray(activeInterview.skill_ratings) && activeInterview.skill_ratings.length > 0 && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                          <span className="text-slate-500 font-semibold block text-[11px]">Evaluated Skill Ratings</span>
+                          <div className="flex flex-wrap gap-2">
+                            {activeInterview.skill_ratings.map((s: any, idx: number) => (
+                              <span key={idx} className="bg-blue-50 border border-blue-200 text-blue-800 text-[11px] px-2 py-1 rounded-lg font-medium">
+                                {s.skill_name || s.skill || s.name}: <strong>{s.rating || s.score} / 5</strong>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center text-slate-500 space-y-2">
+                    <p className="text-xs">No interviews assigned yet for this candidate.</p>
+                    <button
+                      onClick={() => navigate('/interviews', { state: { scheduleCandidate: { candidate_id: candidate?.id, candidate_name: name, candidate_email: email, resume_id: candidate?.id } } })}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-bold underline cursor-pointer"
+                    >
+                      Click here to Assign Interview
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Side-by-Side Comparison Matrix Table */}
-            {latestHrUpdate && (
+            {(latestHrUpdate || activeInterview) && (
               <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  📊 Direct Side-by-Side Value Comparison
+                  📊 Direct Side-by-Side Value Comparison (AI vs HR vs Interview)
                 </h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
@@ -1126,17 +1470,39 @@ export default function Evaluation() {
                         <th className="py-2.5 px-4 font-semibold">Evaluation Metric</th>
                         <th className="py-2.5 px-4 font-semibold text-indigo-600">Original AI Value</th>
                         <th className="py-2.5 px-4 font-semibold text-emerald-600">HR Update Value</th>
+                        <th className="py-2.5 px-4 font-semibold text-blue-600">Interview Score / Review</th>
                         <th className="py-2.5 px-4 font-semibold text-slate-700">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-slate-800">
                       <tr>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Overall AI / Technical Score</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{aiScore}%</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate ? "HR Reviewed" : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
+                          {activeInterview?.ai_score !== undefined && activeInterview?.ai_score !== null
+                            ? `${activeInterview.ai_score}%`
+                            : activeInterview?.rating !== undefined && activeInterview?.rating !== null
+                              ? `${activeInterview.rating} / 5`
+                              : "N/A"}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            Evaluated
+                          </span>
+                        </td>
+                      </tr>
+
+                      <tr>
                         <td className="py-2.5 px-4 font-medium text-slate-700">Leadership Score</td>
                         <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.leadership !== undefined ? `${personality.leadership}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.leadership_score !== undefined ? `${latestHrUpdate.leadership_score}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate?.leadership_score !== undefined ? `${latestHrUpdate.leadership_score}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
+                          {activeInterview?.rating !== undefined && activeInterview?.rating !== null ? `${activeInterview.rating} / 5` : "N/A"}
+                        </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
                       </tr>
@@ -1144,10 +1510,13 @@ export default function Evaluation() {
                       <tr>
                         <td className="py-2.5 px-4 font-medium text-slate-700">Team Player</td>
                         <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.team_player !== undefined ? `${personality.team_player}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.team_player !== undefined ? `${latestHrUpdate.team_player}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate?.team_player !== undefined ? `${latestHrUpdate.team_player}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
+                          {activeInterview?.recommendation || activeInterview?.status || "N/A"}
+                        </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
                       </tr>
@@ -1155,10 +1524,13 @@ export default function Evaluation() {
                       <tr>
                         <td className="py-2.5 px-4 font-medium text-slate-700">Communication</td>
                         <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.communication !== undefined ? `${personality.communication}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.communication !== undefined ? `${latestHrUpdate.communication}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate?.communication !== undefined ? `${latestHrUpdate.communication}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
+                          {activeInterview?.rating !== undefined ? `${activeInterview.rating} / 5` : "N/A"}
+                        </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
                       </tr>
@@ -1166,92 +1538,47 @@ export default function Evaluation() {
                       <tr>
                         <td className="py-2.5 px-4 font-medium text-slate-700">Problem Solving</td>
                         <td className="py-2.5 px-4 text-indigo-700 font-semibold">{personality.problem_solving !== undefined ? `${personality.problem_solving}%` : "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.problem_solving !== undefined ? `${latestHrUpdate.problem_solving}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate?.problem_solving !== undefined ? `${latestHrUpdate.problem_solving}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
+                          {activeInterview?.ai_score !== undefined ? `${activeInterview.ai_score}%` : "N/A"}
+                        </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-700">Job Hopping Risk</td>
-                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{careerAnalysis.job_hopping_risk || "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate.job_hopping_risk !== undefined ? `${latestHrUpdate.job_hopping_risk}%` : "N/A"}</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Candidate Recommendation</td>
+                        <td className="py-2.5 px-4 text-indigo-700 font-semibold">{evalData.recommendation || "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-semibold">{latestHrUpdate ? "HR Reviewed" : "N/A"}</td>
+                        <td className="py-2.5 px-4 text-emerald-700 font-bold">
+                          {activeInterview?.recommendation || activeInterview?.client_recommendation || "N/A"}
+                        </td>
                         <td className="py-2.5 px-4">
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
+                            Final Review
                           </span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-700">Recommended Upskilling</td>
+                        <td className="py-2.5 px-4 font-medium text-slate-700">Strengths & Notes</td>
                         <td className="py-2.5 px-4 text-indigo-700">
-                          {careerAnalysis.recommended_upskilling && Array.isArray(careerAnalysis.recommended_upskilling) ? careerAnalysis.recommended_upskilling.join(", ") : "None"}
+                          {originalSkillStrengths && originalSkillStrengths.length > 0 ? originalSkillStrengths.join(", ") : "None"}
                         </td>
                         <td className="py-2.5 px-4 text-emerald-700">
-                          {latestHrUpdate.recommended_upskilling && Array.isArray(latestHrUpdate.recommended_upskilling) ? latestHrUpdate.recommended_upskilling.join(", ") : "None"}
+                          {latestHrUpdate?.recommended_upskilling && Array.isArray(latestHrUpdate.recommended_upskilling) ? latestHrUpdate.recommended_upskilling.join(", ") : "None"}
+                        </td>
+                        <td className="py-2.5 px-4 text-blue-700 font-medium">
+                          {activeInterview?.strengths && Array.isArray(activeInterview.strengths) && activeInterview.strengths.length > 0
+                            ? activeInterview.strengths.join(", ")
+                            : activeInterview?.feedback || "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
-                          </span>
-                        </td>
-                      </tr>
-
-                      <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-700">Skill Weaknesses</td>
-                        <td className="py-2.5 px-4 text-indigo-700">
-                          {originalSkillWeaknesses && originalSkillWeaknesses.length > 0 ? originalSkillWeaknesses.join(", ") : "None"}
-                        </td>
-                        <td className="py-2.5 px-4 text-rose-700 font-semibold">
-                          {latestHrUpdate.skill_weaknesses && Array.isArray(latestHrUpdate.skill_weaknesses) && latestHrUpdate.skill_weaknesses.length > 0 ? latestHrUpdate.skill_weaknesses.join(", ") : "None"}
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
-                          </span>
-                        </td>
-                      </tr>
-
-                      <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-700">Architecture & Design</td>
-                        <td className="py-2.5 px-4 text-indigo-700 whitespace-pre-wrap">{originalArchitecture || "N/A"}</td>
-                        <td className="py-2.5 px-4 text-emerald-700 whitespace-pre-wrap">{latestHrUpdate.architecture_and_design_capabilities || "N/A"}</td>
-                        <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
-                          </span>
-                        </td>
-                      </tr>
-
-                      <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-700">Resume Red Flags</td>
-                        <td className="py-2.5 px-4 text-indigo-700">
-                          {originalRedFlags && originalRedFlags.length > 0 ? originalRedFlags.join(", ") : "None"}
-                        </td>
-                        <td className="py-2.5 px-4 text-rose-700 font-semibold">
-                          {latestHrUpdate.resume_red_flags && Array.isArray(latestHrUpdate.resume_red_flags) && latestHrUpdate.resume_red_flags.length > 0 ? latestHrUpdate.resume_red_flags.join(", ") : "None"}
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
-                          </span>
-                        </td>
-                      </tr>
-
-                      <tr>
-                        <td className="py-2.5 px-4 font-medium text-slate-700">Interview Focus Areas</td>
-                        <td className="py-2.5 px-4 text-indigo-700">
-                          {originalInterviewFocus && originalInterviewFocus.length > 0 ? originalInterviewFocus.join(", ") : "None"}
-                        </td>
-                        <td className="py-2.5 px-4 text-blue-700 font-semibold">
-                          {latestHrUpdate.interview_focus_areas && Array.isArray(latestHrUpdate.interview_focus_areas) && latestHrUpdate.interview_focus_areas.length > 0 ? latestHrUpdate.interview_focus_areas.join(", ") : "None"}
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            HR Updated
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            Multi-Source
                           </span>
                         </td>
                       </tr>

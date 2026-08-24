@@ -419,16 +419,20 @@ class ResumeService:
                             matched = True
 
                         if matched:
-                            key = r_rid or r_cid
-                            if key not in interviews_by_cand:
-                                interviews_by_cand[key] = []
-                            interviews_by_cand[key].append(inv)
+                            raw_key = r_rid or r_cid
+                            if raw_key:
+                                str_key = str(raw_key)
+                                if str_key not in interviews_by_cand:
+                                    interviews_by_cand[str_key] = []
+                                interviews_by_cand[str_key].append(inv)
             except Exception as e:
                 logger.error(f"Failed to query interviews for candidate enrichment: {e}")
 
         for r in resumes:
-            key = r.get("id") or r.get("candidate_id")
-            c_invs = interviews_by_cand.get(key, [])
+            raw_key = r.get("id") or r.get("candidate_id")
+            c_invs: List[Dict[str, Any]] = []
+            if raw_key:
+                c_invs = interviews_by_cand.get(str(raw_key), [])
 
             # Active or valid interviews (exclude CANCELLED if desired, or keep active ones)
             active_invs = [i for i in c_invs if str(i.get("status", "")).upper() != "CANCELLED"]
@@ -441,21 +445,24 @@ class ResumeService:
                 r["interview_assigned"] = True
                 r["interview_status"] = str(latest.get("status") or "ASSIGNED").upper()
                 r["last_interview_assigned_date"] = assigned_date
-                r["latest_interview"] = {
-                    "id": latest.get("id"),
-                    "job_title": latest.get("job_title"),
-                    "scheduled_date": latest.get("scheduled_date"),
-                    "scheduled_time": latest.get("scheduled_time"),
-                    "status": latest.get("status"),
-                    "interviewer_name": latest.get("interviewer_name"),
-                    "interview_type": latest.get("interview_type"),
-                    "created_at": latest.get("created_at"),
-                }
+
+                # Return full interview document dicts without Mongo _id
+                latest_clean = dict(latest)
+                latest_clean.pop("_id", None)
+                r["latest_interview"] = latest_clean
+
+                clean_invs = []
+                for inv in valid_invs:
+                    inv_clean = dict(inv)
+                    inv_clean.pop("_id", None)
+                    clean_invs.append(inv_clean)
+                r["interviews"] = clean_invs
             else:
                 r["interview_assigned"] = False
                 r["interview_status"] = "NOT_ASSIGNED"
                 r["last_interview_assigned_date"] = None
                 r["latest_interview"] = None
+                r["interviews"] = []
 
         return resumes
 
@@ -483,6 +490,8 @@ class ResumeService:
             hr_update_dict["updated_at"] = utc_now().isoformat()
 
         updated_doc = await self.resume_repo.update_resume_fields(resume_id, update_fields, hr_update=hr_update_dict)
+        if not updated_doc:
+            raise NotFoundError("Failed to update resume.")
         enriched = await self.enrich_resumes_with_interviews([updated_doc])
         return ResumeResponse.model_validate(enriched[0])
 
@@ -517,7 +526,7 @@ class ResumeService:
         keywords: Optional[List[str]] = None,
         search: Optional[str] = None,
         name: Optional[str] = None,
-        email: Optional[List[str]] = None,
+        email: Optional[str] = None,
         role: Optional[str] = None,
         experience: Optional[float] = None,
         skip: int = 0,
