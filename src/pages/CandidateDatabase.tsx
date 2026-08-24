@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getResumes, type CandidateQueryParams } from "../utils/Api";
+import { getResumes, exportResumesApi, type CandidateQueryParams } from "../utils/Api";
 import { CandidateEditModal } from "../components/CandidateEditModal";
 
 export default function CandidateDatabase() {
@@ -27,6 +27,120 @@ export default function CandidateDatabase() {
   const [emailFilter, setEmailFilter] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("");
   const [expFilter, setExpFilter] = useState<string>("");
+
+  // Export State & Handlers
+  const [showExportOptions, setShowExportOptions] = useState<boolean>(false);
+  const [exportLoading, setExportLoading] = useState<boolean>(false);
+
+  const handleExportCSVClientSide = () => {
+    if (!candidates || candidates.length === 0) {
+      alert("No candidate records available to export.");
+      return;
+    }
+
+    const headers = [
+      "Candidate ID", "Database ID", "Full Name", "Email", "Phone",
+      "Designation / Role", "Total Experience (Yrs)", "Location",
+      "Primary Skills", "Secondary Skills", "Education",
+      "AI Tech Score", "Score Label", "AI Recommendation", "AI Summary",
+      "S3 Document URL", "Original Filename", "File Path", "Upload Date",
+      "Uploaded By Name", "Uploaded By Email", "Resume Source", "Resume Source Informer Name",
+      "Interview Assigned", "Interview Status", "Last Interview Assigned Date", "Last Interview Update Date"
+    ];
+
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const csvRows = [headers.map((h) => `"${h}"`).join(",")];
+
+    candidates.forEach((cand) => {
+      const raw = cand.rawData || {};
+      const p = raw.parsed_data || {};
+      const evalInfo = raw.ai_evaluation || {};
+
+      const row = [
+        raw.candidate_id || "",
+        raw.id || cand.id || "",
+        cand.name || "",
+        cand.email || "",
+        p.phone || p.mobile || "",
+        cand.role || "",
+        cand.experience || "",
+        cand.location || "",
+        (cand.skills || []).join("; "),
+        (p.secondary_skills || []).join("; "),
+        Array.isArray(p.education) ? p.education.map((e: any) => typeof e === "string" ? e : `${e.degree || ''} ${e.field_of_study || ''}`).join("; ") : "",
+        cand.score !== undefined ? cand.score : "",
+        evalInfo.score_label || "",
+        evalInfo.recommendation || "",
+        (evalInfo.summary || "").replace(/\n/g, " "),
+        raw.s3_url || "",
+        raw.original_filename || cand.originalFilename || "",
+        raw.file_path || "",
+        cand.uploadDate || raw.upload_date || "",
+        raw.uploaded_by_name || "",
+        raw.uploaded_by_email || "",
+        raw.resume_source || "",
+        raw.resume_source_informer_name || "",
+        raw.interview_assigned ? "Yes" : "No",
+        raw.interview_status || "NOT_ASSIGNED",
+        raw.last_interview_assigned_date || "",
+        raw.last_interview_updated_at || ""
+      ];
+
+      csvRows.push(row.map(escapeCsv).join(","));
+    });
+
+    const csvString = "\uFEFF" + csvRows.join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `candidate_database_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setExportLoading(true);
+      await exportResumesApi("csv", {
+        search: searchTerm,
+        name: nameFilter,
+        email: emailFilter,
+        role: roleFilter,
+      });
+    } catch (err: any) {
+      console.warn("Backend CSV export failed, using client-side CSV export fallback:", err);
+      handleExportCSVClientSide();
+    } finally {
+      setExportLoading(false);
+      setShowExportOptions(false);
+    }
+  };
+
+  const handleExportZIP = async () => {
+    try {
+      setExportLoading(true);
+      await exportResumesApi("zip", {
+        search: searchTerm,
+        name: nameFilter,
+        email: emailFilter,
+        role: roleFilter,
+      });
+    } catch (err: any) {
+      console.error("ZIP export failed:", err);
+      alert(err.message || "Failed to download candidate ZIP archive from S3.");
+    } finally {
+      setExportLoading(false);
+      setShowExportOptions(false);
+    }
+  };
 
   useEffect(() => {
     fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
@@ -195,10 +309,50 @@ export default function CandidateDatabase() {
               )}
             </button>
 
-            <button className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
-              <Download size={14} />
-              Export
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowExportOptions(!showExportOptions)}
+                disabled={exportLoading}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <Download size={14} />
+                <span>{exportLoading ? "Exporting..." : "Export"}</span>
+              </button>
+
+              {showExportOptions && (
+                <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 space-y-1 animate-fadeIn">
+                  <button
+                    onClick={handleExportCSV}
+                    className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 rounded-xl transition-colors flex items-start gap-2.5 group cursor-pointer"
+                  >
+                    <FileText size={16} className="text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">
+                        Export CSV Data Report
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                        Contains all resume.py candidate fields + S3 download URLs.
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={handleExportZIP}
+                    className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 rounded-xl transition-colors flex items-start gap-2.5 group cursor-pointer"
+                  >
+                    <Download size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">
+                        Download Candidate Resumes (ZIP)
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                        Downloads original resume documents from S3 as a ZIP package.
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
