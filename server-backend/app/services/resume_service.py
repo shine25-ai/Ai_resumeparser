@@ -359,7 +359,105 @@ class ResumeService:
             raise NotFoundError("Resume not found.")
         if not is_admin and resume["user_id"] != user_id:
             raise NotFoundError("Resume not found.")
-        return ResumeResponse.model_validate(resume)
+        enriched = await self.enrich_resumes_with_interviews([resume])
+        return ResumeResponse.model_validate(enriched[0])
+
+    async def enrich_resumes_with_interviews(self, resumes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Enrich candidate resume dicts with interview assignment status and dates."""
+        if not resumes:
+            return resumes
+
+        candidate_ids = [r.get("candidate_id") for r in resumes if r.get("candidate_id")]
+        resume_ids = [r.get("id") for r in resumes if r.get("id")]
+
+        emails = []
+        for r in resumes:
+            em = None
+            if r.get("parsed_data") and isinstance(r["parsed_data"], dict):
+                em = r["parsed_data"].get("email")
+            if not em:
+                em = r.get("email")
+            if em and isinstance(em, str) and em.strip():
+                emails.append(em.strip().lower())
+
+        or_conds = []
+        if candidate_ids:
+            or_conds.append({"candidate_id": {"$in": candidate_ids}})
+        if resume_ids:
+            or_conds.append({"resume_id": {"$in": resume_ids}})
+        if emails:
+            import re
+            or_conds.append({"candidate_email": {"$in": [re.compile(f"^{re.escape(e)}$", re.IGNORECASE) for e in emails]}})
+
+        interviews_by_cand: Dict[str, List[Dict[str, Any]]] = {}
+        if or_conds:
+            try:
+                cursor = self.resume_repo.db["interviews"].find({"$or": or_conds}).sort([("scheduled_date", -1), ("created_at", -1)])
+                interview_docs = await cursor.to_list(length=1000)
+
+                for inv in interview_docs:
+                    inv_cid = inv.get("candidate_id")
+                    inv_rid = inv.get("resume_id")
+                    inv_cemail = (inv.get("candidate_email") or "").strip().lower()
+
+                    for r in resumes:
+                        r_cid = r.get("candidate_id")
+                        r_rid = r.get("id")
+                        r_email = ""
+                        if r.get("parsed_data") and isinstance(r["parsed_data"], dict):
+                            r_email = r["parsed_data"].get("email") or ""
+                        if not r_email:
+                            r_email = r.get("email") or ""
+                        r_email = r_email.strip().lower()
+
+                        matched = False
+                        if r_cid and inv_cid and r_cid == inv_cid:
+                            matched = True
+                        elif r_rid and inv_rid and r_rid == inv_rid:
+                            matched = True
+                        elif r_email and inv_cemail and r_email == inv_cemail:
+                            matched = True
+
+                        if matched:
+                            key = r_rid or r_cid
+                            if key not in interviews_by_cand:
+                                interviews_by_cand[key] = []
+                            interviews_by_cand[key].append(inv)
+            except Exception as e:
+                logger.error(f"Failed to query interviews for candidate enrichment: {e}")
+
+        for r in resumes:
+            key = r.get("id") or r.get("candidate_id")
+            c_invs = interviews_by_cand.get(key, [])
+
+            # Active or valid interviews (exclude CANCELLED if desired, or keep active ones)
+            active_invs = [i for i in c_invs if str(i.get("status", "")).upper() != "CANCELLED"]
+            valid_invs = active_invs if active_invs else c_invs
+
+            if valid_invs:
+                latest = valid_invs[0]
+                assigned_date = latest.get("scheduled_date") or latest.get("created_at")
+
+                r["interview_assigned"] = True
+                r["interview_status"] = str(latest.get("status") or "ASSIGNED").upper()
+                r["last_interview_assigned_date"] = assigned_date
+                r["latest_interview"] = {
+                    "id": latest.get("id"),
+                    "job_title": latest.get("job_title"),
+                    "scheduled_date": latest.get("scheduled_date"),
+                    "scheduled_time": latest.get("scheduled_time"),
+                    "status": latest.get("status"),
+                    "interviewer_name": latest.get("interviewer_name"),
+                    "interview_type": latest.get("interview_type"),
+                    "created_at": latest.get("created_at"),
+                }
+            else:
+                r["interview_assigned"] = False
+                r["interview_status"] = "NOT_ASSIGNED"
+                r["last_interview_assigned_date"] = None
+                r["latest_interview"] = None
+
+        return resumes
 
     async def update_resume(self, resume_id: str, user_id: str, update_payload: ResumeUpdateRequest, is_admin: bool = False) -> ResumeResponse:
         """Update resume metadata / parsed fields and append timestamped HR update record."""
@@ -385,7 +483,8 @@ class ResumeService:
             hr_update_dict["updated_at"] = utc_now().isoformat()
 
         updated_doc = await self.resume_repo.update_resume_fields(resume_id, update_fields, hr_update=hr_update_dict)
-        return ResumeResponse.model_validate(updated_doc)
+        enriched = await self.enrich_resumes_with_interviews([updated_doc])
+        return ResumeResponse.model_validate(enriched[0])
 
     async def get_user_resumes(
         self,
@@ -399,6 +498,7 @@ class ResumeService:
         """Fetch list of resumes belonging to user (or all resumes if admin) with total_pages calculation."""
         import math
         resumes = await self.resume_repo.get_by_user_id(user_id, skip=skip, limit=limit, is_admin=is_admin, search=search)
+        resumes = await self.enrich_resumes_with_interviews(resumes)
         total = await self.resume_repo.count_by_user_id(user_id, is_admin=is_admin, search=search)
         items = [ResumeResponse.model_validate(r) for r in resumes]
         total_pages = math.ceil(total / limit) if limit > 0 else 1
@@ -417,7 +517,7 @@ class ResumeService:
         keywords: Optional[List[str]] = None,
         search: Optional[str] = None,
         name: Optional[str] = None,
-        email: Optional[str] = None,
+        email: Optional[List[str]] = None,
         role: Optional[str] = None,
         experience: Optional[float] = None,
         skip: int = 0,
@@ -447,6 +547,7 @@ class ResumeService:
             is_admin=is_admin,
         )
         resumes = res_dict.get("resumes", [])
+        resumes = await self.enrich_resumes_with_interviews(resumes)
         total = res_dict.get("total", 0)
         items = [ResumeResponse.model_validate(r) for r in resumes]
         total_pages = math.ceil(total / limit) if limit > 0 else 1

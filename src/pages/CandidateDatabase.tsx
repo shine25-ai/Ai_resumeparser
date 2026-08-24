@@ -69,8 +69,10 @@ export default function CandidateDatabase() {
         id: item.candidate_id || `CND-${item.id.substring(0, 6).toUpperCase()}`,
         realId: item.id,
         name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
+        candidateName: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         email: item.parsed_data?.email || item.email || "N/A",
         role: item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "Software Professional",
+        targetRole: item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "N/A",
         source: item.resume_source || "N/A",
         uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
         experience: item.parsed_data?.total_experience_years
@@ -87,6 +89,12 @@ export default function CandidateDatabase() {
         lastUpdated: item.upload_date
           ? new Date(item.upload_date).toLocaleDateString()
           : new Date().toLocaleDateString(),
+        interviewAssigned: Boolean(item.interview_assigned),
+        interviewStatus: item.interview_status || (item.interview_assigned ? "ASSIGNED" : "NOT_ASSIGNED"),
+        lastInterviewAssignedDate: item.last_interview_assigned_date
+          ? new Date(item.last_interview_assigned_date).toLocaleDateString()
+          : null,
+        latestInterview: item.latest_interview || null,
         rawData: item,
       }));
 
@@ -293,11 +301,10 @@ export default function CandidateDatabase() {
                     className="rounded border-slate-300 bg-white accent-indigo-600 cursor-pointer"
                   />
                 </th>
-                <th className="py-3 px-3">Candidate ID</th>
                 <th className="py-3 px-3">Name & Email</th>
                 <th className="py-3 px-3">Role</th>
-                <th className="py-3 px-3">Experience</th>
-                <th className="py-3 px-3">AI Score %</th>
+                <th className="py-3 px-3">Exp & AI Score</th>
+                <th className="py-3 px-3">Interview Status</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-3">Last Updated</th>
                 <th className="py-3 px-3 text-right">Actions</th>
@@ -306,7 +313,7 @@ export default function CandidateDatabase() {
             <tbody className="divide-y divide-slate-200 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500 font-medium">
+                  <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                       <span>Loading candidate pages from database...</span>
@@ -315,7 +322,7 @@ export default function CandidateDatabase() {
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500 font-medium">
+                  <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
                     No candidate records found matching current query.
                   </td>
                 </tr>
@@ -330,7 +337,6 @@ export default function CandidateDatabase() {
                         className="rounded border-slate-300 bg-white accent-indigo-600 cursor-pointer"
                       />
                     </td>
-                    <td className="py-3.5 px-3 font-bold text-slate-800">{row.id}</td>
                     <td className="py-3.5 px-3">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-bold text-slate-900">{row.name}</span>
@@ -350,14 +356,55 @@ export default function CandidateDatabase() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-3 text-slate-500 font-semibold">{row.experience}</td>
-                    <td className="py-3.5 px-3 font-bold text-emerald-600">{row.match}</td>
+                    {/* Combined Experience & AI Score Column */}
+                    <td className="py-3.5 px-3">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-bold text-slate-800">{row.experience}</span>
+                        <span className="font-bold text-emerald-600 text-[11px]">{row.match}</span>
+                      </div>
+                    </td>
+                    {/* Interview Assignment Status */}
+                    <td className="py-3.5 px-3">
+                      {row.interviewAssigned ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 w-fit">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                            Interview Assigned
+                          </span>
+                          {row.lastInterviewAssignedDate && (
+                            <span className="text-xs font-semibold text-indigo-800 flex items-center gap-1">
+                              <Calendar size={12} className="text-indigo-600 shrink-0" />
+                              {row.lastInterviewAssignedDate}
+                            </span>
+                          )}
+                          {row.latestInterview?.job_title && (
+                            <span className="text-[10px] text-slate-500 font-medium truncate max-w-[150px]" title={row.latestInterview.job_title}>
+                              Role: {row.latestInterview.job_title}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 border border-slate-200 text-slate-500 w-fit">
+                          Not Assigned
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3.5 px-3">
                       <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${row.statusBg}`}>
                         {row.status}
                       </span>
                     </td>
-                    <td className="py-3.5 px-3 text-slate-500">{row.lastUpdated}</td>
+                    {/* Last Updated Column containing Upload Date */}
+                    <td className="py-3.5 px-3 text-slate-500 font-medium">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-slate-700 font-medium text-xs">
+                          {row.lastUpdated}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          (Upload Date)
+                        </span>
+                      </div>
+                    </td>
                     <td className="py-3.5 px-3 text-right">
                       <div className="flex items-center justify-end gap-2 text-indigo-600">
                         <button

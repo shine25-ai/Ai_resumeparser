@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Star, Plus, Trash2, Cpu, CheckCircle2, Award, Sparkles, AlertCircle } from "lucide-react";
 import type { SkillRatingItem, CategoryScoreItem } from "../types/interview";
-import { getSkillsEvaluations, saveSkillsEvaluation, deleteSkillsEvaluation } from "../utils/Api";
+import { getSkillsEvaluations, saveSkillsEvaluation } from "../utils/Api";
 
 interface SkillRatingsEvaluationProps {
   skillRatings: SkillRatingItem[];
@@ -16,6 +16,50 @@ interface SkillRatingsEvaluationProps {
   hrCallVerification?: string;
   allRounds?: any[];
 }
+
+const selectCategoriesForTable = (
+  templateCategories?: { category: string; weightage?: number }[]
+) => {
+  if (!templateCategories || templateCategories.length === 0) {
+    return [];
+  }
+
+  const valid = templateCategories
+    .filter((c) => c.category && c.category.trim())
+    .map((c) => ({
+      category: c.category.trim(),
+      weightage: Number(c.weightage) || 0,
+    }));
+
+  const selected: { category: string; weightage: number }[] = [];
+  let accumulated = 0;
+
+  // Pass 1: Add categories whose full weightage fits into the 100% total capacity
+  for (const item of valid) {
+    if (accumulated >= 100) break;
+    if (item.weightage > 0 && accumulated + item.weightage <= 100) {
+      selected.push(item);
+      accumulated += item.weightage;
+    }
+  }
+
+  // Pass 2: If total is under 100%, top up to 100% using next available category
+  if (accumulated < 100) {
+    const selectedNames = new Set(selected.map((s) => s.category.toLowerCase()));
+    const remainingNeeded = 100 - accumulated;
+    const unadded = valid.find((v) => !selectedNames.has(v.category.toLowerCase()));
+
+    if (unadded) {
+      const partialW = Math.min(unadded.weightage > 0 ? unadded.weightage : remainingNeeded, remainingNeeded);
+      selected.push({
+        category: unadded.category,
+        weightage: partialW,
+      });
+    }
+  }
+
+  return selected;
+};
 
 export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   skillRatings,
@@ -41,6 +85,8 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
 
   // Suggestion list state & dropdown visibility
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const autoPopulatedSkillsRef = useRef<Set<string>>(new Set());
 
   const selectedSkillName = skillRatings[selectedSkillIndex]?.skill_name || "";
 
@@ -164,6 +210,60 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
         };
       });
   }, [selectedSkillName, activeTemplate, categoryScores, skillRatings]);
+
+  // Auto-populate category table when a skill is selected IF NO categories are already added for that skill
+  useEffect(() => {
+    if (!selectedSkillName || !onChangeCategoryScores) return;
+
+    const skillLower = selectedSkillName.trim().toLowerCase();
+
+    // Condition: IF already added any value on that skill related on table, do not add automatically values
+    if (activeCategories.length > 0) {
+      autoPopulatedSkillsRef.current.add(skillLower);
+      return;
+    }
+
+    // Check if categoryScores array already has items for this selected skill
+    const existingForSkill = (categoryScores || []).filter((c) => {
+      const catName = (c.category || "").trim();
+      if (!catName) return false;
+      const cSkillLower = (c as any).skill_name ? (c as any).skill_name.trim().toLowerCase() : "";
+      if (cSkillLower) return cSkillLower === skillLower;
+      if (skillRatings.length === 1 && skillRatings[0].skill_name.trim().toLowerCase() === skillLower) return true;
+      return false;
+    });
+
+    if (existingForSkill.length > 0) {
+      autoPopulatedSkillsRef.current.add(skillLower);
+      return;
+    }
+
+    if (autoPopulatedSkillsRef.current.has(skillLower)) {
+      return;
+    }
+
+    const templateCats = activeTemplate?.categories || [];
+    const selectedCats = selectCategoriesForTable(templateCats);
+
+    if (selectedCats.length === 0) return;
+
+    const newCategoryItems: CategoryScoreItem[] = selectedCats.map((cat) => {
+      const rating = 1;
+      const weightage = cat.weightage;
+      const score = Math.round((rating / 5) * weightage * 10) / 10;
+      return {
+        skill_name: selectedSkillName,
+        category: cat.category,
+        weightage,
+        rating,
+        score,
+        feedback: "",
+      } as any;
+    });
+
+    autoPopulatedSkillsRef.current.add(skillLower);
+    onChangeCategoryScores([...(categoryScores || []), ...newCategoryItems]);
+  }, [selectedSkillName, activeTemplate, activeCategories, categoryScores, skillRatings, onChangeCategoryScores]);
 
   // Filter template categories for the active skill based on user input for suggestion dropdown
   const filteredCategorySuggestions = React.useMemo(() => {
@@ -289,7 +389,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     handleAddSkill(suggestedName);
   };
 
-  const handleRemoveSkill = async (index: number) => {
+  const handleRemoveSkill = (index: number) => {
     const skillToRemove = skillRatings[index];
     const updated = skillRatings.filter((_, i) => i !== index);
     onChangeSkills(updated);
@@ -299,21 +399,15 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
       setSelectedSkillIndex(Math.max(0, updated.length - 1));
     }
 
-    // Delete matching template from database if present
-    if (skillToRemove) {
-      const template = skillTemplates.find(
-        (t) => t.skill_name.toLowerCase() === skillToRemove.skill_name.toLowerCase()
+    if (skillToRemove && onChangeCategoryScores) {
+      const nameLower = skillToRemove.skill_name.trim().toLowerCase();
+      onChangeCategoryScores(
+        (categoryScores || []).filter((c) => {
+          const cSkillLower = (c as any).skill_name ? (c as any).skill_name.trim().toLowerCase() : "";
+          return cSkillLower !== nameLower;
+        })
       );
-      if (template && (template.id || template._id)) {
-        try {
-          await deleteSkillsEvaluation(template.id || template._id);
-          setSkillTemplates((prev) =>
-            prev.filter((t) => (t.id || t._id) !== (template.id || template._id))
-          );
-        } catch (err) {
-          console.error("Failed to delete skill evaluation template from DB:", err);
-        }
-      }
+      autoPopulatedSkillsRef.current.delete(nameLower);
     }
   };
 

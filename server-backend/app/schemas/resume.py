@@ -39,6 +39,7 @@ class ResumeResponse(BaseModel):
     """Resume metadata response DTO."""
 
     id: str
+    candidate_id: Optional[str] = None
     user_id: str
     uploaded_by_user_id: Optional[str] = None
     uploaded_by_name: Optional[str] = None
@@ -58,6 +59,10 @@ class ResumeResponse(BaseModel):
     resume_source_informer_name: Optional[str] = None
     upload_date: str
     status: ResumeStatus
+    interview_assigned: Optional[bool] = False
+    interview_status: Optional[str] = "NOT_ASSIGNED"
+    last_interview_assigned_date: Optional[str] = None
+    latest_interview: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 
