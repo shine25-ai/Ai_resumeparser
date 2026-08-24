@@ -2,7 +2,7 @@
 Interview controller handling HTTP requests for interview scheduling, filtering, updating, feedback, and deletion.
 """
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from fastapi import UploadFile, status
 from fastapi.responses import JSONResponse
 
@@ -147,8 +147,19 @@ class InterviewController:
         interview_id: str,
         payload: InterviewFeedbackRequest,
         user_id: str,
+        user_info: Optional[Dict[str, Any]] = None,
     ) -> JSONResponse:
-        """Submit feedback and rating."""
+        """Submit feedback, rating, dynamic skills, and category scores with evaluator user metadata."""
+        if user_info and isinstance(user_info, dict):
+            if not payload.evaluator_user_id:
+                payload.evaluator_user_id = user_info.get("id") or user_id
+            if not payload.evaluator_name:
+                payload.evaluator_name = user_info.get("full_name") or user_info.get("name")
+            if not payload.evaluator_email:
+                payload.evaluator_email = user_info.get("email")
+            if not payload.evaluator_role:
+                payload.evaluator_role = user_info.get("role")
+
         res = await self.interview_service.submit_feedback(interview_id, payload, updated_by=user_id)
         return success_response(
             data=res.model_dump(),

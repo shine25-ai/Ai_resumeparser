@@ -15,6 +15,7 @@ interface SkillRatingsEvaluationProps {
   currentInterviewType?: string;
   hrCallVerification?: string;
   allRounds?: any[];
+  evaluatorName?: string;
 }
 
 const selectCategoriesForTable = (
@@ -72,7 +73,23 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
   currentInterviewType,
   hrCallVerification,
   allRounds = [],
+  evaluatorName,
 }) => {
+  // Resolve current logged in evaluator name from props or localStorage
+  const currentLoggedInName = React.useMemo(() => {
+    if (evaluatorName && evaluatorName.trim()) return evaluatorName.trim();
+    try {
+      const rawUser = localStorage.getItem("user");
+      if (rawUser) {
+        const uObj = JSON.parse(rawUser);
+        return uObj.full_name || uObj.name || uObj.email || "";
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return "";
+  }, [evaluatorName]);
+
   const [newSkillName, setNewSkillName] = useState("");
   const [skillTemplates, setSkillTemplates] = useState<any[]>([]);
   const [selectedSkillIndex, setSelectedSkillIndex] = useState<number>(0);
@@ -376,7 +393,14 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     }
 
     // Add locally to parent skill ratings
-    const updated = [...skillRatings, { skill_name: name, rating: 1 }];
+    const updated = [
+      ...skillRatings,
+      {
+        skill_name: name,
+        rating: 1,
+        evaluator_name: currentLoggedInName || undefined,
+      },
+    ];
     onChangeSkills(updated);
 
     // Select the newly added skill
@@ -418,7 +442,11 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
 
   const handleSkillRatingChange = (index: number, newRating: number) => {
     const updated = [...skillRatings];
-    updated[index] = { ...updated[index], rating: newRating };
+    updated[index] = {
+      ...updated[index],
+      rating: newRating,
+      evaluator_name: updated[index].evaluator_name || currentLoggedInName || undefined,
+    };
     onChangeSkills(updated);
   };
 
@@ -704,14 +732,20 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                   : "bg-white border-slate-200 hover:border-indigo-300"
                   }`}
               >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-extrabold text-slate-900 tracking-wide uppercase">
                       {skill.skill_name}
                     </span>
                     {isSelected && (
                       <span className="bg-indigo-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider scale-90">
                         Active
+                      </span>
+                    )}
+                    {(skill.evaluator_name || currentLoggedInName) && (
+                      <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
+                        <span>Added by: {skill.evaluator_name || currentLoggedInName}</span>
                       </span>
                     )}
                   </div>

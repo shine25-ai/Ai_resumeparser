@@ -1524,12 +1524,27 @@ export default function InterviewManagement() {
         finalInterviewersList = [...otherInterviewers, ...feedbackInterviewersList];
       }
 
+      const rawUserStr = localStorage.getItem("user");
+      let storedUserObj: any = null;
+      if (rawUserStr) {
+        try { storedUserObj = JSON.parse(rawUserStr); } catch (e) { /* ignore */ }
+      }
+
+      const activeUserId = uId || storedUserObj?.id || storedUserObj?._id || "";
+      const activeUserName = currentUser?.full_name || (currentUser as any)?.name || storedUserObj?.full_name || storedUserObj?.name || "";
+      const activeUserEmail = currentUser?.email || storedUserObj?.email || "";
+      const activeUserRole = currentUser?.role || storedUserObj?.role || "";
+
       await submitInterviewFeedback(selectedInterview.id, {
         rating: Number(feedbackForm.rating),
         feedback: feedbackForm.feedback || undefined,
         strengths: feedbackForm.strengths ? feedbackForm.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
         weaknesses: feedbackForm.weaknesses ? feedbackForm.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
         recommendation: feedbackForm.recommendation || undefined,
+        evaluator_user_id: activeUserId || undefined,
+        evaluator_name: activeUserName || undefined,
+        evaluator_email: activeUserEmail || undefined,
+        evaluator_role: activeUserRole || undefined,
         interviewers: finalInterviewersList,
         skill_ratings: feedbackSkillRatings,
         category_scores: feedbackCategoryScores,
@@ -5069,6 +5084,7 @@ export default function InterviewManagement() {
                       currentInterviewType={selectedInterview?.interview_type}
                       hrCallVerification={selectedInterview?.hr_call_verification}
                       allRounds={interviews.filter((i) => i.candidate_id === selectedInterview?.candidate_id)}
+                      evaluatorName={currentUser?.full_name || (currentUser as any)?.name || ""}
                     />
                   </div>
 

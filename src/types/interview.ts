@@ -33,6 +33,8 @@ export interface SkillRatingItem {
   skill_name: string;
   rating: number; // 1 to 5 stars
   category?: string;
+  evaluator_name?: string;
+  evaluator_id?: string;
 }
 
 export interface CategoryScoreItem {
@@ -355,6 +357,11 @@ export interface SubmitFeedbackPayload {
   joining_date?: string;
   interview_document_files?: string[];
   interview_feedback_files?: string[];
+
+  evaluator_user_id?: string;
+  evaluator_name?: string;
+  evaluator_email?: string;
+  evaluator_role?: string;
 
   interviewers?: InterviewerItem[];
   clients?: ClientFeedbackItem[];

@@ -302,7 +302,7 @@ async def submit_feedback(
     current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
-    return await controller.submit_feedback(interview_id, payload, user_id=current_user["id"])
+    return await controller.submit_feedback(interview_id, payload, user_id=current_user["id"], user_info=current_user)
 
 
 

@@ -473,6 +473,10 @@ class InterviewService:
             interview_location=payload.interview_location,
             meeting_link=payload.meeting_link,
             meeting_platform=payload.meeting_platform,
+            evaluator_user_id=payload.evaluator_user_id or updated_by,
+            evaluator_name=payload.evaluator_name,
+            evaluator_email=payload.evaluator_email,
+            evaluator_role=payload.evaluator_role,
         )
 
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
