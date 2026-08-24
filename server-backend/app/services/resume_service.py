@@ -4,7 +4,7 @@ Resume service handling file storage, text extraction (PyMuPDF & docx), metadata
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import docx
 import fitz  # PyMuPDF
 from fastapi import UploadFile, BackgroundTasks
@@ -832,3 +832,157 @@ class ResumeService:
         logs = await self.resume_log_repo.get_logs_by_resume_id(resume_id)
         items = [ResumeLogResponse.model_validate(l) for l in logs]
         return ResumeLogListResponse(total=len(items), logs=items)
+
+    async def export_resumes(
+        self,
+        user_id: str,
+        export_format: str = "csv",
+        search: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        role: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> Tuple[Any, str, str]:
+        """
+        Export candidate dataset containing all ResumeDocument fields as CSV report or ZIP package with S3 resume files.
+        Returns (stream, filename, media_type).
+        """
+        import csv
+        import io
+        import zipfile
+        import httpx
+
+        res_dict = await self.resume_repo.filter_resumes(
+            user_id=user_id,
+            search=search,
+            name=name,
+            email=email,
+            role=role,
+            skip=0,
+            limit=5000,
+            is_admin=is_admin,
+        )
+        resumes = res_dict.get("resumes", [])
+        resumes = await self.enrich_resumes_with_interviews(resumes)
+
+        if export_format.lower() == "zip":
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                csv_buffer = io.StringIO()
+                writer = csv.writer(csv_buffer)
+                writer.writerow([
+                    "Candidate ID", "Database ID", "Full Name", "Email", "Phone",
+                    "Designation / Role", "Total Experience (Yrs)", "Location",
+                    "Primary Skills", "Secondary Skills", "Education",
+                    "AI Tech Score", "Score Label", "AI Recommendation", "AI Summary",
+                    "S3 Document URL", "Original Filename", "File Path", "Upload Date",
+                    "Uploaded By Name", "Uploaded By Email", "Resume Source", "Resume Source Informer Name",
+                    "Interview Assigned", "Interview Status", "Last Interview Assigned Date", "Last Interview Update Date"
+                ])
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    for idx, r in enumerate(resumes):
+                        p = r.get("parsed_data") or {}
+                        eval_info = r.get("ai_evaluation") or {}
+                        cand_name = p.get("full_name") or p.get("name") or r.get("original_filename") or f"Candidate_{idx+1}"
+                        cand_email = p.get("email") or ""
+                        cand_phone = p.get("phone") or p.get("mobile") or ""
+                        cand_role = p.get("designation") or p.get("role") or ""
+                        cand_exp = p.get("total_experience_years") if p.get("total_experience_years") is not None else p.get("years_of_experience", "")
+                        cand_loc = p.get("location") or ""
+                        pri_skills = ", ".join(p.get("primary_skills") or p.get("skills") or [])
+                        sec_skills = ", ".join(p.get("secondary_skills") or [])
+                        edu = ", ".join([f"{e.get('degree','')} ({e.get('field_of_study','')})" for e in (p.get("education") or []) if isinstance(e, dict)])
+                        ai_score = eval_info.get("ai_technical_score", "")
+                        score_label = eval_info.get("score_label", "")
+                        rec = eval_info.get("recommendation", "")
+                        summary = (eval_info.get("summary") or "").replace("\n", " ")
+                        s3_url = r.get("s3_url") or ""
+                        orig_fn = r.get("original_filename") or f"Resume_{idx+1}.pdf"
+                        fp = r.get("file_path") or ""
+                        up_date = r.get("upload_date") or ""
+                        up_name = r.get("uploaded_by_name") or ""
+                        up_email = r.get("uploaded_by_email") or ""
+                        source = r.get("resume_source") or ""
+                        informer = r.get("resume_source_informer_name") or ""
+                        inv_assigned = "Yes" if r.get("interview_assigned") else "No"
+                        inv_st = r.get("interview_status") or "NOT_ASSIGNED"
+                        last_assigned = r.get("last_interview_assigned_date") or ""
+                        last_updated = r.get("last_interview_updated_at") or ""
+
+                        writer.writerow([
+                            r.get("candidate_id") or "", r.get("id") or "", cand_name, cand_email, cand_phone,
+                            cand_role, cand_exp, cand_loc, pri_skills, sec_skills, edu,
+                            ai_score, score_label, rec, summary,
+                            s3_url, orig_fn, fp, up_date,
+                            up_name, up_email, source, informer,
+                            inv_assigned, inv_st, last_assigned, last_updated
+                        ])
+
+                        if s3_url:
+                            try:
+                                resp = await client.get(s3_url)
+                                if resp.status_code == 200:
+                                    safe_filename = f"{idx+1}_{cand_name.replace(' ', '_')}_{orig_fn}"
+                                    zf.writestr(safe_filename, resp.content)
+                            except Exception as file_err:
+                                logger.warning(f"Could not fetch S3 file for {cand_name}: {file_err}")
+
+                zf.writestr("candidates_metadata.csv", csv_buffer.getvalue())
+
+            zip_buffer.seek(0)
+            return zip_buffer, "candidate_resumes_export.zip", "application/zip"
+
+        else:
+            csv_buffer = io.StringIO()
+            writer = csv.writer(csv_buffer)
+            writer.writerow([
+                "Candidate ID", "Database ID", "Full Name", "Email", "Phone",
+                "Designation / Role", "Total Experience (Yrs)", "Location",
+                "Primary Skills", "Secondary Skills", "Education",
+                "AI Tech Score", "Score Label", "AI Recommendation", "AI Summary",
+                "S3 Document URL", "Original Filename", "File Path", "Upload Date",
+                "Uploaded By Name", "Uploaded By Email", "Resume Source", "Resume Source Informer Name",
+                "Interview Assigned", "Interview Status", "Last Interview Assigned Date", "Last Interview Update Date"
+            ])
+
+            for idx, r in enumerate(resumes):
+                p = r.get("parsed_data") or {}
+                eval_info = r.get("ai_evaluation") or {}
+                cand_name = p.get("full_name") or p.get("name") or r.get("original_filename") or f"Candidate_{idx+1}"
+                cand_email = p.get("email") or ""
+                cand_phone = p.get("phone") or p.get("mobile") or ""
+                cand_role = p.get("designation") or p.get("role") or ""
+                cand_exp = p.get("total_experience_years") if p.get("total_experience_years") is not None else p.get("years_of_experience", "")
+                cand_loc = p.get("location") or ""
+                pri_skills = ", ".join(p.get("primary_skills") or p.get("skills") or [])
+                sec_skills = ", ".join(p.get("secondary_skills") or [])
+                edu = ", ".join([f"{e.get('degree','')} ({e.get('field_of_study','')})" for e in (p.get("education") or []) if isinstance(e, dict)])
+                ai_score = eval_info.get("ai_technical_score", "")
+                score_label = eval_info.get("score_label", "")
+                rec = eval_info.get("recommendation", "")
+                summary = (eval_info.get("summary") or "").replace("\n", " ")
+                s3_url = r.get("s3_url") or ""
+                orig_fn = r.get("original_filename") or ""
+                fp = r.get("file_path") or ""
+                up_date = r.get("upload_date") or ""
+                up_name = r.get("uploaded_by_name") or ""
+                up_email = r.get("uploaded_by_email") or ""
+                source = r.get("resume_source") or ""
+                informer = r.get("resume_source_informer_name") or ""
+                inv_assigned = "Yes" if r.get("interview_assigned") else "No"
+                inv_st = r.get("interview_status") or "NOT_ASSIGNED"
+                last_assigned = r.get("last_interview_assigned_date") or ""
+                last_updated = r.get("last_interview_updated_at") or ""
+
+                writer.writerow([
+                    r.get("candidate_id") or "", r.get("id") or "", cand_name, cand_email, cand_phone,
+                    cand_role, cand_exp, cand_loc, pri_skills, sec_skills, edu,
+                    ai_score, score_label, rec, summary,
+                    s3_url, orig_fn, fp, up_date,
+                    up_name, up_email, source, informer,
+                    inv_assigned, inv_st, last_assigned, last_updated
+                ])
+
+            stream = io.BytesIO(csv_buffer.getvalue().encode("utf-8-sig"))
+            return stream, "candidate_database_export.csv", "text/csv"

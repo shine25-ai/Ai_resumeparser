@@ -149,6 +149,34 @@ async def parsed_resume_summary(
 
 
 @router.get(
+    "/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export candidate database records and resume files",
+    description="Export candidate dataset containing all resume.py fields as a downloadable CSV report or ZIP archive with S3 resume files.",
+)
+async def export_resumes(
+    format: str = Query("csv", description="Export format: 'csv' or 'zip'"),
+    search: Optional[str] = Query(None, description="Search filter"),
+    name: Optional[str] = Query(None, description="Name filter"),
+    email: Optional[str] = Query(None, description="Email filter"),
+    role: Optional[str] = Query(None, description="Role filter"),
+    current_user: dict = Depends(get_current_active_user),
+    controller: ResumeController = Depends(get_resume_controller),
+):
+    is_admin = is_admin_or_staff(current_user)
+    return await controller.export_resumes(
+        user_id=current_user["id"],
+        export_format=format,
+        search=search,
+        name=name,
+        email=email,
+        role=role,
+        is_admin=is_admin,
+    )
+
+
+
+@router.get(
     "/{resume_id}",
     status_code=status.HTTP_200_OK,
     summary="Get resume details",

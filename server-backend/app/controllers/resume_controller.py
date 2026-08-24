@@ -4,7 +4,7 @@ Resume controller handling HTTP requests for resume upload, retrieval, text extr
 
 from typing import Optional
 from fastapi import UploadFile, status, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from app.schemas.resume import ResumeUpdateRequest
 from app.services.resume_service import ResumeService
 from app.utils.response import success_response
@@ -185,3 +185,30 @@ class ResumeController:
             data=logs_response.model_dump(),
             message="Resume logs retrieved successfully.",
         )
+
+    async def export_resumes(
+        self,
+        user_id: str,
+        export_format: str = "csv",
+        search: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        role: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> Response:
+        """Export candidate database records and resume files as CSV or ZIP."""
+        stream, filename, media_type = await self.resume_service.export_resumes(
+            user_id=user_id,
+            export_format=export_format,
+            search=search,
+            name=name,
+            email=email,
+            role=role,
+            is_admin=is_admin,
+        )
+        return Response(
+            content=stream.getvalue(),
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+

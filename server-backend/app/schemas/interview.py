@@ -13,6 +13,8 @@ class SkillRatingItem(BaseModel):
     skill_name: str
     rating: float = Field(0.0, ge=0.0, le=10.0, description="Skill rating out of 5 or 10 stars")
     category: Optional[str] = None
+    evaluator_name: Optional[str] = None
+    evaluator_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -35,6 +37,9 @@ class InterviewerFeedbackItem(BaseModel):
     interviewer_id: Optional[str] = None
     interviewer_name: str
     interviewer_email: Optional[str] = None
+    evaluator_user_id: Optional[str] = None
+    evaluator_name: Optional[str] = None
+    evaluator_email: Optional[str] = None
     rating: Optional[float] = Field(None, ge=0.0, le=10.0, description="Rating score out of 5 or 10")
     feedback: Optional[str] = None
     strengths: List[str] = Field(default_factory=list)
@@ -55,6 +60,9 @@ class ClientFeedbackItem(BaseModel):
     client_id: Optional[str] = None
     client_name: str
     client_email: Optional[str] = None
+    evaluator_user_id: Optional[str] = None
+    evaluator_name: Optional[str] = None
+    evaluator_email: Optional[str] = None
     client_rating: Optional[float] = Field(None, ge=0.0, le=10.0, description="Client Rating score out of 5 or 10")
     client_feedback: Optional[str] = None
     client_strengths: List[str] = Field(default_factory=list)
@@ -311,6 +319,12 @@ class InterviewFeedbackRequest(BaseModel):
     interviewers: Optional[List[InterviewerFeedbackItem]] = Field(default_factory=list)
     clients: Optional[List[ClientFeedbackItem]] = Field(default_factory=list)
 
+    # Evaluator / Logged-in User Information
+    evaluator_user_id: Optional[str] = None
+    evaluator_name: Optional[str] = None
+    evaluator_email: Optional[str] = None
+    evaluator_role: Optional[str] = None
+
     # Extensible fields updated during feedback/outcome phase
     candidate_requested_date_time: Optional[str] = None
     candidate_requested_date: Optional[str] = None
@@ -426,6 +440,15 @@ class InterviewResponse(BaseModel):
     email_sent_count: Optional[int] = 0
     last_email_sent_at: Optional[str] = None
     email_sent_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+    evaluator_user_id: Optional[str] = None
+    evaluator_name: Optional[str] = None
+    evaluator_email: Optional[str] = None
+    evaluator_role: Optional[str] = None
+    last_feedback_submitted_by_id: Optional[str] = None
+    last_feedback_submitted_by_name: Optional[str] = None
+    last_feedback_submitted_by_email: Optional[str] = None
+    last_feedback_submitted_at: Optional[str] = None
 
     created_by: Optional[str] = None
     updated_by: Optional[str] = None

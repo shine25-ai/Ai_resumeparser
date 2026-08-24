@@ -325,6 +325,36 @@ export const matchResumes = async (params: MatchFilterParams = {}) => {
   return resData.data || resData;
 };
 
+export const exportResumesApi = async (format: "csv" | "zip" = "csv", filters: any = {}) => {
+  const token = localStorage.getItem("access_token") || "";
+  const queryParts: string[] = [`format=${format}`];
+  if (filters.search) queryParts.push(`search=${encodeURIComponent(filters.search)}`);
+  if (filters.name) queryParts.push(`name=${encodeURIComponent(filters.name)}`);
+  if (filters.email) queryParts.push(`email=${encodeURIComponent(filters.email)}`);
+  if (filters.role) queryParts.push(`role=${encodeURIComponent(filters.role)}`);
+
+  const response = await fetch(`${RESUME_LIST}/export?${queryParts.join("&")}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to export candidate records.");
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = format === "zip" ? "candidate_resumes_export.zip" : "candidate_database_export.csv";
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+};
+
 export const getParsedResumeSummary = async (skip: number = 0, limit: number = 100) => {
   const token = localStorage.getItem("access_token") || "";
   const response = await fetch(`${RESUME_SUMMARY}?skip=${skip}&limit=${limit}`, {

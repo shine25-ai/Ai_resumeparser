@@ -315,13 +315,31 @@ class InterviewRepository(BaseRepository):
         interview_location: Optional[str] = None,
         meeting_link: Optional[str] = None,
         meeting_platform: Optional[str] = None,
+        evaluator_user_id: Optional[str] = None,
+        evaluator_name: Optional[str] = None,
+        evaluator_email: Optional[str] = None,
+        evaluator_role: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update feedback (interviewer round and/or client feedback) for an interview document."""
+        now_iso = utc_now().isoformat()
         update_data: Dict[str, Any] = {
             "status": InterviewStatus.COMPLETED.value,
             "updated_by": updated_by,
-            "updated_at": utc_now().isoformat(),
+            "updated_at": now_iso,
         }
+
+        if evaluator_user_id:
+            update_data["evaluator_user_id"] = evaluator_user_id
+            update_data["last_feedback_submitted_by_id"] = evaluator_user_id
+        if evaluator_name:
+            update_data["evaluator_name"] = evaluator_name
+            update_data["last_feedback_submitted_by_name"] = evaluator_name
+        if evaluator_email:
+            update_data["evaluator_email"] = evaluator_email
+            update_data["last_feedback_submitted_by_email"] = evaluator_email
+        if evaluator_role:
+            update_data["evaluator_role"] = evaluator_role
+        update_data["last_feedback_submitted_at"] = now_iso
 
         if interviewers is not None:
             update_data["interviewers"] = interviewers

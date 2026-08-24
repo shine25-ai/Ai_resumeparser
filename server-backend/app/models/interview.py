@@ -109,7 +109,16 @@ class InterviewDocument(BaseModel):
     last_email_sent_at: Optional[str] = None
     email_sent_history: List[Dict[str, Any]] = Field(default_factory=list)
 
-    # Audit Fields
+    # Audit & Evaluator Submission Fields
+    evaluator_user_id: Optional[str] = None
+    evaluator_name: Optional[str] = None
+    evaluator_email: Optional[str] = None
+    evaluator_role: Optional[str] = None
+    last_feedback_submitted_by_id: Optional[str] = None
+    last_feedback_submitted_by_name: Optional[str] = None
+    last_feedback_submitted_by_email: Optional[str] = None
+    last_feedback_submitted_at: Optional[str] = None
+
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
 
