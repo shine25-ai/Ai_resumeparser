@@ -36,6 +36,10 @@ class ResumeDocument(BaseModel):
     resume_source_informer_name: Optional[str] = None
     upload_date: str = Field(default_factory=lambda: utc_now().isoformat())
     status: ResumeStatus = ResumeStatus.PENDING
+    interview_assigned: bool = False
+    interview_status: Optional[str] = "NOT_ASSIGNED"
+    last_interview_assigned_date: Optional[str] = None
+    latest_interview: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert pydantic model to dictionary for MongoDB operations."""
