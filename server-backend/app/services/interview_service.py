@@ -18,6 +18,7 @@ from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
     CandidateFullHistoryResponse,
     InterviewBatchCreateRequest,
+    InterviewCancelRequest,
     InterviewCheckConflictRequest,
     InterviewCheckConflictResponse,
     InterviewCreateRequest,
@@ -1047,5 +1048,49 @@ class InterviewService:
             "has_active_interview": False,
             "message": "Candidate has no active pending interviews."
         }
+
+    async def cancel_interview(
+        self,
+        interview_id: str,
+        payload: InterviewCancelRequest,
+        updated_by: Optional[str] = None,
+    ) -> InterviewResponse:
+        """Cancel an interview session with optional cancellation reason and email dispatch."""
+        existing = await self.interview_repo.get_by_id(interview_id)
+        if not existing:
+            raise NotFoundError("Interview not found.")
+
+        reason_str = payload.reason.strip() if payload.reason and payload.reason.strip() else None
+
+        update_fields: Dict[str, Any] = {
+            "status": InterviewStatus.CANCELLED,
+            "updated_by": updated_by,
+            "updated_at": utc_now().isoformat(),
+        }
+        if reason_str:
+            existing_notes = existing.get("notes") or ""
+            cancellation_note = f"[CANCELLED REASON]: {reason_str}"
+            update_fields["notes"] = f"{existing_notes}\n{cancellation_note}".strip() if existing_notes else cancellation_note
+
+        updated_doc = await self.interview_repo.update(interview_id, update_fields)
+
+        if payload.send_email:
+            try:
+                candidate_email = existing.get("candidate_email")
+                interviewer_email = existing.get("interviewer_email")
+                email_payload = SendInterviewEmailRequest(
+                    send_to_candidate=True if candidate_email else False,
+                    candidate_email=candidate_email,
+                    send_to_interviewer=True if interviewer_email else False,
+                    interviewer_email=interviewer_email,
+                    custom_notes=f"Interview Session Cancelled. Reason: {reason_str or 'No reason specified'}",
+                )
+                await self.send_interview_email(interview_id, email_payload)
+            except Exception as e:
+                logger.warning(f"Interview cancelled successfully but failed to dispatch cancellation email: {e}")
+
+        logger.info(f"Cancelled interview ID '{interview_id}'")
+        return InterviewResponse.model_validate(updated_doc)
+
 
 

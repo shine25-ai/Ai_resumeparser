@@ -788,13 +788,14 @@ export default function JDMatch() {
                 <th className="py-3 px-3.5">Experience & Location</th>
                 <th className="py-3 px-3.5">Primary Skills</th>
                 <th className="py-3 px-3.5">AI Tech Score</th>
+                <th className="py-3 px-3.5">Last Interview Date</th>
                 <th className="py-3 px-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
+                  <td colSpan={7} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw size={16} className="animate-spin text-indigo-600" />
                       <span>Fetching matched candidates from backend API...</span>
@@ -803,7 +804,7 @@ export default function JDMatch() {
                 </tr>
               ) : matchedResumes.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
+                  <td colSpan={7} className="py-12 text-center text-slate-500">
                     No matching candidate records found. Try adjusting filter parameters.
                   </td>
                 </tr>
@@ -890,6 +891,41 @@ export default function JDMatch() {
                           }`}>
                           {score}%
                         </span>
+                      </td>
+
+                      {/* Last Interview Update Date */}
+                      <td className="py-3.5 px-3.5">
+                        {row.interview_assigned || row.last_interview_assigned_date || row.last_interview_updated_at || row.latest_interview ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-slate-800">
+                              <Calendar size={13} className="text-indigo-600 flex-shrink-0" />
+                              <span>
+                                {row.last_interview_updated_at
+                                  ? row.last_interview_updated_at.includes("T")
+                                    ? new Date(row.last_interview_updated_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                                    : row.last_interview_updated_at
+                                  : row.last_interview_assigned_date
+                                    ? row.last_interview_assigned_date.includes("T")
+                                      ? new Date(row.last_interview_assigned_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                                      : row.last_interview_assigned_date
+                                    : row.latest_interview?.scheduled_date || "N/A"}
+                              </span>
+                            </div>
+                            {row.interview_status && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border inline-block ${
+                                row.interview_status === "COMPLETED"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : row.interview_status === "SCHEDULED" || row.interview_status === "ASSIGNED"
+                                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                                    : "bg-slate-100 text-slate-600 border-slate-200"
+                              }`}>
+                                {row.interview_status}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-slate-400">Not Assigned</span>
+                        )}
                       </td>
 
                       {/* Actions */}

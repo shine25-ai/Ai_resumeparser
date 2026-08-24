@@ -3,7 +3,7 @@ Pydantic schemas for Resume entity, upload responses, text extraction, and metad
 """
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from app.utils.enums import ResumeStatus
 
 
@@ -62,7 +62,9 @@ class ResumeResponse(BaseModel):
     interview_assigned: Optional[bool] = False
     interview_status: Optional[str] = "NOT_ASSIGNED"
     last_interview_assigned_date: Optional[str] = None
+    last_interview_updated_at: Optional[str] = None
     latest_interview: Optional[Dict[str, Any]] = None
+    interviews: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
