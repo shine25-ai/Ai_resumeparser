@@ -441,10 +441,12 @@ class ResumeService:
             if valid_invs:
                 latest = valid_invs[0]
                 assigned_date = latest.get("scheduled_date") or latest.get("created_at")
+                updated_date = latest.get("updated_at") or latest.get("scheduled_date") or latest.get("created_at")
 
                 r["interview_assigned"] = True
                 r["interview_status"] = str(latest.get("status") or "ASSIGNED").upper()
                 r["last_interview_assigned_date"] = assigned_date
+                r["last_interview_updated_at"] = updated_date
 
                 # Return full interview document dicts without Mongo _id
                 latest_clean = dict(latest)
@@ -461,6 +463,7 @@ class ResumeService:
                 r["interview_assigned"] = False
                 r["interview_status"] = "NOT_ASSIGNED"
                 r["last_interview_assigned_date"] = None
+                r["last_interview_updated_at"] = None
                 r["latest_interview"] = None
                 r["interviews"] = []
 
