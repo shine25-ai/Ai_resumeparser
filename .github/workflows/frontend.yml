@@ -31,8 +31,9 @@ jobs:
 
       - name: Verify Build
         run: |
-          ls -la dist
-          find dist -maxdepth 2 -type f | head -30
+          echo "===== BUILD FILES ====="
+          ls -lah dist
+          find dist -maxdepth 2 -type f
 
       - name: Deploy Frontend
         uses: appleboy/scp-action@v0.1.7
@@ -45,9 +46,8 @@ jobs:
           target: "/var/www/resumeparser"
           strip_components: 1
           overwrite: true
-          rm: true
 
-      - name: Set Permissions & Reload Nginx
+      - name: Verify Server Files
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -55,9 +55,21 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
           script: |
-            sudo chown -R www-data:www-data /var/www/resumeparser
-            sudo find /var/www/resumeparser -type d -exec chmod 755 {} \;
-            sudo find /var/www/resumeparser -type f -exec chmod 644 {} \;
+            set -e
 
+            echo "===== SERVER DIRECTORY ====="
+            ls -lah /var/www/resumeparser
+
+            echo "===== INDEX FILE ====="
+            ls -lah /var/www/resumeparser/index.html
+
+            echo "===== INDEX MODIFIED TIME ====="
+            stat /var/www/resumeparser/index.html
+
+            echo "===== NGINX TEST ====="
             sudo nginx -t
+
+            echo "===== RELOADING NGINX ====="
             sudo systemctl reload nginx
+
+            echo "===== DEPLOYMENT COMPLETED ====="
