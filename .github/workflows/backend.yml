@@ -1,77 +1,77 @@
-name: Deploy Resume Parser Backend
+- name: Install Dependencies & Restart
+  uses: appleboy/ssh-action@v1.0.3
+  with:
+    host: ${{ secrets.SERVER_HOST }}
+    username: ${{ secrets.SERVER_USER }}
+    key: ${{ secrets.SERVER_SSH_KEY }}
+    port: 22
+    script: |
+      set -e
 
-on:
-  push:
-    branches:
-      - development
+      echo "===== NODE ====="
+      which node
+      node -v
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+      echo "===== NPM ====="
+      which npm
+      npm -v
 
-    steps:
-      - name: Checkout Source
-        uses: actions/checkout@v4
+      echo "===== PM2 ====="
 
-      - name: Upload Backend
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          source: "server-backend/"
-          target: "/root/ai_resume/Ai_resumeparser/"
-          overwrite: true
+      export PATH="$PATH:/usr/local/bin:/usr/bin:/root/.npm-global/bin:/root/.nvm/versions/node/*/bin"
 
-      - name: Install Dependencies & Restart
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          script: |
-            set -e
+      if ! command -v pm2 >/dev/null 2>&1; then
+        echo "PM2 not found in PATH"
+        echo "Searching for PM2..."
 
-            cd /root/ai_resume/Ai_resumeparser/server-backend
+        PM2_PATH=$(find /root /usr/local /usr -type f -name pm2 -perm -111 2>/dev/null | head -1 || true)
 
-            echo "Current directory:"
-            pwd
+        if [ -n "$PM2_PATH" ]; then
+          export PATH="$(dirname "$PM2_PATH"):$PATH"
+        fi
+      fi
 
-            echo "Latest files:"
-            ls -lah
+      command -v pm2
+      pm2 -v
 
-            if [ ! -d "venv" ]; then
-              python3 -m venv venv
-            fi
+      cd /root/ai_resume/Ai_resumeparser/server-backend
 
-            source venv/bin/activate
+      echo "===== BACKEND DIRECTORY ====="
+      pwd
+      ls -lah
 
-            pip install --upgrade pip
-            pip install -r requirements.txt
+      echo "===== PYTHON ENVIRONMENT ====="
 
-            echo "Restarting PM2..."
+      if [ ! -d "venv" ]; then
+        python3 -m venv venv
+      fi
 
-            pm2 delete python-app || true
+      source venv/bin/activate
 
-            pm2 start ./venv/bin/uvicorn \
-              --interpreter none \
-              --name python-app \
-              -- app.main:app \
-              --host 0.0.0.0 \
-              --port 8012
+      python --version
+      pip --version
 
-            pm2 save
+      pip install --upgrade pip
+      pip install -r requirements.txt
 
-            echo "PM2 status:"
-            pm2 status
+      echo "===== RESTARTING PM2 ====="
 
-            echo "Testing API..."
-            sleep 3
-            curl -I http://127.0.0.1:8012 || true
+      pm2 delete python-app || true
 
-            echo "Reloading Nginx..."
-            sudo systemctl reload nginx
+      pm2 start ./venv/bin/uvicorn \
+        --interpreter none \
+        --name python-app \
+        -- app.main:app \
+        --host 0.0.0.0 \
+        --port 8012
 
-            echo "Deployment completed successfully."
+      pm2 save
+
+      echo "===== PM2 STATUS ====="
+      pm2 status
+
+      echo "===== API TEST ====="
+      sleep 3
+      curl -f http://127.0.0.1:8012 || true
+
+      echo "===== DEPLOYMENT COMPLETED ====="
