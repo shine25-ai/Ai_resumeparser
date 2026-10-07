@@ -1,251 +1,529 @@
-name: Deploy Resume Parser Backend
+#!/bin/bash
 
-on:
-  push:
-    branches:
-      - development
+# ============================================================
+# AI RESUME PARSER - FULL DEPLOYMENT SCRIPT
+# ============================================================
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+set -e
 
-    steps:
-      # ==========================================
-      # Checkout Source
-      # ==========================================
-      - name: Checkout Source
-        uses: actions/checkout@v4
+APP_NAME="python-app"
+APP_DIR="/root/ai_resume/Ai_resumeparser/server-backend"
+VENV="$APP_DIR/venv"
+PORT="8012"
+HOST="0.0.0.0"
 
-      # ==========================================
-      # Upload Backend
-      # ==========================================
-      - name: Upload Backend
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          source: "server-backend/*"
-          target: "/root/ai_resume/Ai_resumeparser"
-          strip_components: 1
-          overwrite: true
+echo ""
+echo "============================================================"
+echo "🚀 AI RESUME PARSER DEPLOYMENT STARTED"
+echo "============================================================"
+echo ""
 
-      # ==========================================
-      # Install Dependencies & Restart Backend
-      # ==========================================
-      - name: Install Dependencies & Restart
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          script: |
-            set -e
+# ============================================================
+# 1. LOAD NVM
+# ============================================================
 
-            echo "=========================================="
-            echo "STARTING BACKEND DEPLOYMENT"
-            echo "=========================================="
+echo "------------------------------------------------------------"
+echo "1. Loading NVM"
+echo "------------------------------------------------------------"
 
-            # ------------------------------------------
-            # Load NVM
-            # ------------------------------------------
-            export NVM_DIR="$HOME/.nvm"
+export NVM_DIR="$HOME/.nvm"
 
-            if [ -s "$NVM_DIR/nvm.sh" ]; then
-              echo "Loading NVM..."
-              source "$NVM_DIR/nvm.sh"
-            fi
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+else
+    echo "⚠️ NVM not found at $NVM_DIR"
+fi
 
-            # ------------------------------------------
-            # Select Node version
-            # ------------------------------------------
-            if command -v nvm >/dev/null 2>&1; then
-              nvm use 22 || true
-            fi
+# Use Node 22
+if command -v nvm >/dev/null 2>&1; then
+    nvm use 22
+else
+    echo "⚠️ nvm command not available"
+fi
 
-            # ------------------------------------------
-            # Node information
-            # ------------------------------------------
-            echo "Node:"
-            node -v || true
+echo "Node: $(node -v 2>/dev/null || echo 'Not Found')"
+echo "NPM:  $(npm -v 2>/dev/null || echo 'Not Found')"
 
-            echo "NPM:"
-            npm -v || true
+echo ""
 
-            # ------------------------------------------
-            # Fix PM2 PATH
-            # ------------------------------------------
-            export PATH="$PATH:/usr/local/bin:/usr/bin"
+# ============================================================
+# 2. FIND PM2
+# ============================================================
 
-            if [ -d "$HOME/.nvm" ]; then
-              find "$HOME/.nvm/versions/node" -type d -path "*/bin" 2>/dev/null | while read NODE_BIN
-              do
-                export PATH="$NODE_BIN:$PATH"
-              done
-            fi
+echo "------------------------------------------------------------"
+echo "2. Checking PM2"
+echo "------------------------------------------------------------"
 
-            echo "PM2 location:"
-            command -v pm2 || true
+PM2="$(command -v pm2 || true)"
 
-            # ------------------------------------------
-            # Check PM2
-            # ------------------------------------------
-            if ! command -v pm2 >/dev/null 2>&1; then
-              echo "PM2 not found."
+if [ -z "$PM2" ]; then
 
-              echo "Searching for PM2..."
+    # Try NVM paths
+    PM2="$(find "$NVM_DIR" -type f -name pm2 2>/dev/null | head -1 || true)"
 
-              PM2_PATH=$(find /root /usr/local /usr \
-                -type f \
-                -name pm2 \
-                -perm -111 \
-                2>/dev/null | head -1 || true)
+fi
 
-              if [ -n "$PM2_PATH" ]; then
-                echo "PM2 found at:"
-                echo "$PM2_PATH"
+if [ -z "$PM2" ]; then
+    echo "❌ PM2 not found"
+    exit 1
+fi
 
-                export PATH="$(dirname "$PM2_PATH"):$PATH"
-              fi
-            fi
+echo "PM2 Path: $PM2"
+echo "PM2 Version: $($PM2 -v)"
 
-            # ------------------------------------------
-            # Final PM2 check
-            # ------------------------------------------
-            if ! command -v pm2 >/dev/null 2>&1; then
-              echo "ERROR: PM2 is not installed or cannot be found."
-              exit 1
-            fi
+echo ""
 
-            echo "PM2:"
-            pm2 -v
+# ============================================================
+# 3. CHECK APPLICATION DIRECTORY
+# ============================================================
 
-            # ------------------------------------------
-            # Backend directory
-            # ------------------------------------------
-            cd /root/ai_resume/Ai_resumeparser/server-backend
+echo "------------------------------------------------------------"
+echo "3. Checking Application Directory"
+echo "------------------------------------------------------------"
 
-            echo "=========================================="
-            echo "BACKEND DIRECTORY"
-            echo "=========================================="
+if [ ! -d "$APP_DIR" ]; then
+    echo "❌ Application directory does not exist:"
+    echo "$APP_DIR"
+    exit 1
+fi
 
-            pwd
-            ls -lah
+cd "$APP_DIR"
 
-            # ------------------------------------------
-            # Python virtual environment
-            # ------------------------------------------
-            echo "=========================================="
-            echo "PYTHON ENVIRONMENT"
-            echo "=========================================="
+echo "Application Directory:"
+echo "$APP_DIR"
 
-            if [ ! -d "venv" ]; then
-              echo "Creating virtual environment..."
-              python3 -m venv venv
-            fi
+echo ""
 
-            source venv/bin/activate
+# ============================================================
+# 4. CHECK ENV FILE
+# ============================================================
 
-            echo "Python:"
-            python --version
+echo "------------------------------------------------------------"
+echo "4. Checking Environment"
+echo "------------------------------------------------------------"
 
-            echo "Pip:"
-            pip --version
+if [ ! -f "$APP_DIR/.env" ]; then
+    echo "❌ .env file not found"
+    echo "Expected:"
+    echo "$APP_DIR/.env"
+    exit 1
+fi
 
-            # ------------------------------------------
-            # Install dependencies
-            # ------------------------------------------
-            echo "=========================================="
-            echo "INSTALLING PYTHON DEPENDENCIES"
-            echo "=========================================="
+echo "✅ .env file exists"
 
-            pip install --upgrade pip
-            pip install -r requirements.txt
+# Do NOT print the actual DATABASE_URL.
+if grep -q "^DATABASE_URL=" "$APP_DIR/.env"; then
+    echo "✅ DATABASE_URL found"
+else
+    echo "❌ DATABASE_URL is missing from .env"
+    exit 1
+fi
 
-            # ------------------------------------------
-            # Stop existing PM2 application
-            # ------------------------------------------
-            echo "=========================================="
-            echo "STOPPING OLD APPLICATION"
-            echo "=========================================="
+echo ""
 
-            pm2 delete python-app || true
+# ============================================================
+# 5. CREATE VIRTUAL ENVIRONMENT
+# ============================================================
 
-            # ------------------------------------------
-            # Start FastAPI
-            # ------------------------------------------
-            echo "=========================================="
-            echo "STARTING FASTAPI"
-            echo "=========================================="
+echo "------------------------------------------------------------"
+echo "5. Checking Python Virtual Environment"
+echo "------------------------------------------------------------"
 
-            pm2 start ./venv/bin/uvicorn \
-              --interpreter none \
-              --name python-app \
-              -- \
-              app.main:app \
-              --host 0.0.0.0 \
-              --port 8012
+if [ ! -d "$VENV" ]; then
 
-            # ------------------------------------------
-            # Save PM2
-            # ------------------------------------------
-            pm2 save
+    echo "Virtual environment not found."
+    echo "Creating venv..."
 
-            # ------------------------------------------
-            # PM2 Status
-            # ------------------------------------------
-            echo "=========================================="
-            echo "PM2 STATUS"
-            echo "=========================================="
+    python3 -m venv "$VENV"
 
-            pm2 status
+    echo "✅ Virtual environment created"
 
-            # ------------------------------------------
-            # Wait for application
-            # ------------------------------------------
-            echo "Waiting for backend..."
-            sleep 5
+else
 
-            # ------------------------------------------
-            # Check port
-            # ------------------------------------------
-            echo "=========================================="
-            echo "PORT 8012 CHECK"
-            echo "=========================================="
+    echo "✅ Virtual environment already exists"
 
-            if curl -f http://127.0.0.1:8012 >/dev/null 2>&1; then
-              echo "Backend is running on port 8012."
-            else
-              echo "WARNING: Backend did not respond on port 8012."
-              pm2 logs python-app --lines 50 --nostream || true
-              exit 1
-            fi
+fi
 
-            # ------------------------------------------
-            # Nginx test
-            # ------------------------------------------
-            echo "=========================================="
-            echo "NGINX TEST"
-            echo "=========================================="
+# Activate venv
+source "$VENV/bin/activate"
 
-            sudo nginx -t
+echo "Python: $(python --version)"
+echo "Python Path: $(which python)"
 
-            # ------------------------------------------
-            # Reload Nginx
-            # ------------------------------------------
-            echo "Reloading Nginx..."
+echo ""
 
-            sudo systemctl reload nginx
+# ============================================================
+# 6. UPGRADE PIP
+# ============================================================
 
-            # ------------------------------------------
-            # Final verification
-            # ------------------------------------------
-            echo "=========================================="
-            echo "DEPLOYMENT COMPLETED"
-            echo "=========================================="
+echo "------------------------------------------------------------"
+echo "6. Updating pip"
+echo "------------------------------------------------------------"
 
-            pm2 status
+python -m pip install --upgrade pip
 
-            echo "Backend deployment successful."
+echo ""
+
+# ============================================================
+# 7. INSTALL REQUIREMENTS
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "7. Installing Python Dependencies"
+echo "------------------------------------------------------------"
+
+if [ ! -f "$APP_DIR/requirements.txt" ]; then
+    echo "❌ requirements.txt not found"
+    exit 1
+fi
+
+python -m pip install -r requirements.txt
+
+echo "✅ Python dependencies installed"
+
+echo ""
+
+# ============================================================
+# 8. TEST MONGODB CONNECTION
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "8. Testing MongoDB Connection"
+echo "------------------------------------------------------------"
+
+python - <<'PY'
+from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
+import sys
+
+load_dotenv()
+
+database_url = os.getenv("DATABASE_URL")
+
+if not database_url:
+    print("❌ DATABASE_URL is not configured")
+    sys.exit(1)
+
+try:
+
+    client = MongoClient(
+        database_url,
+        serverSelectionTimeoutMS=10000
+    )
+
+    result = client.admin.command("ping")
+
+    if result.get("ok") == 1:
+        print("✅ MongoDB connection successful")
+        print("MongoDB ping:", result)
+
+    else:
+        print("❌ MongoDB ping failed")
+        print(result)
+        sys.exit(1)
+
+    client.close()
+
+except Exception as e:
+
+    print("❌ MongoDB connection failed")
+    print(str(e))
+    sys.exit(1)
+
+PY
+
+echo ""
+
+# ============================================================
+# 9. TEST FASTAPI IMPORT
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "9. Testing FastAPI Application"
+echo "------------------------------------------------------------"
+
+python - <<'PY'
+try:
+
+    from app.main import app
+
+    print("✅ FastAPI application imported successfully")
+    print("App:", app)
+
+except Exception as e:
+
+    print("❌ FastAPI application import failed")
+    print(str(e))
+
+    raise
+
+PY
+
+echo ""
+
+# ============================================================
+# 10. CHECK PORT
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "10. Checking Port $PORT"
+echo "------------------------------------------------------------"
+
+if command -v lsof >/dev/null 2>&1; then
+
+    if lsof -i :"$PORT" >/dev/null 2>&1; then
+
+        echo "⚠️ Port $PORT is currently in use"
+
+        lsof -i :"$PORT" || true
+
+    else
+
+        echo "✅ Port $PORT is available"
+
+    fi
+
+fi
+
+echo ""
+
+# ============================================================
+# 11. STOP OLD PM2 APPLICATION
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "11. Stopping Existing PM2 Application"
+echo "------------------------------------------------------------"
+
+$PM2 delete "$APP_NAME" || true
+
+echo "✅ Old PM2 application removed"
+
+echo ""
+
+# ============================================================
+# 12. START FASTAPI WITH PM2
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "12. Starting FastAPI"
+echo "------------------------------------------------------------"
+
+$PM2 start "$VENV/bin/uvicorn" \
+    --interpreter none \
+    --name "$APP_NAME" \
+    -- \
+    app.main:app \
+    --host "$HOST" \
+    --port "$PORT"
+
+echo "✅ FastAPI started"
+
+echo ""
+
+# ============================================================
+# 13. SAVE PM2 PROCESS
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "13. Saving PM2 Process"
+echo "------------------------------------------------------------"
+
+$PM2 save
+
+echo "✅ PM2 process saved"
+
+echo ""
+
+# ============================================================
+# 14. WAIT FOR APPLICATION
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "14. Waiting for Application"
+echo "------------------------------------------------------------"
+
+sleep 8
+
+echo "Application status:"
+
+$PM2 status "$APP_NAME"
+
+echo ""
+
+# ============================================================
+# 15. CHECK PM2 PROCESS
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "15. Checking PM2 Process"
+echo "------------------------------------------------------------"
+
+PM2_STATUS="$($PM2 jlist 2>/dev/null | python -c '
+import sys
+import json
+
+try:
+    data = json.load(sys.stdin)
+
+    for process in data:
+        if process.get("name") == "python-app":
+            print(process.get("pm2_env", {}).get("status", "unknown"))
+            break
+    else:
+        print("not_found")
+
+except Exception:
+    print("unknown")
+')"
+
+echo "PM2 Status: $PM2_STATUS"
+
+if [ "$PM2_STATUS" != "online" ]; then
+
+    echo ""
+    echo "❌ PM2 application is not online"
+
+    echo ""
+    echo "========== PM2 LOGS =========="
+
+    $PM2 logs "$APP_NAME" \
+        --lines 100 \
+        --nostream || true
+
+    exit 1
+
+fi
+
+echo "✅ PM2 application is online"
+
+echo ""
+
+# ============================================================
+# 16. CHECK LOCAL BACKEND
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "16. Checking Backend Port $PORT"
+echo "------------------------------------------------------------"
+
+HEALTH_CHECK_SUCCESS=false
+
+# Try root endpoint
+if curl -fsS \
+    --max-time 10 \
+    "http://127.0.0.1:$PORT/" \
+    >/tmp/python_app_health_response.txt 2>/tmp/python_app_health_error.txt; then
+
+    HEALTH_CHECK_SUCCESS=true
+
+fi
+
+# If root endpoint fails, try /docs
+if [ "$HEALTH_CHECK_SUCCESS" = false ]; then
+
+    if curl -fsS \
+        --max-time 10 \
+        "http://127.0.0.1:$PORT/docs" \
+        >/tmp/python_app_health_response.txt 2>/tmp/python_app_health_error.txt; then
+
+        HEALTH_CHECK_SUCCESS=true
+
+    fi
+
+fi
+
+if [ "$HEALTH_CHECK_SUCCESS" = true ]; then
+
+    echo "✅ Backend is responding on port $PORT"
+
+else
+
+    echo "❌ Backend did not respond on port $PORT"
+
+    echo ""
+    echo "Response error:"
+    cat /tmp/python_app_health_error.txt || true
+
+    echo ""
+    echo "========== PM2 STATUS =========="
+
+    $PM2 status "$APP_NAME" || true
+
+    echo ""
+    echo "========== PM2 LOGS =========="
+
+    $PM2 logs "$APP_NAME" \
+        --lines 100 \
+        --nostream || true
+
+    exit 1
+
+fi
+
+echo ""
+
+# ============================================================
+# 17. NGINX CONFIGURATION TEST
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "17. Testing Nginx Configuration"
+echo "------------------------------------------------------------"
+
+if sudo nginx -t; then
+
+    echo "✅ Nginx configuration is valid"
+
+else
+
+    echo "❌ Nginx configuration test failed"
+    exit 1
+
+fi
+
+echo ""
+
+# ============================================================
+# 18. RELOAD NGINX
+# ============================================================
+
+echo "------------------------------------------------------------"
+echo "18. Reloading Nginx"
+echo "------------------------------------------------------------"
+
+sudo systemctl reload nginx
+
+echo "✅ Nginx reloaded"
+
+echo ""
+
+# ============================================================
+# 19. FINAL STATUS
+# ============================================================
+
+echo "============================================================"
+echo "✅ DEPLOYMENT SUCCESSFUL"
+echo "============================================================"
+
+echo ""
+echo "Application : $APP_NAME"
+echo "Directory   : $APP_DIR"
+echo "Python      : $(python --version)"
+echo "Port        : $PORT"
+echo "PM2 Status  : $PM2_STATUS"
+echo "MongoDB     : Connected"
+echo "Nginx       : Reloaded"
+
+echo ""
+echo "============================================================"
+echo "🎉 AI RESUME PARSER DEPLOYMENT COMPLETED"
+echo "============================================================"
+echo ""
+
+# Cleanup temporary files
+rm -f /tmp/python_app_health_response.txt
+rm -f /tmp/python_app_health_error.txt
+
+exit 0
