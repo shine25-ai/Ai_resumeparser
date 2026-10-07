@@ -1,77 +1,251 @@
-- name: Install Dependencies & Restart
-  uses: appleboy/ssh-action@v1.0.3
-  with:
-    host: ${{ secrets.SERVER_HOST }}
-    username: ${{ secrets.SERVER_USER }}
-    key: ${{ secrets.SERVER_SSH_KEY }}
-    port: 22
-    script: |
-      set -e
+name: Deploy Resume Parser Backend
 
-      echo "===== NODE ====="
-      which node
-      node -v
+on:
+  push:
+    branches:
+      - development
 
-      echo "===== NPM ====="
-      which npm
-      npm -v
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      echo "===== PM2 ====="
+    steps:
+      # ==========================================
+      # Checkout Source
+      # ==========================================
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-      export PATH="$PATH:/usr/local/bin:/usr/bin:/root/.npm-global/bin:/root/.nvm/versions/node/*/bin"
+      # ==========================================
+      # Upload Backend
+      # ==========================================
+      - name: Upload Backend
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22
+          source: "server-backend/*"
+          target: "/root/ai_resume/Ai_resumeparser"
+          strip_components: 1
+          overwrite: true
 
-      if ! command -v pm2 >/dev/null 2>&1; then
-        echo "PM2 not found in PATH"
-        echo "Searching for PM2..."
+      # ==========================================
+      # Install Dependencies & Restart Backend
+      # ==========================================
+      - name: Install Dependencies & Restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
 
-        PM2_PATH=$(find /root /usr/local /usr -type f -name pm2 -perm -111 2>/dev/null | head -1 || true)
+            echo "=========================================="
+            echo "STARTING BACKEND DEPLOYMENT"
+            echo "=========================================="
 
-        if [ -n "$PM2_PATH" ]; then
-          export PATH="$(dirname "$PM2_PATH"):$PATH"
-        fi
-      fi
+            # ------------------------------------------
+            # Load NVM
+            # ------------------------------------------
+            export NVM_DIR="$HOME/.nvm"
 
-      command -v pm2
-      pm2 -v
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+              echo "Loading NVM..."
+              source "$NVM_DIR/nvm.sh"
+            fi
 
-      cd /root/ai_resume/Ai_resumeparser/server-backend
+            # ------------------------------------------
+            # Select Node version
+            # ------------------------------------------
+            if command -v nvm >/dev/null 2>&1; then
+              nvm use 22 || true
+            fi
 
-      echo "===== BACKEND DIRECTORY ====="
-      pwd
-      ls -lah
+            # ------------------------------------------
+            # Node information
+            # ------------------------------------------
+            echo "Node:"
+            node -v || true
 
-      echo "===== PYTHON ENVIRONMENT ====="
+            echo "NPM:"
+            npm -v || true
 
-      if [ ! -d "venv" ]; then
-        python3 -m venv venv
-      fi
+            # ------------------------------------------
+            # Fix PM2 PATH
+            # ------------------------------------------
+            export PATH="$PATH:/usr/local/bin:/usr/bin"
 
-      source venv/bin/activate
+            if [ -d "$HOME/.nvm" ]; then
+              find "$HOME/.nvm/versions/node" -type d -path "*/bin" 2>/dev/null | while read NODE_BIN
+              do
+                export PATH="$NODE_BIN:$PATH"
+              done
+            fi
 
-      python --version
-      pip --version
+            echo "PM2 location:"
+            command -v pm2 || true
 
-      pip install --upgrade pip
-      pip install -r requirements.txt
+            # ------------------------------------------
+            # Check PM2
+            # ------------------------------------------
+            if ! command -v pm2 >/dev/null 2>&1; then
+              echo "PM2 not found."
 
-      echo "===== RESTARTING PM2 ====="
+              echo "Searching for PM2..."
 
-      pm2 delete python-app || true
+              PM2_PATH=$(find /root /usr/local /usr \
+                -type f \
+                -name pm2 \
+                -perm -111 \
+                2>/dev/null | head -1 || true)
 
-      pm2 start ./venv/bin/uvicorn \
-        --interpreter none \
-        --name python-app \
-        -- app.main:app \
-        --host 0.0.0.0 \
-        --port 8012
+              if [ -n "$PM2_PATH" ]; then
+                echo "PM2 found at:"
+                echo "$PM2_PATH"
 
-      pm2 save
+                export PATH="$(dirname "$PM2_PATH"):$PATH"
+              fi
+            fi
 
-      echo "===== PM2 STATUS ====="
-      pm2 status
+            # ------------------------------------------
+            # Final PM2 check
+            # ------------------------------------------
+            if ! command -v pm2 >/dev/null 2>&1; then
+              echo "ERROR: PM2 is not installed or cannot be found."
+              exit 1
+            fi
 
-      echo "===== API TEST ====="
-      sleep 3
-      curl -f http://127.0.0.1:8012 || true
+            echo "PM2:"
+            pm2 -v
 
-      echo "===== DEPLOYMENT COMPLETED ====="
+            # ------------------------------------------
+            # Backend directory
+            # ------------------------------------------
+            cd /root/ai_resume/Ai_resumeparser/server-backend
+
+            echo "=========================================="
+            echo "BACKEND DIRECTORY"
+            echo "=========================================="
+
+            pwd
+            ls -lah
+
+            # ------------------------------------------
+            # Python virtual environment
+            # ------------------------------------------
+            echo "=========================================="
+            echo "PYTHON ENVIRONMENT"
+            echo "=========================================="
+
+            if [ ! -d "venv" ]; then
+              echo "Creating virtual environment..."
+              python3 -m venv venv
+            fi
+
+            source venv/bin/activate
+
+            echo "Python:"
+            python --version
+
+            echo "Pip:"
+            pip --version
+
+            # ------------------------------------------
+            # Install dependencies
+            # ------------------------------------------
+            echo "=========================================="
+            echo "INSTALLING PYTHON DEPENDENCIES"
+            echo "=========================================="
+
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            # ------------------------------------------
+            # Stop existing PM2 application
+            # ------------------------------------------
+            echo "=========================================="
+            echo "STOPPING OLD APPLICATION"
+            echo "=========================================="
+
+            pm2 delete python-app || true
+
+            # ------------------------------------------
+            # Start FastAPI
+            # ------------------------------------------
+            echo "=========================================="
+            echo "STARTING FASTAPI"
+            echo "=========================================="
+
+            pm2 start ./venv/bin/uvicorn \
+              --interpreter none \
+              --name python-app \
+              -- \
+              app.main:app \
+              --host 0.0.0.0 \
+              --port 8012
+
+            # ------------------------------------------
+            # Save PM2
+            # ------------------------------------------
+            pm2 save
+
+            # ------------------------------------------
+            # PM2 Status
+            # ------------------------------------------
+            echo "=========================================="
+            echo "PM2 STATUS"
+            echo "=========================================="
+
+            pm2 status
+
+            # ------------------------------------------
+            # Wait for application
+            # ------------------------------------------
+            echo "Waiting for backend..."
+            sleep 5
+
+            # ------------------------------------------
+            # Check port
+            # ------------------------------------------
+            echo "=========================================="
+            echo "PORT 8012 CHECK"
+            echo "=========================================="
+
+            if curl -f http://127.0.0.1:8012 >/dev/null 2>&1; then
+              echo "Backend is running on port 8012."
+            else
+              echo "WARNING: Backend did not respond on port 8012."
+              pm2 logs python-app --lines 50 --nostream || true
+              exit 1
+            fi
+
+            # ------------------------------------------
+            # Nginx test
+            # ------------------------------------------
+            echo "=========================================="
+            echo "NGINX TEST"
+            echo "=========================================="
+
+            sudo nginx -t
+
+            # ------------------------------------------
+            # Reload Nginx
+            # ------------------------------------------
+            echo "Reloading Nginx..."
+
+            sudo systemctl reload nginx
+
+            # ------------------------------------------
+            # Final verification
+            # ------------------------------------------
+            echo "=========================================="
+            echo "DEPLOYMENT COMPLETED"
+            echo "=========================================="
+
+            pm2 status
+
+            echo "Backend deployment successful."
