@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import SessionExpiredModal from "./components/SessionExpiredModal";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import CandidateDatabase from "./pages/CandidateDatabase";
@@ -24,6 +25,7 @@ export default function App() {
             path="/*"
             element={
               <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+                <SessionExpiredModal />
                 <Sidebar />
                 <main className="flex-1 overflow-y-auto relative pl-20 transition-all duration-300">
                   <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-slate-50 to-slate-50 -z-10" />

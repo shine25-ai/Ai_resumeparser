@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip, Clock, Sparkles, Cpu, Send, Brain, AlertCircle } from "lucide-react";
 import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS, SETTINGS_APP } from "../utils/Api";
+import { notifySessionExpired } from "../utils/session";
 
 export default function Upload() {
   const [isDragging, setIsDragging] = useState(false);
@@ -219,10 +220,7 @@ export default function Upload() {
 
         if (response.status === 401 || (resData.detail && typeof resData.detail === 'string' &&
           (resData.detail.toLowerCase().includes('token') || resData.detail.toLowerCase().includes('signature') || resData.detail.toLowerCase().includes('authentication')))) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user');
-          window.location.href = '/login';
+          notifySessionExpired();
           throw new Error('Session expired. Please log in again.');
         }
 
@@ -712,20 +710,6 @@ export default function Upload() {
                     Open Extracted Details Popup
                   </button>
                 </div>
-
-                {parsedResponse.s3_url && (
-                  <div className="text-xs flex items-center gap-2">
-                    <span className="text-slate-600 font-medium">S3 Link: </span>
-                    <a
-                      href={parsedResponse.s3_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-indigo-600 underline hover:text-indigo-800 break-all flex items-center gap-1"
-                    >
-                      {parsedResponse.s3_url} <ExternalLink size={12} />
-                    </a>
-                  </div>
-                )}
               </div>
             )}
           </div>

@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Lock, Mail, ArrowRight, Sparkles, CheckCircle2, ShieldCheck, AlertCircle } from "lucide-react";
 import { loginUser } from "../utils/Api";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,8 +24,8 @@ export default function Login() {
       localStorage.setItem("refresh_token", data.refresh_token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      // Navigate to dashboard
-      navigate("/");
+      // Return to the page the session expired on, otherwise the dashboard
+      navigate(location.state?.from || "/");
     } catch (err: any) {
       setError(err.message || "Failed to authenticate. Please try again.");
     } finally {

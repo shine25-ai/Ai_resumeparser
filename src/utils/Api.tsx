@@ -1,3 +1,5 @@
+import { notifySessionExpired } from "./session";
+
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
 
 export const RESUME_UPLOAD = `${BASE_URL}/resumes/upload`;
@@ -110,11 +112,8 @@ const handleAuthError = (response: Response, resData: any) => {
     message.includes("token") || message.includes("signature") || message.includes("authentication");
 
   if (isUnauthorized || isAuthError) {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
-    window.location.href = "/login";
-    throw new Error("Session expired. Redirecting to login...");
+    notifySessionExpired();
+    throw new Error("Session expired. Please log in again.");
   }
 };
 
