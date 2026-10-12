@@ -105,6 +105,9 @@ export default function InterviewDashboard() {
 
   // Archive Filter state for completed/past grid
   const [archiveFilter, setArchiveFilter] = useState<"ALL" | "COMPLETED" | "PAST" | "RESCHEDULE_REQUIRED">("ALL");
+  // Interview type filter ("ALL" or a type key) and score sort for completed/past grid
+  const [archiveTypeFilter, setArchiveTypeFilter] = useState<string>("ALL");
+  const [archiveSort, setArchiveSort] = useState<"DEFAULT" | "SCORE_DESC">("DEFAULT");
 
   // Candidate Details Modal state
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
@@ -229,31 +232,70 @@ export default function InterviewDashboard() {
     (item) => item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED"
   );
 
-  // 5. RESCHEDULE REQUIRED INTERVIEWS: recommendation / client_recommendation / ai_recommendation === "Reschedule Required"
-  const rescheduleRequiredInterviews = interviews.filter((item) => {
+  // Normalised interview type key: configured type code when matched, else the raw type string
+  const getArchiveTypeKey = (item: InterviewItem) => {
+    const raw = (item.interview_type || "TECHNICAL").toUpperCase();
+    const matched = interviewTypes.find(
+      (t) => (item.interview_type_id && t.id === item.interview_type_id) || t.code.toUpperCase() === raw
+    );
+    return matched ? matched.code.toUpperCase() : raw;
+  };
+
+  const isArchiveCompleted = (item: InterviewItem) => item.status === "COMPLETED";
+  const isArchivePast = (item: InterviewItem) =>
+    !!item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED";
+  const isArchiveRescheduleReq = (item: InterviewItem) => {
     const rec = (item.recommendation || item.client_recommendation || item.ai_recommendation || "").trim();
     return rec === "Reschedule Required" || rec.toLowerCase().includes("reschedule");
+  };
+
+  // All history sessions (Completed + Past/Missed + Reschedule Required), before any filter
+  const archiveAll = interviews.filter(
+    (item) => isArchiveCompleted(item) || isArchivePast(item) || isArchiveRescheduleReq(item)
+  );
+
+  // Interview type options: active configured types + any type present in the history records
+  const archiveTypeOptions = (() => {
+    const options = new Map<string, string>();
+    interviewTypes.filter((t) => t.is_active).forEach((t) => options.set(t.code.toUpperCase(), t.name));
+    archiveAll.forEach((item) => {
+      const key = getArchiveTypeKey(item);
+      if (!options.has(key)) options.set(key, getInterviewTypeLabel(item.interview_type, interviewTypes));
+    });
+    return Array.from(options, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+  })();
+
+  // History sessions narrowed by the selected interview type (status pill counts are based on this)
+  const archiveByType = archiveAll.filter(
+    (item) => archiveTypeFilter === "ALL" || getArchiveTypeKey(item) === archiveTypeFilter
+  );
+  const archiveCompletedCount = archiveByType.filter(isArchiveCompleted).length;
+  const archivePastCount = archiveByType.filter(isArchivePast).length;
+  const archiveRescheduleCount = archiveByType.filter(isArchiveRescheduleReq).length;
+
+  const getArchiveScore = (item: InterviewItem) => {
+    const score = Number(item.rating || item.client_rating);
+    return Number.isFinite(score) && score > 0 ? score : null;
+  };
+
+  const archiveFiltered = archiveByType.filter((item) => {
+    if (archiveFilter === "COMPLETED") return isArchiveCompleted(item);
+    if (archiveFilter === "PAST") return isArchivePast(item);
+    if (archiveFilter === "RESCHEDULE_REQUIRED") return isArchiveRescheduleReq(item);
+    return true;
   });
 
-  // Archive sessions combined (Completed + Past/Missed + Reschedule Required)
-  const archiveList = interviews.filter((item) => {
-    const isCompleted = item.status === "COMPLETED";
-    const isPast = item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED";
-    const rec = (item.recommendation || item.client_recommendation || item.ai_recommendation || "").trim();
-    const isRescheduleReq = rec === "Reschedule Required" || rec.toLowerCase().includes("reschedule");
-
-    if (archiveFilter === "COMPLETED") return isCompleted;
-    if (archiveFilter === "PAST") return isPast;
-    if (archiveFilter === "RESCHEDULE_REQUIRED") return isRescheduleReq;
-    return isCompleted || isPast || isRescheduleReq;
-  });
+  // Highest score first; unrated sessions go last
+  const archiveList =
+    archiveSort === "SCORE_DESC"
+      ? [...archiveFiltered].sort((a, b) => (getArchiveScore(b) ?? -1) - (getArchiveScore(a) ?? -1))
+      : archiveFiltered;
 
   // Calculate top metric card values dynamically
   const totalInterviewsCount = interviews.length;
   const scheduledCount = upcomingInterviews.length;
   const completedCount = completedInterviews.length;
   const pastMissedCount = pastOrMissedInterviews.length;
-  const rescheduleRequiredCount = rescheduleRequiredInterviews.length;
   const selectedCount = interviews.filter(
     (i) => i.recommendation === "Selected" || i.recommendation === "Hire" || i.recommendation === "Strong Hire" || i.client_recommendation === "Selected"
   ).length;
@@ -795,7 +837,7 @@ export default function InterviewDashboard() {
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              All History ({archiveList.length})
+              All History ({archiveByType.length})
             </button>
 
             <button
@@ -806,7 +848,7 @@ export default function InterviewDashboard() {
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Completed ({completedCount})
+              Completed ({archiveCompletedCount})
             </button>
 
             <button
@@ -817,7 +859,7 @@ export default function InterviewDashboard() {
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Past / Missed ({pastMissedCount})
+              Past / Missed ({archivePastCount})
             </button>
 
             <button
@@ -828,9 +870,58 @@ export default function InterviewDashboard() {
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Reschedule Required ({rescheduleRequiredCount})
+              Reschedule Required ({archiveRescheduleCount})
             </button>
           </div>
+        </div>
+
+        {/* Interview Type Filter & Performance Sort */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <label className="flex items-center gap-1.5 font-bold text-slate-600">
+              Interview Type
+              <select
+                value={archiveTypeFilter}
+                onChange={(e) => setArchiveTypeFilter(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-indigo-700 font-bold focus:outline-none focus:bg-white focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="ALL">All Types</option>
+                {archiveTypeOptions.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex items-center gap-1.5 font-bold text-slate-600">
+              Sort By
+              <select
+                value={archiveSort}
+                onChange={(e) => setArchiveSort(e.target.value as "DEFAULT" | "SCORE_DESC")}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-indigo-700 font-bold focus:outline-none focus:bg-white focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="DEFAULT">Default Order</option>
+                <option value="SCORE_DESC">Score: High to Low</option>
+              </select>
+            </label>
+
+            {(archiveTypeFilter !== "ALL" || archiveSort !== "DEFAULT") && (
+              <button
+                onClick={() => {
+                  setArchiveTypeFilter("ALL");
+                  setArchiveSort("DEFAULT");
+                }}
+                className="px-2.5 py-1 font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200/70 rounded-xl transition-all cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
+          <span className="text-[10px] font-semibold text-slate-400">
+            Showing {archiveList.length} of {archiveAll.length} sessions
+          </span>
         </div>
 
         {/* Card Grid Container */}
@@ -847,7 +938,7 @@ export default function InterviewDashboard() {
               const candidateEmail = item.candidate_email || "-";
               const jobTitle = item.job_title || "-";
               const interviewerName = item.interviewer_name || item.client_name || "-";
-              const roundLabel = getInterviewTypeLabel(item.interview_type);
+              const roundLabel = getInterviewTypeLabel(item.interview_type, interviewTypes);
               const formattedDate = formatDateDisplay(item.scheduled_date);
               const formattedTime = formatTime12h(item.scheduled_time);
               const initialChar = candidateName.charAt(0).toUpperCase();
