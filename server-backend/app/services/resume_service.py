@@ -27,7 +27,7 @@ from app.schemas.resume import (
 from app.services.s3_service import S3Service
 from app.utils.enums import ResumeStatus
 from app.utils.helpers import generate_uuid, sanitize_filename, utc_now
-from app.utils.validators import validate_uploaded_file
+from app.utils.validators import validate_profile_picture, validate_uploaded_file
 
 
 class ResumeService:
@@ -819,6 +819,35 @@ class ResumeService:
         other_docs.append(new_doc)
         
         updated_doc = await self.resume_repo.update_resume_fields(resume_id, {"other_documents": other_docs})
+        return ResumeResponse.model_validate(updated_doc)
+
+    async def upload_profile_picture(self, resume_id: str, user_id: str, file: UploadFile, is_admin: bool = False) -> ResumeResponse:
+        """Upload or replace the profile picture of a candidate profile."""
+        resume = await self.resume_repo.get_by_id(resume_id)
+        if not resume:
+            raise NotFoundError("Resume not found.")
+        if not is_admin and resume["user_id"] != user_id:
+            raise NotFoundError("Resume not found.")
+
+        content, image_type = await validate_profile_picture(file)
+
+        # Unique name per upload so a replaced picture is never served from a stale cache
+        unique_filename = f"{resume_id}_{generate_uuid()}.{image_type}"
+        content_type = "image/jpeg" if image_type == "jpg" else f"image/{image_type}"
+        s3_url = self.s3_service.upload_file(content, unique_filename, content_type, folder="profile-pictures")
+
+        updated_doc = await self.resume_repo.update_resume_fields(resume_id, {"profile_picture_url": s3_url})
+        return ResumeResponse.model_validate(updated_doc)
+
+    async def remove_profile_picture(self, resume_id: str, user_id: str, is_admin: bool = False) -> ResumeResponse:
+        """Remove the profile picture from a candidate profile."""
+        resume = await self.resume_repo.get_by_id(resume_id)
+        if not resume:
+            raise NotFoundError("Resume not found.")
+        if not is_admin and resume["user_id"] != user_id:
+            raise NotFoundError("Resume not found.")
+
+        updated_doc = await self.resume_repo.update_resume_fields(resume_id, {"profile_picture_url": None})
         return ResumeResponse.model_validate(updated_doc)
 
     async def get_resume_logs(self, resume_id: str, user_id: str, is_admin: bool = False) -> ResumeLogListResponse:

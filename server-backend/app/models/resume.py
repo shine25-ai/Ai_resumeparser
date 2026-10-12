@@ -22,6 +22,7 @@ class ResumeDocument(BaseModel):
     file_path: str
     extracted_text: Optional[str] = None
     s3_url: Optional[str] = None
+    profile_picture_url: Optional[str] = None
     file_hash: Optional[str] = None
     parsed_data: Optional[Dict[str, Any]] = None
     ai_evaluation: Optional[Dict[str, Any]] = None

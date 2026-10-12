@@ -272,6 +272,35 @@ async def add_document(
     return await controller.add_document(resume_id, file, doc_type, current_user["id"], doc_title=doc_title, is_admin=is_admin)
 
 
+@router.post(
+    "/{resume_id}/profile-picture",
+    summary="Upload candidate profile picture",
+    description="Upload or replace the profile picture (JPG, PNG, or WEBP up to 5 MB) of a candidate profile.",
+)
+async def upload_profile_picture(
+    resume_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_active_user),
+    controller: ResumeController = Depends(get_resume_controller),
+):
+    is_admin = is_admin_or_staff(current_user)
+    return await controller.upload_profile_picture(resume_id, file, current_user["id"], is_admin=is_admin)
+
+
+@router.delete(
+    "/{resume_id}/profile-picture",
+    summary="Remove candidate profile picture",
+    description="Remove the profile picture from a candidate profile.",
+)
+async def remove_profile_picture(
+    resume_id: str,
+    current_user: dict = Depends(get_current_active_user),
+    controller: ResumeController = Depends(get_resume_controller),
+):
+    is_admin = is_admin_or_staff(current_user)
+    return await controller.remove_profile_picture(resume_id, current_user["id"], is_admin=is_admin)
+
+
 @router.get(
     "/{resume_id}/logs",
     status_code=status.HTTP_200_OK,

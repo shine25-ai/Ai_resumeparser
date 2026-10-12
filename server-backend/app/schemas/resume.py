@@ -49,6 +49,7 @@ class ResumeResponse(BaseModel):
     file_path: str
     extracted_text: Optional[str] = None
     s3_url: Optional[str] = None
+    profile_picture_url: Optional[str] = None
     parsed_data: Optional[Dict[str, Any]] = None
     ai_evaluation: Optional[Dict[str, Any]] = None
     hr_updates: Optional[List[Dict[str, Any]]] = None

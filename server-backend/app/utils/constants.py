@@ -11,6 +11,9 @@ ALLOWED_MIME_TYPES = {
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
 
+MAX_PROFILE_PICTURE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB limit
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+
 USERS_COLLECTION = "users"
 ROLES_COLLECTION = "roles"
 RESUMES_COLLECTION = "resumes"
