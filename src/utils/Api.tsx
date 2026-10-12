@@ -8,6 +8,7 @@ export const RESUME_MATCH = `${BASE_URL}/resumes/match`;
 export const RESUME_SUMMARY = `${BASE_URL}/resumes/parsed-summary`;
 export const RESUME_MERGE = (id: string) => `${BASE_URL}/resumes/${id}/merge`;
 export const RESUME_DOCUMENTS = (id: string) => `${BASE_URL}/resumes/${id}/documents`;
+export const RESUME_PROFILE_PICTURE = (id: string) => `${BASE_URL}/resumes/${id}/profile-picture`;
 export const RESUME_LOGS = (id: string) => `${BASE_URL}/resumes/${id}/logs`;
 export const RESUME_GENERATE_QUESTIONS = (id: string) => `${BASE_URL}/resumes/${id}/generate-questions`;
 export const INTERVIEWS_URL = `${BASE_URL}/interviews`;

@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Mail, Phone, MapPin, ChevronDown, CheckCircle2,
-  ExternalLink, User, Award, Brain, Briefcase, GraduationCap, Code, Edit3, X, Save, Paperclip, FileText, Upload
+  ExternalLink, User, Award, Brain, Briefcase, GraduationCap, Code, Edit3, X, Save, Paperclip, FileText, Upload, Camera, Trash2
 } from "lucide-react";
-import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS } from "../utils/Api";
+import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFILE_PICTURE } from "../utils/Api";
 
 export default function Evaluation() {
   const { id } = useParams();
@@ -28,6 +28,10 @@ export default function Evaluation() {
   const [docTitle, setDocTitle] = useState("");
   const [docType, setDocType] = useState("Cover Letter");
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  const profilePicInputRef = useRef<HTMLInputElement>(null);
+  const [isUpdatingProfilePic, setIsUpdatingProfilePic] = useState(false);
+  const [profilePicFailed, setProfilePicFailed] = useState(false);
 
   const [editForm, setEditForm] = useState({
     full_name: "",
@@ -74,6 +78,7 @@ export default function Evaluation() {
       setError(null);
       getResumeById(targetId)
         .then((data) => {
+          setProfilePicFailed(false);
           setCandidate(data);
           setLoading(false);
         })
@@ -237,6 +242,61 @@ export default function Evaluation() {
       alert("Upload failed.");
     } finally {
       setIsUploadingDoc(false);
+    }
+  };
+
+  const handleProfilePicChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !candidate?.id) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      alert("Profile picture must be a JPG, PNG, or WEBP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Profile picture size exceeds the 5 MB limit.");
+      return;
+    }
+    setIsUpdatingProfilePic(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = localStorage.getItem("access_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(RESUME_PROFILE_PICTURE(candidate.id), { method: "POST", headers, body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        setProfilePicFailed(false);
+        setCandidate(data.data || data);
+      } else {
+        alert(data.message || "Failed to upload profile picture.");
+      }
+    } catch {
+      alert("Upload failed.");
+    } finally {
+      setIsUpdatingProfilePic(false);
+    }
+  };
+
+  const handleRemoveProfilePic = async () => {
+    if (!candidate?.id || !window.confirm("Remove this candidate's profile picture?")) return;
+    setIsUpdatingProfilePic(true);
+    try {
+      const token = localStorage.getItem("access_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(RESUME_PROFILE_PICTURE(candidate.id), { method: "DELETE", headers });
+      const data = await res.json();
+      if (res.ok) {
+        setCandidate(data.data || data);
+      } else {
+        alert(data.message || "Failed to remove profile picture.");
+      }
+    } catch {
+      alert("Failed to remove profile picture.");
+    } finally {
+      setIsUpdatingProfilePic(false);
     }
   };
 
@@ -411,8 +471,52 @@ export default function Evaluation() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Profile Card (2 cols) */}
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-6">
-          <div className="w-24 h-24 rounded-full bg-indigo-50 border-2 border-indigo-200 flex items-center justify-center text-indigo-600 flex-shrink-0 shadow-xs">
-            <User size={40} />
+          <div className="relative w-24 h-24 flex-shrink-0">
+            <div className="w-24 h-24 rounded-full bg-indigo-50 border-2 border-indigo-200 flex items-center justify-center text-indigo-600 shadow-xs overflow-hidden">
+              {candidate?.profile_picture_url && !profilePicFailed ? (
+                <img
+                  src={candidate.profile_picture_url}
+                  alt={`${name} profile`}
+                  onError={() => setProfilePicFailed(true)}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User size={40} />
+              )}
+              {isUpdatingProfilePic && (
+                <div className="absolute inset-0 rounded-full bg-white/70 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={profilePicInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleProfilePicChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => profilePicInputRef.current?.click()}
+              disabled={isUpdatingProfilePic}
+              title={candidate?.profile_picture_url ? "Change profile picture" : "Upload profile picture"}
+              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white border-2 border-white flex items-center justify-center shadow-sm transition-all cursor-pointer disabled:opacity-60"
+            >
+              <Camera size={14} />
+            </button>
+            {candidate?.profile_picture_url && (
+              <button
+                type="button"
+                onClick={handleRemoveProfilePic}
+                disabled={isUpdatingProfilePic}
+                title="Remove profile picture"
+                className="absolute top-0 right-0 w-6 h-6 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shadow-sm transition-all cursor-pointer disabled:opacity-60"
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
           </div>
 
           <div className="space-y-3 text-center sm:text-left flex-1">

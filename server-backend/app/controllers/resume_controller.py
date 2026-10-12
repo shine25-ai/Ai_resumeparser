@@ -178,6 +178,22 @@ class ResumeController:
             message="Document added successfully.",
         )
 
+    async def upload_profile_picture(self, resume_id: str, file: UploadFile, user_id: str, is_admin: bool = False) -> JSONResponse:
+        """Process request to upload or replace a candidate profile picture."""
+        resume_response = await self.resume_service.upload_profile_picture(resume_id, user_id, file, is_admin=is_admin)
+        return success_response(
+            data=resume_response.model_dump(),
+            message="Profile picture updated successfully.",
+        )
+
+    async def remove_profile_picture(self, resume_id: str, user_id: str, is_admin: bool = False) -> JSONResponse:
+        """Process request to remove a candidate profile picture."""
+        resume_response = await self.resume_service.remove_profile_picture(resume_id, user_id, is_admin=is_admin)
+        return success_response(
+            data=resume_response.model_dump(),
+            message="Profile picture removed successfully.",
+        )
+
     async def get_resume_logs(self, resume_id: str, user_id: str, is_admin: bool = False) -> JSONResponse:
         """Process request to fetch version logs for a resume."""
         logs_response = await self.resume_service.get_resume_logs(resume_id, user_id, is_admin=is_admin)
