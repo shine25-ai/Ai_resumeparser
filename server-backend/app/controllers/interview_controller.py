@@ -16,6 +16,7 @@ from app.schemas.interview import (
     InterviewRescheduleRequest,
     InterviewUpdateRequest,
     SendInterviewEmailRequest,
+    ShareInterviewSummaryRequest,
 )
 from app.services.interview_service import InterviewService
 from app.utils.enums import InterviewStatus
@@ -205,6 +206,14 @@ class InterviewController:
         return success_response(
             data=res,
             message=res.get("message", "Interview email sent successfully."),
+        )
+
+    async def share_interview_summary(self, payload: ShareInterviewSummaryRequest) -> JSONResponse:
+        """Email a status summary of selected interview sessions to the given recipients."""
+        res = await self.interview_service.share_interview_summary(payload)
+        return success_response(
+            data=res,
+            message=res.get("message", "Interview summary sent successfully."),
         )
 
     async def get_feedback_questions(self, interview_type: Optional[str] = None) -> JSONResponse:

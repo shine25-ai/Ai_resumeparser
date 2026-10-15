@@ -20,6 +20,7 @@ from app.schemas.interview import (
     InterviewRescheduleRequest,
     InterviewUpdateRequest,
     SendInterviewEmailRequest,
+    ShareInterviewSummaryRequest,
 )
 from app.services.interview_service import InterviewService
 from app.utils.enums import InterviewStatus
@@ -117,6 +118,20 @@ async def batch_create_interviews(
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.batch_create_interviews(payload, user_id=current_user["id"])
+
+
+@router.post(
+    "/share-summary",
+    status_code=status.HTTP_200_OK,
+    summary="Email interview status summary",
+    description="Send basic candidate details, session status, rating, outcome, and feedback of selected interviews to the given email addresses.",
+)
+async def share_interview_summary(
+    payload: ShareInterviewSummaryRequest,
+    current_user: dict = Depends(get_current_active_user),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.share_interview_summary(payload)
 
 
 @router.get(

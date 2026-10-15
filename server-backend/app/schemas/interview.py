@@ -2,8 +2,8 @@
 Pydantic schemas for Interview entity operations, scheduling, feedback, and responses.
 """
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.utils.enums import InterviewStatus
 
 
@@ -508,6 +508,17 @@ class SendInterviewEmailRequest(BaseModel):
     interviewer_email: Optional[str] = None
     template_id: Optional[str] = None
     custom_notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ShareInterviewSummaryRequest(BaseModel):
+    """Payload for emailing a summary of selected interview sessions to one or more recipients."""
+
+    interview_ids: List[str] = Field(..., min_length=1, max_length=200)
+    to_emails: List[EmailStr] = Field(..., min_length=1, max_length=20)
+    notes: Optional[str] = Field(None, max_length=2000)
+    attachment_format: Literal["xlsx", "csv", "none"] = "xlsx"
 
     model_config = ConfigDict(from_attributes=True)
 

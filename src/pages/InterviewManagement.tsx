@@ -956,6 +956,23 @@ export default function InterviewManagement() {
     }
   }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, location.state]);
 
+  // Keep the schedule form's interview type in sync with the dropdown: the select only lists configured
+  // types, so a value outside that list (e.g. the "TECHNICAL" default) shows the first type but saves the old value
+  useEffect(() => {
+    const activeTypes = interviewTypes.filter((t) => t.is_active !== false);
+    if (activeTypes.length === 0) return;
+    const current = activeTypes.find((t) => t.code === scheduleForm.interview_type);
+    if (!current) {
+      setScheduleForm((prev) => ({
+        ...prev,
+        interview_type: activeTypes[0].code as InterviewTypeEnum,
+        interview_type_id: activeTypes[0].id,
+      }));
+    } else if (scheduleForm.interview_type_id !== current.id) {
+      setScheduleForm((prev) => ({ ...prev, interview_type_id: current.id }));
+    }
+  }, [interviewTypes, scheduleForm.interview_type, scheduleForm.interview_type_id]);
+
   // Fetch candidate resumes list ONLY when Schedule Interview modal is opened
   useEffect(() => {
     if (isScheduleOpen && candidatesList.length === 0) {
@@ -1755,8 +1772,9 @@ export default function InterviewManagement() {
       console.warn("Failed to check active interview status from backend:", err);
     }
 
-    const defaultType = (interviewTypes[0]?.code || "TECHNICAL") as InterviewTypeEnum;
-    const defaultTypeId = interviewTypes[0]?.id || item.interview_type_id || "";
+    const firstActiveType = interviewTypes.find((t) => t.is_active !== false);
+    const defaultType = (firstActiveType?.code || "TECHNICAL") as InterviewTypeEnum;
+    const defaultTypeId = firstActiveType?.id || item.interview_type_id || "";
     let nextRoundNum = (item.round_number || 1) + 1;
     try {
       const res = await getNextRoundNumber(item.candidate_id, defaultType, defaultTypeId);

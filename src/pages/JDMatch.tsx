@@ -299,6 +299,23 @@ export default function JDMatch() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Keep the interview form's type in sync with the dropdown: the select only lists configured types, so a
+  // value outside that list (e.g. the "TECHNICAL" default) shows the first type but saves the old value
+  useEffect(() => {
+    const activeTypes = interviewTypes.filter((t) => t.is_active !== false);
+    if (activeTypes.length === 0) return;
+    const current = activeTypes.find((t) => t.code === interviewForm.interview_type);
+    if (!current) {
+      setInterviewForm((prev) => ({
+        ...prev,
+        interview_type: activeTypes[0].code as InterviewTypeEnum,
+        interview_type_id: activeTypes[0].id,
+      }));
+    } else if (interviewForm.interview_type_id !== current.id) {
+      setInterviewForm((prev) => ({ ...prev, interview_type_id: current.id }));
+    }
+  }, [interviewTypes, interviewForm.interview_type, interviewForm.interview_type_id]);
+
   // Fetch parsed resume summary dropdown values & registered system users
   useEffect(() => {
     const fetchSummaryDropdowns = async () => {

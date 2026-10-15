@@ -1024,6 +1024,28 @@ export const sendInterviewEmail = async (interviewId: string, payload: SendInter
   return resData.data || resData;
 };
 
+export const shareInterviewSummary = async (payload: { interview_ids: string[]; to_emails: string[]; notes?: string; attachment_format?: "xlsx" | "csv" | "none" }) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEWS_URL}/share-summary`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resData = await response.json();
+  handleAuthError(response, resData);
+
+  if (!response.ok) {
+    const detail = Array.isArray(resData.detail) ? resData.detail[0]?.msg : resData.detail;
+    throw new Error(detail || "Failed to send interview summary email");
+  }
+
+  return resData.data || resData;
+};
+
 export const getFeedbackQuestionsFromBackend = async (interviewType?: string) => {
   const token = localStorage.getItem("access_token") || "";
   const query = interviewType ? `?interview_type=${encodeURIComponent(interviewType)}` : "";

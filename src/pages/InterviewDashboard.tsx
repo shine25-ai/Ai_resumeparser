@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, CheckCircle2, UserCheck, AlertCircle,
   ChevronDown, Plus, Eye, MoreVertical, Search, ArrowRight, RefreshCw, X,
-  History, Star
+  History, Star, Mail, MessageSquareText
 } from "lucide-react";
 import {
-  getInterviews, createInterview, getUsers, checkInterviewConflict, getInterviewTypes,
+  getInterviews, createInterview, getUsers, checkInterviewConflict, getInterviewTypes, shareInterviewSummary,
   type InterviewItem, type InterviewTypeEnum, type UserProfile, type InterviewTypeItem
 } from "../utils/Api";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
@@ -108,6 +108,11 @@ export default function InterviewDashboard() {
   // Interview type filter ("ALL" or a type key) and score sort for completed/past grid
   const [archiveTypeFilter, setArchiveTypeFilter] = useState<string>("ALL");
   const [archiveSort, setArchiveSort] = useState<"DEFAULT" | "SCORE_DESC">("DEFAULT");
+  // Selected history sessions + "Email Selected" modal state
+  const [selectedArchiveIds, setSelectedArchiveIds] = useState<Set<string>>(new Set());
+  const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
+  const [shareForm, setShareForm] = useState({ emails: "", notes: "", attachmentFormat: "xlsx" as "xlsx" | "csv" | "none" });
+  const [shareSending, setShareSending] = useState<boolean>(false);
 
   // Candidate Details Modal state
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
@@ -165,7 +170,8 @@ export default function InterviewDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const data = await getInterviews({ limit: 100 });
+      // Backend sorts by scheduled_date ascending, so a small limit drops the most recent sessions
+      const data = await getInterviews({ limit: 500 });
       const fetchedList: InterviewItem[] = Array.isArray(data)
         ? data
         : (data.interviews || data.items || []);
@@ -184,7 +190,7 @@ export default function InterviewDashboard() {
     getInterviewTypes().then((types) => {
       if (Array.isArray(types) && types.length > 0) {
         setInterviewTypes(types);
-        const first = types[0];
+        const first = types.find((t) => t.is_active !== false) || types[0];
         setScheduleForm((prev) => ({
           ...prev,
           interview_type: first.code,
@@ -232,13 +238,15 @@ export default function InterviewDashboard() {
     (item) => item.scheduled_date && item.scheduled_date < todayStr && item.status !== "COMPLETED"
   );
 
-  // Normalised interview type key: configured type code when matched, else the raw type string
+  // Normalised interview type key: configured type code when matched (by id, then code, then name), else the raw type string
   const getArchiveTypeKey = (item: InterviewItem) => {
-    const raw = (item.interview_type || "TECHNICAL").toUpperCase();
-    const matched = interviewTypes.find(
-      (t) => (item.interview_type_id && t.id === item.interview_type_id) || t.code.toUpperCase() === raw
-    );
-    return matched ? matched.code.toUpperCase() : raw;
+    const raw = (item.interview_type || "TECHNICAL").trim();
+    const rawUpper = raw.toUpperCase();
+    const matched =
+      (item.interview_type_id && interviewTypes.find((t) => t.id === item.interview_type_id)) ||
+      interviewTypes.find((t) => t.code.toUpperCase() === rawUpper || t.id === raw) ||
+      interviewTypes.find((t) => t.name.toUpperCase() === rawUpper);
+    return matched ? matched.code.toUpperCase() : rawUpper.replace(/\s+/g, "_");
   };
 
   const isArchiveCompleted = (item: InterviewItem) => item.status === "COMPLETED";
@@ -254,20 +262,38 @@ export default function InterviewDashboard() {
     (item) => isArchiveCompleted(item) || isArchivePast(item) || isArchiveRescheduleReq(item)
   );
 
-  // Interview type options: active configured types + any type present in the history records
+  // Interview type options: configured interview types (from Settings → Interview Types) with session counts,
+  // plus any type stored on history sessions that is not configured (e.g. the old "TECHNICAL" default)
   const archiveTypeOptions = (() => {
-    const options = new Map<string, string>();
-    interviewTypes.filter((t) => t.is_active).forEach((t) => options.set(t.code.toUpperCase(), t.name));
+    const counts = new Map<string, number>();
     archiveAll.forEach((item) => {
       const key = getArchiveTypeKey(item);
-      if (!options.has(key)) options.set(key, getInterviewTypeLabel(item.interview_type, interviewTypes));
+      counts.set(key, (counts.get(key) || 0) + 1);
     });
-    return Array.from(options, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+    const options: { key: string; label: string; count: number; configured: boolean }[] = [];
+    interviewTypes.forEach((t) => {
+      const key = t.code.toUpperCase();
+      // Inactive types are only listed when they still have history sessions
+      if (t.is_active !== false || counts.has(key)) {
+        options.push({ key, label: t.name, count: counts.get(key) || 0, configured: true });
+      }
+    });
+    counts.forEach((count, key) => {
+      if (!options.some((o) => o.key === key)) {
+        const label = key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+        options.push({ key, label, count, configured: false });
+      }
+    });
+    return options.sort((a, b) => a.label.localeCompare(b.label));
   })();
+
+  // A selected type that no longer has sessions (e.g. after refresh) falls back to "ALL" so the
+  // dropdown and the grid never disagree
+  const effectiveTypeFilter = archiveTypeOptions.some((t) => t.key === archiveTypeFilter) ? archiveTypeFilter : "ALL";
 
   // History sessions narrowed by the selected interview type (status pill counts are based on this)
   const archiveByType = archiveAll.filter(
-    (item) => archiveTypeFilter === "ALL" || getArchiveTypeKey(item) === archiveTypeFilter
+    (item) => effectiveTypeFilter === "ALL" || getArchiveTypeKey(item) === effectiveTypeFilter
   );
   const archiveCompletedCount = archiveByType.filter(isArchiveCompleted).length;
   const archivePastCount = archiveByType.filter(isArchivePast).length;
@@ -290,6 +316,62 @@ export default function InterviewDashboard() {
     archiveSort === "SCORE_DESC"
       ? [...archiveFiltered].sort((a, b) => (getArchiveScore(b) ?? -1) - (getArchiveScore(a) ?? -1))
       : archiveFiltered;
+
+  // Selected history sessions for the "Email Selected" summary (only those still visible count)
+  const visibleSelectedIds = archiveList.filter((item) => selectedArchiveIds.has(item.id)).map((item) => item.id);
+  const allVisibleSelected = archiveList.length > 0 && visibleSelectedIds.length === archiveList.length;
+
+  const toggleArchiveSelection = (id: string) => {
+    setSelectedArchiveIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedArchiveIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) archiveList.forEach((item) => next.delete(item.id));
+      else archiveList.forEach((item) => next.add(item.id));
+      return next;
+    });
+  };
+
+  const handleShareSummary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const emails = shareForm.emails
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const invalid = emails.filter((em) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
+    if (emails.length === 0) {
+      showToast("Please enter at least one email address.", "warning");
+      return;
+    }
+    if (invalid.length > 0) {
+      showToast(`Invalid email address: ${invalid.join(", ")}`, "warning");
+      return;
+    }
+    setShareSending(true);
+    try {
+      const res = await shareInterviewSummary({
+        interview_ids: visibleSelectedIds,
+        to_emails: emails,
+        notes: shareForm.notes.trim() || undefined,
+        attachment_format: shareForm.attachmentFormat,
+      });
+      showToast(res?.message || "Interview summary sent successfully.", "success");
+      setIsShareOpen(false);
+      setShareForm({ emails: "", notes: "", attachmentFormat: "xlsx" });
+      setSelectedArchiveIds(new Set());
+    } catch (err: any) {
+      showToast(err?.message || "Failed to send interview summary email.", "error", 6000);
+    } finally {
+      setShareSending(false);
+    }
+  };
 
   // Calculate top metric card values dynamically
   const totalInterviewsCount = interviews.length;
@@ -881,16 +963,25 @@ export default function InterviewDashboard() {
             <label className="flex items-center gap-1.5 font-bold text-slate-600">
               Interview Type
               <select
-                value={archiveTypeFilter}
+                value={effectiveTypeFilter}
                 onChange={(e) => setArchiveTypeFilter(e.target.value)}
                 className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-indigo-700 font-bold focus:outline-none focus:bg-white focus:border-indigo-500 cursor-pointer"
               >
-                <option value="ALL">All Types</option>
-                {archiveTypeOptions.map((t) => (
+                <option value="ALL">All Types ({archiveAll.length})</option>
+                {archiveTypeOptions.filter((t) => t.configured).map((t) => (
                   <option key={t.key} value={t.key}>
-                    {t.label}
+                    {t.label} ({t.count})
                   </option>
                 ))}
+                {archiveTypeOptions.some((t) => !t.configured) && (
+                  <optgroup label="Not in Interview Types settings">
+                    {archiveTypeOptions.filter((t) => !t.configured).map((t) => (
+                      <option key={t.key} value={t.key}>
+                        {t.label} ({t.count})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
 
@@ -906,7 +997,7 @@ export default function InterviewDashboard() {
               </select>
             </label>
 
-            {(archiveTypeFilter !== "ALL" || archiveSort !== "DEFAULT") && (
+            {(effectiveTypeFilter !== "ALL" || archiveSort !== "DEFAULT") && (
               <button
                 onClick={() => {
                   setArchiveTypeFilter("ALL");
@@ -919,9 +1010,32 @@ export default function InterviewDashboard() {
             )}
           </div>
 
-          <span className="text-[10px] font-semibold text-slate-400">
-            Showing {archiveList.length} of {archiveAll.length} sessions
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleSelectAllVisible}
+                disabled={archiveList.length === 0}
+                className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer"
+              />
+              Select All
+            </label>
+
+            <button
+              onClick={() => setIsShareOpen(true)}
+              disabled={visibleSelectedIds.length === 0}
+              className="flex items-center gap-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1 rounded-xl transition-all cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Email the selected candidates' details and interview status"
+            >
+              <Mail size={12} />
+              <span>Email Selected ({visibleSelectedIds.length})</span>
+            </button>
+
+            <span className="text-[10px] font-semibold text-slate-400">
+              Showing {archiveList.length} of {archiveAll.length} sessions
+            </span>
+          </div>
         </div>
 
         {/* Card Grid Container */}
@@ -961,6 +1075,14 @@ export default function InterviewDashboard() {
                   {/* Card Header: Candidate & Status Pill */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={selectedArchiveIds.has(item.id)}
+                        onChange={() => toggleArchiveSelection(item.id)}
+                        className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer shrink-0"
+                        title="Select to include in email summary"
+                        aria-label={`Select ${candidateName}`}
+                      />
                       <div className={`w-8 h-8 rounded-full text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
                         isCompleted
                           ? "bg-gradient-to-tr from-emerald-600 to-teal-600"
@@ -1023,17 +1145,46 @@ export default function InterviewDashboard() {
                           </div>
                         ) : <span className="text-[10px] text-slate-400">No Rating</span>}
 
-                        {recommendation && (
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                            ["Selected", "Hire", "Strong Hire", "Recommended", "Offer Accepted", "Offer to Be Released", "Shortlisted"].includes(recommendation)
-                              ? "bg-emerald-100 text-emerald-800"
-                              : ["Hold", "On Hold", "Pending", "Need Further Evaluation"].includes(recommendation)
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-rose-100 text-rose-800"
-                          }`}>
-                            {recommendation}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {recommendation && (
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                              ["Selected", "Hire", "Strong Hire", "Recommended", "Offer Accepted", "Offer to Be Released", "Shortlisted"].includes(recommendation)
+                                ? "bg-emerald-100 text-emerald-800"
+                                : ["Hold", "On Hold", "Pending", "Need Further Evaluation"].includes(recommendation)
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-rose-100 text-rose-800"
+                            }`}>
+                              {recommendation}
+                            </span>
+                          )}
+
+                          {/* Feedback Comments tooltip next to Outcome */}
+                          {(item.feedback || item.client_feedback) && (
+                            <div className="relative group">
+                              <button
+                                type="button"
+                                className="p-0.5 text-slate-400 hover:text-indigo-600 focus:text-indigo-600 rounded cursor-help focus:outline-none"
+                                aria-label="Feedback Comments"
+                              >
+                                <MessageSquareText size={13} />
+                              </button>
+                              <div className="absolute right-0 bottom-full mb-1.5 z-30 w-64 max-h-60 overflow-y-auto hidden group-hover:block group-focus-within:block bg-slate-900 text-white text-[10px] leading-relaxed rounded-xl p-2.5 shadow-xl space-y-2">
+                                {item.feedback && (
+                                  <div>
+                                    <span className="block font-extrabold text-indigo-300 mb-0.5">Feedback Comments:</span>
+                                    <p className="whitespace-pre-line text-slate-100">{item.feedback}</p>
+                                  </div>
+                                )}
+                                {item.client_feedback && (
+                                  <div>
+                                    <span className="block font-extrabold text-teal-300 mb-0.5">Client Feedback Comments:</span>
+                                    <p className="whitespace-pre-line text-slate-100">{item.client_feedback}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1065,6 +1216,113 @@ export default function InterviewDashboard() {
         )}
 
       </div>
+
+      {/* EMAIL SELECTED SESSIONS SUMMARY MODAL */}
+      {isShareOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-4 shadow-2xl relative text-slate-900">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-200">
+                  <Mail size={18} />
+                </div>
+                <div>
+                  <h2 className="text-sm font-extrabold text-slate-900">Email Interview Status</h2>
+                  <p className="text-[11px] text-slate-500">
+                    Send details of {visibleSelectedIds.length} selected session{visibleSelectedIds.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsShareOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-32 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1 text-[11px]">
+              {archiveList
+                .filter((item) => selectedArchiveIds.has(item.id))
+                .map((item) => (
+                  <div key={item.id} className="flex justify-between gap-2">
+                    <span className="font-bold text-slate-800 truncate">{item.candidate_name || "Unknown Candidate"}</span>
+                    <span className="text-slate-500 shrink-0">{getInterviewTypeLabel(item.interview_type, interviewTypes)}</span>
+                  </div>
+                ))}
+            </div>
+
+            <form onSubmit={handleShareSummary} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Recipient Email(s) *</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. hr@company.com, manager@company.com"
+                  value={shareForm.emails}
+                  onChange={(e) => setShareForm({ ...shareForm, emails: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-900 font-medium focus:outline-none focus:bg-white focus:border-indigo-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Separate multiple addresses with commas.</p>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Message (optional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Add a note to include above the summary..."
+                  value={shareForm.notes}
+                  onChange={(e) => setShareForm({ ...shareForm, notes: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-900 font-medium focus:outline-none focus:bg-white focus:border-indigo-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <span className="block text-slate-700 font-bold mb-1">Attach File</span>
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+                  {([
+                    { value: "xlsx", label: "Excel (.xlsx)" },
+                    { value: "csv", label: "CSV" },
+                    { value: "none", label: "None" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setShareForm({ ...shareForm, attachmentFormat: opt.value })}
+                      className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                        shareForm.attachmentFormat === opt.value
+                          ? "bg-white text-indigo-600 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsShareOpen(false)}
+                  className="px-3.5 py-1.5 font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={shareSending || visibleSelectedIds.length === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {shareSending ? <RefreshCw size={13} className="animate-spin" /> : <Mail size={13} />}
+                  <span>{shareSending ? "Sending..." : "Send Email"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* SCHEDULE INTERVIEW MODAL POPUP */}
       {isScheduleOpen && (
