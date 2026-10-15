@@ -2,6 +2,9 @@
 Interview service handling interview scheduling, rescheduling, feedback, filtering, and status updates.
 """
 
+import csv
+import html
+import io
 import smtplib
 import uuid
 import re
@@ -28,6 +31,7 @@ from app.schemas.interview import (
     InterviewResponse,
     InterviewUpdateRequest,
     SendInterviewEmailRequest,
+    ShareInterviewSummaryRequest,
 )
 from app.services.s3_service import S3Service
 from app.services.settings_service import SettingsService
@@ -36,6 +40,87 @@ from app.utils.encryption import decrypt_password
 from app.utils.enums import InterviewStatus
 from app.utils.helpers import utc_now
 from app.utils.validators import validate_uploaded_file
+
+
+def build_summary_csv(headers: List[str], rows: List[List[Any]]) -> bytes:
+    """Build the interview summary CSV attachment."""
+
+    def csv_safe(value: Any) -> str:
+        # Bullet lines ("- point") would otherwise open as broken formulas in Excel
+        text = re.sub(r"(?m)^- ", "• ", str(value)) if value not in (None, "") else ""
+        return f"'{text}" if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows([[csv_safe(v) for v in row] for row in rows])
+    # utf-8-sig adds a BOM so Excel opens non-ASCII names correctly
+    return buffer.getvalue().encode("utf-8-sig")
+
+
+def build_summary_xlsx(headers: List[str], rows: List[List[Any]], status_colors: Dict[str, tuple]) -> bytes:
+    """Build the interview summary Excel attachment: bold frozen header, filters, wrapped feedback, coloured status."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except ImportError as err:
+        raise HTTPException(status_code=500, detail="Excel export is unavailable: install the 'openpyxl' package on the server.") from err
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Interview Status"
+    ws.append(headers)
+
+    header_fill = PatternFill("solid", fgColor="4F46E5")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = header_fill
+        c.alignment = Alignment(vertical="center", wrap_text=True)
+
+    status_col = headers.index("Status") + 1
+    rating_col = headers.index("Rating") + 1
+    for row in rows:
+        values: List[Any] = []
+        for v in row:
+            if v in (None, ""):
+                values.append(None)
+            elif isinstance(v, (int, float)):
+                values.append(v)
+            else:
+                values.append(str(v))
+        ws.append(values)
+        r = ws.max_row
+        for c in ws[r]:
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+            # openpyxl stores strings starting with "=" as formulas; keep them as plain text
+            if isinstance(c.value, str) and c.value.startswith("="):
+                c.data_type = "s"
+        rating_cell = ws.cell(row=r, column=rating_col)
+        try:
+            rating_cell.value = float(rating_cell.value) if rating_cell.value is not None else None
+        except (TypeError, ValueError):
+            pass
+        status_cell = ws.cell(row=r, column=status_col)
+        colors = status_colors.get(str(status_cell.value or ""))
+        if colors:
+            bg, fg = colors
+            status_cell.fill = PatternFill("solid", fgColor=bg.lstrip("#").upper())
+            status_cell.font = Font(bold=True, color=fg.lstrip("#").upper())
+
+    widths = {
+        "Candidate Name": 24, "Candidate Email": 28, "Job Title": 22, "Round": 20, "Round Number": 9,
+        "Scheduled Date": 14, "Scheduled Time": 11, "Interviewer": 20, "Status": 20, "Rating": 8,
+        "Outcome": 16, "Feedback Comments": 50, "Client Feedback Comments": 50,
+    }
+    for idx, h in enumerate(headers, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = widths.get(h, 16)
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
 
 
 class InterviewService:
@@ -991,6 +1076,193 @@ class InterviewService:
             "status": "success",
             "message": f"Interview email sent successfully to {', '.join(sent_recipients)}",
             "recipients": sent_recipients,
+        }
+
+    async def share_interview_summary(self, payload: ShareInterviewSummaryRequest) -> Dict[str, Any]:
+        """Email a summary table (candidate details, round, status, rating, outcome, feedback) of selected sessions."""
+        ids = list(dict.fromkeys(i for i in payload.interview_ids if i and i.strip()))
+        docs = await self.interview_repo.find_many(query={"id": {"$in": ids}}, limit=len(ids))
+        if not docs:
+            raise NotFoundError("No interviews found for the selected sessions.")
+        order = {interview_id: idx for idx, interview_id in enumerate(ids)}
+        docs.sort(key=lambda d: order.get(str(d.get("id")), len(order)))
+
+        settings_service = SettingsService()
+        config_model = await settings_service.repository.get_email_config()
+        if not config_model:
+            raise HTTPException(status_code=400, detail="Email configuration not set. Please configure SMTP settings in Settings first.")
+
+        # Resolve interview type labels from configured types (by id, then code)
+        type_labels: Dict[str, str] = {}
+        try:
+            db = self.interview_repo.collection.database
+            async for t in db.interview_types.find({}, {"id": 1, "code": 1, "name": 1}):
+                if t.get("id"):
+                    type_labels[str(t["id"])] = t.get("name", "")
+                if t.get("code"):
+                    type_labels[str(t["code"]).upper()] = t.get("name", "")
+        except Exception as err:
+            logger.warning(f"Could not load interview types for summary email: {err}")
+
+        today_str = utc_now().date().isoformat()
+
+        def esc(value: Any) -> str:
+            return html.escape(str(value)) if value not in (None, "") else "-"
+
+        def session_status(doc: Dict[str, Any]) -> str:
+            # Mirrors the Completed & Past Session History card badges on the Interview Dashboard
+            rec = (doc.get("recommendation") or doc.get("client_recommendation") or doc.get("ai_recommendation") or "").strip()
+            if doc.get("status") == InterviewStatus.COMPLETED.value:
+                return "Completed"
+            if "reschedule" in rec.lower():
+                return "Reschedule Required"
+            if doc.get("scheduled_date") and doc["scheduled_date"] < today_str:
+                return "Past / Missed"
+            return str(doc.get("status") or "-").replace("_", " ").title()
+
+        status_colors = {
+            "Completed": ("#d1fae5", "#065f46"),
+            "Reschedule Required": ("#ffe4e6", "#9f1239"),
+            "Past / Missed": ("#fef3c7", "#92400e"),
+        }
+
+        cell = "padding: 8px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; font-size: 12px; color: #0f172a;"
+        rows_html = ""
+        export_rows: List[List[Any]] = []
+        for doc in docs:
+            raw_type = str(doc.get("interview_type") or "")
+            round_label = (
+                type_labels.get(str(doc.get("interview_type_id") or ""))
+                or type_labels.get(raw_type.upper())
+                or raw_type.replace("_", " ")
+                or "-"
+            )
+            status_label = session_status(doc)
+            bg, fg = status_colors.get(status_label, ("#f1f5f9", "#334155"))
+            rating = doc.get("rating") or doc.get("client_rating")
+            outcome = doc.get("recommendation") or doc.get("client_recommendation") or doc.get("ai_recommendation")
+            feedback_parts = []
+            if doc.get("feedback"):
+                feedback_parts.append(f"<b>Interviewer:</b> {html.escape(str(doc['feedback']))}")
+            if doc.get("client_feedback"):
+                feedback_parts.append(f"<b>Client:</b> {html.escape(str(doc['client_feedback']))}")
+            feedback_html = "<br><br>".join(feedback_parts).replace("\n", "<br>") or "-"
+            export_rows.append([
+                doc.get("candidate_name"), doc.get("candidate_email"), doc.get("job_title"), round_label,
+                doc.get("round_number", 1), doc.get("scheduled_date"), doc.get("scheduled_time"),
+                doc.get("interviewer_name") or doc.get("client_name"), status_label, rating, outcome,
+                doc.get("feedback"), doc.get("client_feedback"),
+            ])
+
+            rows_html += f"""
+            <tr>
+              <td style="{cell}"><b>{esc(doc.get("candidate_name"))}</b><br><span style="color:#64748b;">{esc(doc.get("candidate_email"))}</span></td>
+              <td style="{cell}">{esc(doc.get("job_title"))}</td>
+              <td style="{cell}">{esc(round_label)} (R{esc(doc.get("round_number", 1))})</td>
+              <td style="{cell} white-space: nowrap;">{esc(doc.get("scheduled_date"))}<br><span style="color:#64748b;">{esc(doc.get("scheduled_time"))}</span></td>
+              <td style="{cell}">{esc(doc.get("interviewer_name") or doc.get("client_name"))}</td>
+              <td style="{cell}"><span style="display:inline-block; background:{bg}; color:{fg}; font-weight:700; padding:2px 8px; border-radius:10px; white-space:nowrap;">{esc(status_label)}</span></td>
+              <td style="{cell} white-space: nowrap;">{f"{esc(rating)} / 5" if rating else "-"}</td>
+              <td style="{cell}">{esc(outcome)}</td>
+              <td width="30%" style="{cell} color:#334155; min-width:260px;">{feedback_html}</td>
+            </tr>
+            """
+
+        header_cell = "padding: 8px 10px; background: #f1f5f9; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; text-align: left; border-bottom: 1px solid #cbd5e1;"
+        headers = ["Candidate", "Job Title", "Round", "Scheduled", "Interviewer", "Status", "Rating", "Outcome", "Feedback Comments"]
+        # Feedback text is the longest column; give it a fixed share so it doesn't get squeezed
+        header_html = "".join(
+            f'<th width="30%" style="{header_cell} min-width: 260px;">{h}</th>'
+            if h == "Feedback Comments"
+            else f'<th style="{header_cell} white-space: nowrap;">{h}</th>'
+            for h in headers
+        )
+        sender_company = config_model.sender_name or "Recruitment Team"
+        notes_html = ""
+        if payload.notes and payload.notes.strip():
+            notes_html = f"""
+            <div style="background:#fffbeb; border:1px solid #fef3c7; border-left:4px solid #f59e0b; border-radius:10px; padding:12px 16px; margin: 0 0 16px 0; font-size:13px; color:#78350f;">
+              {html.escape(payload.notes.strip()).replace(chr(10), "<br>")}
+            </div>
+            """
+
+        email_html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0; padding:24px 12px; background:#f1f5f9; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
+  <div style="max-width:1000px; margin:0 auto; background:#ffffff; border:1px solid #e2e8f0; border-radius:16px; overflow:hidden;">
+    <div style="background:linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); padding:24px 28px;">
+      <span style="display:inline-block; background:rgba(255,255,255,0.2); color:#ffffff; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1.2px; padding:4px 12px; border-radius:20px;">Interview Status Summary</span>
+      <h1 style="color:#ffffff; font-size:20px; font-weight:800; margin:10px 0 0 0;">Candidate Interview Status ({len(docs)})</h1>
+    </div>
+    <div style="padding:24px 28px;">
+      {notes_html}
+      <div style="overflow-x:auto;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; border:1px solid #e2e8f0;">
+          <thead><tr>{header_html}</tr></thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+    </div>
+    <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:16px 28px; text-align:center; color:#64748b; font-size:12px;">
+      <p style="margin:0; font-weight:700; color:#334155;">{html.escape(sender_company)}</p>
+      <p style="margin:4px 0 0 0; color:#94a3b8; font-size:11px;">Automated Interview System • AI Recruiter</p>
+    </div>
+  </div>
+</body>
+</html>"""
+
+        to_addrs = list(dict.fromkeys(str(e) for e in payload.to_emails))
+        msg = EmailMessage()
+        msg["Subject"] = f"Interview Status Summary - {len(docs)} Candidate Session{'s' if len(docs) != 1 else ''}"
+        msg["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+        msg["To"] = ", ".join(to_addrs)
+        msg.set_content("Please enable HTML to view this email.")
+        msg.add_alternative(email_html, subtype="html")
+
+        if payload.attachment_format != "none":
+            export_headers = [
+                "Candidate Name", "Candidate Email", "Job Title", "Round", "Round Number", "Scheduled Date",
+                "Scheduled Time", "Interviewer", "Status", "Rating", "Outcome", "Feedback Comments",
+                "Client Feedback Comments",
+            ]
+            filename = f"interview_status_summary_{today_str}.{payload.attachment_format}"
+            if payload.attachment_format == "xlsx":
+                msg.add_attachment(
+                    build_summary_xlsx(export_headers, export_rows, status_colors),
+                    maintype="application",
+                    subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    filename=filename,
+                )
+            else:
+                msg.add_attachment(
+                    build_summary_csv(export_headers, export_rows),
+                    maintype="text",
+                    subtype="csv",
+                    filename=filename,
+                )
+
+        try:
+            password = decrypt_password(config_model.smtp_password)
+            if config_model.use_ssl:
+                server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
+            else:
+                server = smtplib.SMTP(config_model.smtp_server, config_model.smtp_port)
+                if config_model.use_tls:
+                    server.starttls()
+            server.login(config_model.smtp_username, password)
+            server.send_message(msg, to_addrs=to_addrs)
+            server.quit()
+        except Exception as e:
+            logger.error(f"Failed to send interview summary email: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+        logger.info(f"Sent interview summary of {len(docs)} sessions to: {to_addrs}")
+        return {
+            "status": "success",
+            "message": f"Interview summary for {len(docs)} session(s) sent to {', '.join(to_addrs)}",
+            "recipients": to_addrs,
+            "sent_count": len(docs),
         }
 
     async def get_feedback_questions(self, interview_type: Optional[str] = None) -> Dict[str, Any]:
