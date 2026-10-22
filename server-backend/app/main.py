@@ -12,10 +12,12 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.lifespan import lifespan
 from app.middleware.request_logger import RequestLoggerMiddleware
+from app.middleware.integration_logger import IntegrationLoggerMiddleware
 from app.routes import auth, health, interview, resume, users, dashboard, roles, analytics
 from app.routes import settings as settings_router
 from app.routes import templates
 from app.routes import transcription, skills_evaluation, resume_templates, interview_type
+from app.routes import integration, integration_settings
 
 
 def create_application() -> FastAPI:
@@ -56,6 +58,7 @@ def create_application() -> FastAPI:
 
     # Enable Request Duration Logger Middleware
     app.add_middleware(RequestLoggerMiddleware)
+    app.add_middleware(IntegrationLoggerMiddleware)
 
     # Register Exception Handlers
     register_exception_handlers(app)
@@ -80,6 +83,8 @@ def create_application() -> FastAPI:
     app.include_router(resume_templates.router)
     app.include_router(interview_type.router)
     app.include_router(analytics.router)
+    app.include_router(integration.router)
+    app.include_router(integration_settings.router)
     # ── Serve Frontend Static Files ──────────────────────────────────────────────
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dist_path = os.path.join(os.path.dirname(BASE_DIR), "dist")

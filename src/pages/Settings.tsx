@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers } from 'lucide-react';
+import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug } from 'lucide-react';
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
 import AIConfiguration from '../components/AIConfiguration';
 import AppConfiguration from '../components/AppConfiguration';
 import InterviewTypeManagement from '../components/InterviewTypeManagement';
+import IntegrationApiSettings from '../components/IntegrationApiSettings';
 
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes') || 'config';
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes'>(initialTab);
+  const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration') || 'config';
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes' | 'integration'>(initialTab);
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -30,8 +31,8 @@ export default function Settings() {
   const [message, setMessage] = useState({ type: '', text: '' });
 
   useEffect(() => {
-    const tabParam = searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes';
-    if (tabParam && ['config', 'templates', 'roles', 'interviewTypes'].includes(tabParam)) {
+    const tabParam = searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration';
+    if (tabParam && ['config', 'templates', 'roles', 'interviewTypes', 'integration'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
@@ -174,6 +175,16 @@ export default function Settings() {
         >
           <Layers className="w-4 h-4" />
           Interview Types
+        </button>
+        <button
+          onClick={() => { setActiveTab('integration'); setSearchParams({ tab: 'integration' }); }}
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'integration'
+              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+        >
+          <Plug className="w-4 h-4" />
+          API Integration
         </button>
       </div>
 
@@ -349,6 +360,8 @@ export default function Settings() {
         <AIConfiguration />
       ) : activeTab === 'app_config' ? (
         <AppConfiguration />
+      ) : activeTab === 'integration' ? (
+        <IntegrationApiSettings />
       ) : (
         <InterviewTypeManagement />
       )}

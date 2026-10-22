@@ -35,3 +35,8 @@ ERROR_FORBIDDEN = "Insufficient privileges for this action."
 ERROR_FILE_TOO_LARGE = "File size exceeds maximum limit of 10 MB."
 ERROR_INVALID_FILE_TYPE = "Unsupported file format. Only PDF, DOC, and DOCX are allowed."
 ERROR_EMPTY_FILE = "Uploaded file is empty."
+
+INTEGRATION_KEYS_COLLECTION = "integration_api_keys"
+INTEGRATION_LOGS_COLLECTION = "integration_api_logs"
+INTEGRATION_LOG_RETENTION_DAYS = 90
+INTEGRATION_KEY_PREFIX = "rp_live_"

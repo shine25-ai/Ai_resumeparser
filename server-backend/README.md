@@ -237,6 +237,64 @@ On application startup, the backend automatically executes `app/core/bootstrap.p
 
 ---
 
+## Integration API (for other projects)
+
+Other applications can upload resumes and read parsed profiles over REST using an API key
+instead of a user login.
+
+### Setup
+
+API keys are managed in the app under **Settings → API Integration** (admins, or roles with the
+Settings permission):
+
+- **New API key**: create one key per application. The full key is shown only once; only a
+  hash is stored.
+- **Disable / Regenerate / Delete**: turn off one key, rotate it, or remove it.
+- **Accept API requests**: the master switch. When off, every integration request returns `503`.
+- **Usage**: request counts, success rate, uploads, average response time and a daily chart,
+  filterable by key and period.
+- **Request Logs**: every call with time, key, endpoint, result, error message, duration, client IP,
+  and the uploaded candidate's current parsing status. Logs are deleted automatically after 90 days.
+
+Every request sends the key in the `X-API-Key` header. Uploads are recorded as uploaded by
+`API Integration (<key name>)`.
+
+The admin endpoints behind this page are under `/api/v1/settings/integration`.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/v1/integration/resumes` | Upload a resume (multipart `file`, optional `resume_source`, `resume_source_informer_name`). Returns `resume_id` and starts parsing in the background. |
+| `GET` | `/api/v1/integration/resumes/{resume_id}/status` | Parsing status (`PENDING` / `PARSED` / `FAILED`) and interview status. |
+| `GET` | `/api/v1/integration/resumes/{resume_id}` | Full profile: `parsed_data`, `ai_evaluation`, HR updates, interviews, resume URL. Add `?include_text=true` for the raw resume text. |
+| `GET` | `/api/v1/integration/resumes/lookup?email=...` or `?candidate_id=CND0001` | Find a profile without knowing the `resume_id`. |
+
+### Typical flow
+
+```bash
+# 1. Upload
+curl -X POST http://localhost:8000/api/v1/integration/resumes \
+  -H "X-API-Key: $KEY" \
+  -F "file=@resume.pdf" -F "resume_source=Careers Site"
+# -> {"data": {"resume_id": "...", "candidate_id": "CND0042", "parsing_status": "PENDING", "status_url": "...", "profile_url": "..."}}
+
+# 2. Poll every ~5 seconds until parsing_status is PARSED or FAILED (usually under a minute)
+curl -H "X-API-Key: $KEY" http://localhost:8000/api/v1/integration/resumes/<resume_id>/status
+
+# 3. Fetch the parsed profile
+curl -H "X-API-Key: $KEY" http://localhost:8000/api/v1/integration/resumes/<resume_id>
+```
+
+**Duplicate candidates:** if the parsed email matches an existing candidate, the upload is merged
+into that existing profile. The original `resume_id` keeps working, but responses return the
+existing profile's `resume_id` / `candidate_id` with `merged_into_existing_profile: true`.
+Store the returned `resume_id` from the status response once parsing finishes.
+
+Interactive docs for these endpoints are under the **Integration API** tag at `/docs`.
+
+---
+
 ## API Documentation
 
 Interactive Swagger API documentation is automatically accessible at:
