@@ -122,7 +122,9 @@ class ResumeService:
             ai_evaluation=ai_evaluation,
             resume_source=resume_source,
             resume_source_informer_name=resume_source_informer_name,
-            status=ResumeStatus.PENDING,
+            # Text extraction failure means no parsing job is queued, so mark it FAILED now
+            # instead of leaving it stuck in PENDING.
+            status=ResumeStatus.FAILED if status == ResumeStatus.FAILED else ResumeStatus.PENDING,
         )
 
         created = await self.resume_repo.create(resume_doc.to_dict())

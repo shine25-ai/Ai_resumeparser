@@ -1501,3 +1501,133 @@ export const deleteInterviewType = async (id: string): Promise<void> => {
 
 
 
+
+// ── Settings → API Integration ────────────────────────────────────────────────
+export const INTEGRATION_API_BASE = `${BASE_URL}/integration`;
+export const SETTINGS_INTEGRATION_URL = `${BASE_URL}/settings/integration`;
+
+export interface IntegrationOverview {
+  enabled: boolean;
+  total_keys: number;
+  active_keys: number;
+  requests_24h: number;
+  errors_24h: number;
+  last_request_at: string | null;
+  log_retention_days: number;
+}
+
+export interface IntegrationKey {
+  id: string;
+  name: string;
+  description?: string | null;
+  key_hint: string;
+  is_active: boolean;
+  request_count: number;
+  last_used_at: string | null;
+  created_at: string;
+  created_by_name?: string | null;
+  created_by_email?: string | null;
+  regenerated_at?: string | null;
+  /** Only present right after creating or regenerating a key. */
+  api_key?: string;
+}
+
+export interface IntegrationUsage {
+  days: number;
+  total_requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  server_errors: number;
+  success_rate: number | null;
+  resumes_uploaded: number;
+  avg_duration_ms: number | null;
+  daily: { date: string; success: number; errors: number }[];
+  by_endpoint: { endpoint: string; total: number; errors: number }[];
+  by_key: { key_id: string | null; key_name: string; total: number; errors: number }[];
+}
+
+export interface IntegrationLog {
+  id: string;
+  created_at: string;
+  key_id: string | null;
+  key_name: string | null;
+  key_hint: string | null;
+  method: string;
+  path: string;
+  query: string | null;
+  endpoint: string;
+  status_code: number;
+  duration_ms: number;
+  resume_id: string | null;
+  error_message: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  resume: {
+    resume_id: string;
+    candidate_id: string | null;
+    candidate_name: string | null;
+    parsing_status: string;
+    merged: boolean;
+  } | null;
+}
+
+export interface IntegrationLogPage {
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  logs: IntegrationLog[];
+}
+
+const integrationRequest = async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${SETTINGS_INTEGRATION_URL}${path}`, {
+    ...init,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const resData = await response.json().catch(() => ({}));
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.message || resData.detail || "Request failed");
+  }
+  return resData.data as T;
+};
+
+const toQuery = (params: Record<string, string | number | undefined | null>) => {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  });
+  const s = q.toString();
+  return s ? `?${s}` : "";
+};
+
+export const getIntegrationOverview = () => integrationRequest<IntegrationOverview>("");
+
+export const setIntegrationEnabled = (enabled: boolean) =>
+  integrationRequest<IntegrationOverview>("/status", { method: "PUT", body: JSON.stringify({ enabled }) });
+
+export const getIntegrationKeys = async () =>
+  (await integrationRequest<{ keys: IntegrationKey[] }>("/keys")).keys;
+
+export const createIntegrationKey = (name: string, description?: string) =>
+  integrationRequest<IntegrationKey>("/keys", { method: "POST", body: JSON.stringify({ name, description }) });
+
+export const updateIntegrationKey = (id: string, changes: { name?: string; description?: string; is_active?: boolean }) =>
+  integrationRequest<IntegrationKey>(`/keys/${id}`, { method: "PATCH", body: JSON.stringify(changes) });
+
+export const regenerateIntegrationKey = (id: string) =>
+  integrationRequest<IntegrationKey>(`/keys/${id}/regenerate`, { method: "POST" });
+
+export const deleteIntegrationKey = (id: string) =>
+  integrationRequest<Record<string, never>>(`/keys/${id}`, { method: "DELETE" });
+
+export const getIntegrationUsage = (days: number, keyId?: string) =>
+  integrationRequest<IntegrationUsage>(`/usage${toQuery({ days, key_id: keyId })}`);
+
+export const getIntegrationLogs = (params: { page: number; limit: number; key_id?: string; outcome?: string; endpoint?: string }) =>
+  integrationRequest<IntegrationLogPage>(`/logs${toQuery(params)}`);

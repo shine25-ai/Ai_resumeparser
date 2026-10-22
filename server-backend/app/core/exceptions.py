@@ -75,6 +75,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):
         logger.warning(f"AppException [{exc.status_code}] on {request.method} {request.url.path}: {exc.message}")
+        request.state.error_message = exc.message
         return error_response(message=exc.message, errors=exc.errors, status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
@@ -85,11 +86,13 @@ def register_exception_handlers(app: FastAPI) -> None:
             loc = " -> ".join([str(item) for item in err.get("loc", [])])
             msg = err.get("msg", "Invalid value")
             formatted_errors.append(f"{loc}: {msg}")
+        request.state.error_message = "Validation failed: " + "; ".join(formatted_errors)
         return error_response(message="Validation failed", errors=formatted_errors, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         logger.warning(f"HTTPException [{exc.status_code}] on {request.method} {request.url.path}: {exc.detail}")
+        request.state.error_message = str(exc.detail)
         return error_response(message=str(exc.detail), status_code=exc.status_code)
 
     @app.exception_handler(Exception)

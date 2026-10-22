@@ -8,6 +8,7 @@ from loguru import logger
 from app.core.bootstrap import bootstrap_default_admin
 from app.core.database import db_manager
 from app.core.logging import setup_logging
+from app.repositories.integration_repository import IntegrationRepository
 
 
 @asynccontextmanager
@@ -27,6 +28,11 @@ async def lifespan(app: FastAPI):
     db = db_manager.get_db()
 
     await bootstrap_default_admin(db)
+
+    try:
+        await IntegrationRepository(db).ensure_indexes()
+    except Exception as e:
+        logger.warning(f"Could not create integration API indexes: {e}")
 
     logger.info("Application startup completed successfully.")
 
