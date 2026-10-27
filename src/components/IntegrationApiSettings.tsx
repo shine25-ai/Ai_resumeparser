@@ -7,7 +7,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   INTEGRATION_API_BASE,
-  getIntegrationOverview, setIntegrationEnabled, getIntegrationKeys, createIntegrationKey,
+  getIntegrationOverview, setIntegrationEnabled, setShareInterviewResults, getIntegrationKeys, createIntegrationKey,
   updateIntegrationKey, regenerateIntegrationKey, deleteIntegrationKey, getIntegrationUsage, getIntegrationLogs,
 } from '../utils/Api';
 import type { IntegrationOverview, IntegrationKey, IntegrationUsage, IntegrationLogPage } from '../utils/Api';
@@ -21,6 +21,7 @@ const ENDPOINT_LABELS: Record<string, string> = {
   status: 'Get status',
   profile: 'Get profile',
   lookup: 'Lookup',
+  interviews: 'Interviews',
   other: 'Other',
 };
 
@@ -158,6 +159,12 @@ export default function IntegrationApiSettings() {
     setOverview(await setIntegrationEnabled(next));
   }, overview?.enabled ? 'Integration API turned off. All API requests are now rejected.' : 'Integration API turned on.');
 
+  const handleToggleShareResults = () => run(async () => {
+    setOverview(await setShareInterviewResults(!overview?.share_interview_results));
+  }, overview?.share_interview_results
+    ? 'Interview results are now hidden. Candidates only see schedule and status.'
+    : 'Interview results are now shared with candidates.');
+
   const handleCreate = (e: FormEvent) => {
     e.preventDefault();
     run(async () => {
@@ -224,7 +231,7 @@ export default function IntegrationApiSettings() {
                 </span>
               </div>
               <p className="text-sm text-slate-500 mt-1">
-                Let other applications upload resumes and fetch parsed profiles using an API key.
+                Let other applications upload resumes, fetch parsed profiles and show candidates their interviews, using an API key.
               </p>
             </div>
           </div>
@@ -266,6 +273,20 @@ export default function IntegrationApiSettings() {
             <div className="font-semibold text-slate-900" title={formatDateTime(overview?.last_request_at)}>{timeAgo(overview?.last_request_at)}</div>
           </div>
         </div>
+
+        <label className="flex items-center justify-between gap-4 mt-6 pt-5 border-t border-slate-200 cursor-pointer">
+          <span>
+            <span className="block text-sm font-medium text-slate-900">Share interview results with candidates</span>
+            <span className="block text-xs text-slate-500 mt-0.5">
+              When on, the interviews API includes each round's outcome (Selected, Moved to next round, Not selected, On hold).
+              Ratings, feedback and salary are never shared.
+            </span>
+          </span>
+          <span className="relative inline-flex items-center shrink-0">
+            <input type="checkbox" className="sr-only peer" checked={!!overview?.share_interview_results} onChange={handleToggleShareResults} disabled={busy} />
+            <span className="w-11 h-6 bg-slate-200 rounded-full peer peer-checked:bg-indigo-600 peer-focus:ring-4 peer-focus:ring-indigo-300 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-slate-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+          </span>
+        </label>
       </div>
 
       {message && (
@@ -489,7 +510,7 @@ export default function IntegrationApiSettings() {
               className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-sm text-slate-700"
             >
               <option value="">All endpoints</option>
-              {['upload', 'status', 'profile', 'lookup'].map(e => <option key={e} value={e}>{ENDPOINT_LABELS[e]}</option>)}
+              {['upload', 'status', 'profile', 'lookup', 'interviews'].map(e => <option key={e} value={e}>{ENDPOINT_LABELS[e]}</option>)}
             </select>
             <select
               value={outcomeFilter}
@@ -598,6 +619,8 @@ export default function IntegrationApiSettings() {
             ['GET', '/resumes/{resume_id}/status', 'Parsing status (PENDING, PARSED, FAILED) and interview status.'],
             ['GET', '/resumes/{resume_id}', 'Full parsed profile and AI evaluation.'],
             ['GET', '/resumes/lookup?email=…', 'Find a profile by email or candidate_id.'],
+            ['GET', '/resumes/{resume_id}/interviews', "Candidate's interview schedule, joining link, status and result."],
+            ['GET', '/interviews/lookup?email=…', 'Same, found by email or candidate_id.'],
           ].map(([method, path, desc]) => (
             <div key={path} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className={`font-mono text-xs font-semibold px-1.5 py-0.5 rounded ${method === 'POST' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-700'}`}>{method}</span>

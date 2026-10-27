@@ -1514,6 +1514,7 @@ export interface IntegrationOverview {
   errors_24h: number;
   last_request_at: string | null;
   log_retention_days: number;
+  share_interview_results: boolean;
 }
 
 export interface IntegrationKey {
@@ -1610,6 +1611,9 @@ export const getIntegrationOverview = () => integrationRequest<IntegrationOvervi
 
 export const setIntegrationEnabled = (enabled: boolean) =>
   integrationRequest<IntegrationOverview>("/status", { method: "PUT", body: JSON.stringify({ enabled }) });
+
+export const setShareInterviewResults = (share: boolean) =>
+  integrationRequest<IntegrationOverview>("/status", { method: "PUT", body: JSON.stringify({ share_interview_results: share }) });
 
 export const getIntegrationKeys = async () =>
   (await integrationRequest<{ keys: IntegrationKey[] }>("/keys")).keys;

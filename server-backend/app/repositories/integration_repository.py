@@ -50,6 +50,19 @@ class IntegrationRepository:
         doc = await self.settings.find_one({"type": INTEGRATION_SETTINGS_TYPE})
         return bool(doc.get("enabled", True)) if doc else True
 
+    async def shares_interview_results(self) -> bool:
+        """Whether candidates may see interview outcomes (Selected, Not selected, ...)."""
+        doc = await self.settings.find_one({"type": INTEGRATION_SETTINGS_TYPE})
+        return bool(doc.get("share_interview_results", True)) if doc else True
+
+    async def set_share_interview_results(self, share: bool) -> bool:
+        await self.settings.update_one(
+            {"type": INTEGRATION_SETTINGS_TYPE},
+            {"$set": {"type": INTEGRATION_SETTINGS_TYPE, "share_interview_results": share}},
+            upsert=True,
+        )
+        return share
+
     async def set_enabled(self, enabled: bool) -> bool:
         await self.settings.update_one(
             {"type": INTEGRATION_SETTINGS_TYPE},

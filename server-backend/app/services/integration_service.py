@@ -33,6 +33,8 @@ def endpoint_label(method: str, path: str) -> str:
         return "upload"
     if tail == "/resumes/lookup":
         return "lookup"
+    if "/interviews" in tail:
+        return "interviews"
     if tail.startswith("/resumes/") and tail.endswith("/status"):
         return "status"
     if tail.startswith("/resumes/"):
@@ -45,8 +47,11 @@ class IntegrationService:
         self.repo = repo
 
     # ── Global switch / overview ─────────────────────────────────────────────
-    async def set_enabled(self, enabled: bool) -> Dict[str, Any]:
-        await self.repo.set_enabled(enabled)
+    async def update_options(self, enabled: Optional[bool] = None, share_interview_results: Optional[bool] = None) -> Dict[str, Any]:
+        if enabled is not None:
+            await self.repo.set_enabled(enabled)
+        if share_interview_results is not None:
+            await self.repo.set_share_interview_results(share_interview_results)
         return await self.overview()
 
     async def overview(self) -> Dict[str, Any]:
@@ -64,6 +69,7 @@ class IntegrationService:
         day = last_day[0] if last_day else {"total": 0, "errors": 0}
         return {
             "enabled": await self.repo.is_enabled(),
+            "share_interview_results": await self.repo.shares_interview_results(),
             "total_keys": len(keys),
             "active_keys": sum(1 for k in keys if k.get("is_active")),
             "requests_24h": day["total"],
