@@ -251,6 +251,8 @@ Settings permission):
   hash is stored.
 - **Disable / Regenerate / Delete**: turn off one key, rotate it, or remove it.
 - **Accept API requests**: the master switch. When off, every integration request returns `503`.
+- **Share interview results with candidates**: when off, the interviews endpoints return schedule
+  and status only, with `result: null`.
 - **Usage**: request counts, success rate, uploads, average response time and a daily chart,
   filterable by key and period.
 - **Request Logs**: every call with time, key, endpoint, result, error message, duration, client IP,
@@ -269,6 +271,9 @@ The admin endpoints behind this page are under `/api/v1/settings/integration`.
 | `GET` | `/api/v1/integration/resumes/{resume_id}/status` | Parsing status (`PENDING` / `PARSED` / `FAILED`) and interview status. |
 | `GET` | `/api/v1/integration/resumes/{resume_id}` | Full profile: `parsed_data`, `ai_evaluation`, HR updates, interviews, resume URL. Add `?include_text=true` for the raw resume text. |
 | `GET` | `/api/v1/integration/resumes/lookup?email=...` or `?candidate_id=CND0001` | Find a profile without knowing the `resume_id`. |
+| `GET` | `/api/v1/integration/resumes/{resume_id}/interviews` | The candidate's interview rounds: schedule, joining link, status and result. Safe to show to the candidate. |
+| `GET` | `/api/v1/integration/resumes/{resume_id}/interviews/{interview_id}` | One interview round. |
+| `GET` | `/api/v1/integration/interviews/lookup?email=...` or `?candidate_id=CND0001` | Same as above, found by email or candidate ID. |
 
 ### Typical flow
 
@@ -290,6 +295,44 @@ curl -H "X-API-Key: $KEY" http://localhost:8000/api/v1/integration/resumes/<resu
 into that existing profile. The original `resume_id` keeps working, but responses return the
 existing profile's `resume_id` / `candidate_id` with `merged_into_existing_profile: true`.
 Store the returned `resume_id` from the status response once parsing finishes.
+
+### Candidate interviews
+
+The interviews endpoints return only what a candidate should see. Ratings, written feedback,
+salary, AI scores, client notes and interviewer emails are never included.
+
+```jsonc
+{
+  "candidate_id": "CND0042",
+  "results_shared": true,
+  "overall": {
+    "stage": "INTERVIEW_SCHEDULED",          // see stages below
+    "label": "Interview scheduled",
+    "total_rounds": 2, "completed_rounds": 1,
+    "next_interview": { /* same shape as an item in interviews[] */ }
+  },
+  "interviews": [                            // oldest first
+    {
+      "interview_id": "…", "round_number": 2, "interview_type": "HR Round", "job_title": "Data Engineer",
+      "scheduled_date": "2026-11-03", "scheduled_time": "15:30", "timezone": "Asia/Kolkata",
+      "scheduled_at": "2026-11-03T15:30:00+05:30", "duration_minutes": 45,
+      "status": "RESCHEDULED", "status_label": "Rescheduled", "is_upcoming": true,
+      "was_rescheduled": true, "previous_schedule": { "date": "2026-11-01", "time": "11:00" },
+      "mode": "Online", "meeting_platform": "Google Meet", "meeting_link": "https://…", "location": null,
+      "interviewer_names": ["Ravi"],
+      "result": null                         // set once the round is completed
+    }
+  ]
+}
+```
+
+- `status`: `PENDING`, `SCHEDULED`, `RESCHEDULED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`.
+  `meeting_link` and `meeting_platform` are only returned while the round is still open.
+- `result.outcome`: `SELECTED`, `NEXT_ROUND`, `NOT_SELECTED`, `ON_HOLD`, `PENDING`, `NO_SHOW`,
+  `WITHDRAWN`, `OFFER_ACCEPTED`, `OFFER_DECLINED`, each with a readable `label`.
+  It is `null` before the round is completed, and always `null` when result sharing is off.
+- `overall.stage`: `NOT_SCHEDULED`, `INTERVIEW_SCHEDULED`, `AWAITING_UPDATE`, `NEXT_ROUND_PENDING`,
+  `UNDER_REVIEW`, `ON_HOLD`, `SELECTED`, `NOT_SELECTED`, `OFFER_ACCEPTED`, `OFFER_DECLINED`, `WITHDRAWN`.
 
 Interactive docs for these endpoints are under the **Integration API** tag at `/docs`.
 

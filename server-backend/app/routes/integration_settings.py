@@ -24,8 +24,11 @@ async def require_settings_admin(current_user: dict = Depends(get_current_active
     raise AuthorizationError("Managing API keys requires admin or Settings permission.")
 
 
-class ToggleRequest(BaseModel):
-    enabled: bool
+class OptionsRequest(BaseModel):
+    enabled: Optional[bool] = Field(None, description="Accept integration API requests at all")
+    share_interview_results: Optional[bool] = Field(
+        None, description="Include interview outcomes (Selected, Not selected, ...) in candidate interview responses"
+    )
 
 
 class CreateKeyRequest(BaseModel):
@@ -51,14 +54,14 @@ async def get_overview(
     return _ok(await service.overview(), "Integration status retrieved.")
 
 
-@router.put("/status", summary="Turn the integration API on or off")
+@router.put("/status", summary="Turn the integration API on/off and choose whether interview results are shared")
 async def set_status(
-    payload: ToggleRequest,
+    payload: OptionsRequest,
     _: dict = Depends(require_settings_admin),
     service: IntegrationService = Depends(get_integration_service),
 ):
-    data = await service.set_enabled(payload.enabled)
-    return _ok(data, f"Integration API {'enabled' if payload.enabled else 'disabled'}.")
+    data = await service.update_options(payload.enabled, payload.share_interview_results)
+    return _ok(data, "Integration settings updated.")
 
 
 @router.get("/keys", summary="List API keys")
@@ -126,7 +129,7 @@ async def get_logs(
     limit: int = Query(25, ge=1, le=100),
     key_id: Optional[str] = Query(None),
     outcome: Optional[Literal["success", "error"]] = Query(None),
-    endpoint: Optional[Literal["upload", "status", "profile", "lookup"]] = Query(None),
+    endpoint: Optional[Literal["upload", "status", "profile", "lookup", "interviews"]] = Query(None),
     _: dict = Depends(require_settings_admin),
     service: IntegrationService = Depends(get_integration_service),
 ):

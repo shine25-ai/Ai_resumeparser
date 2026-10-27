@@ -7,11 +7,13 @@ from typing import Any, Dict, Optional
 from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Request, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.core.api_key import get_integration_client
+from app.core.api_key import get_integration_client, get_integration_service
 from app.core.database import get_database
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.repositories.resume_log_repository import ResumeLogRepository
 from app.repositories.resume_repository import ResumeRepository
+from app.services.candidate_interview_service import CandidateInterviewService
+from app.services.integration_service import IntegrationService
 from app.services.resume_service import ResumeService
 from app.utils.enums import ResumeStatus
 from app.utils.response import success_response
@@ -39,6 +41,24 @@ INTERVIEW_SUMMARY_FIELDS = (
 def get_resume_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> ResumeService:
     resume_repo = ResumeRepository(db)
     return ResumeService(resume_repo, resume_log_repo=ResumeLogRepository(db))
+
+
+def get_candidate_interview_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> CandidateInterviewService:
+    return CandidateInterviewService(db)
+
+
+async def _find_resume(service: ResumeService, email: Optional[str], candidate_id: Optional[str]) -> Dict[str, Any]:
+    """Find a candidate profile by candidate ID (e.g. CND0001) or email."""
+    if not email and not candidate_id:
+        raise BadRequestError("Pass either 'email' or 'candidate_id'.")
+    resume = None
+    if candidate_id:
+        resume = await service.resume_repo.find_one({"candidate_id": candidate_id.strip()})
+    elif email:
+        resume = await service.resume_repo.find_by_email(email=email.strip())
+    if not resume:
+        raise NotFoundError("Candidate profile not found.")
+    return resume
 
 
 def _interview_summary(interview: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -152,17 +172,7 @@ async def lookup_resume(
     client: dict = Depends(get_integration_client),
     service: ResumeService = Depends(get_resume_service),
 ):
-    if not email and not candidate_id:
-        raise BadRequestError("Pass either 'email' or 'candidate_id'.")
-
-    resume = None
-    if candidate_id:
-        resume = await service.resume_repo.find_one({"candidate_id": candidate_id.strip()})
-    elif email:
-        resume = await service.resume_repo.find_by_email(email=email)
-    if not resume:
-        raise NotFoundError("Candidate profile not found.")
-
+    resume = await _find_resume(service, email, candidate_id)
     request.state.integration_resume_id = resume["id"]
     enriched = (await service.enrich_resumes_with_interviews([resume]))[0]
     return success_response(
@@ -204,4 +214,90 @@ async def get_resume_profile(
     return success_response(
         data=_profile_payload(resume, resume_id, include_text=include_text),
         message="Candidate profile retrieved successfully.",
+    )
+
+
+# ── Candidate interviews ──────────────────────────────────────────────────────
+INTERVIEWS_DESCRIPTION = (
+    "Candidate-facing interview schedule and status: date, time, joining link, round, status, "
+    "and a plain result (e.g. Selected, Moved to next round, Not selected) when result sharing is on in "
+    "Settings → API Integration. Internal feedback, ratings, salary and interviewer emails are never included."
+)
+
+
+async def _candidate_interviews(
+    resume: Dict[str, Any],
+    interviews: CandidateInterviewService,
+    integration: IntegrationService,
+) -> Dict[str, Any]:
+    share = await integration.repo.shares_interview_results()
+    return jsonable_encoder(await interviews.interviews_for_resume(resume, share_results=share))
+
+
+@router.get(
+    "/interviews/lookup",
+    summary="Get a candidate's interviews by email or candidate ID",
+    description=INTERVIEWS_DESCRIPTION,
+)
+async def lookup_candidate_interviews(
+    request: Request,
+    email: Optional[str] = Query(None, description="Candidate email"),
+    candidate_id: Optional[str] = Query(None, description="Candidate ID, e.g. CND0001"),
+    client: dict = Depends(get_integration_client),
+    service: ResumeService = Depends(get_resume_service),
+    interviews: CandidateInterviewService = Depends(get_candidate_interview_service),
+    integration: IntegrationService = Depends(get_integration_service),
+):
+    resume = await _find_resume(service, email, candidate_id)
+    request.state.integration_resume_id = resume["id"]
+    data = await _candidate_interviews(resume, interviews, integration)
+    return success_response(data=data, message="Interviews retrieved successfully.")
+
+
+@router.get(
+    "/resumes/{resume_id}/interviews",
+    summary="Get a candidate's interview schedule, status and results",
+    description=INTERVIEWS_DESCRIPTION,
+)
+async def get_candidate_interviews(
+    request: Request,
+    resume_id: str,
+    client: dict = Depends(get_integration_client),
+    service: ResumeService = Depends(get_resume_service),
+    interviews: CandidateInterviewService = Depends(get_candidate_interview_service),
+    integration: IntegrationService = Depends(get_integration_service),
+):
+    resume = await service.resume_repo.get_by_id(resume_id)
+    if not resume:
+        raise NotFoundError("Resume not found.")
+    request.state.integration_resume_id = resume_id
+    data = await _candidate_interviews(resume, interviews, integration)
+    return success_response(data=data, message="Interviews retrieved successfully.")
+
+
+@router.get(
+    "/resumes/{resume_id}/interviews/{interview_id}",
+    summary="Get one interview round for a candidate",
+    description=INTERVIEWS_DESCRIPTION,
+)
+async def get_candidate_interview(
+    request: Request,
+    resume_id: str,
+    interview_id: str,
+    client: dict = Depends(get_integration_client),
+    service: ResumeService = Depends(get_resume_service),
+    interviews: CandidateInterviewService = Depends(get_candidate_interview_service),
+    integration: IntegrationService = Depends(get_integration_service),
+):
+    resume = await service.resume_repo.get_by_id(resume_id)
+    if not resume:
+        raise NotFoundError("Resume not found.")
+    request.state.integration_resume_id = resume_id
+    data = await _candidate_interviews(resume, interviews, integration)
+    match = next((r for r in data["interviews"] if r["interview_id"] == interview_id), None)
+    if not match:
+        raise NotFoundError("Interview not found for this candidate.")
+    return success_response(
+        data={**{k: data[k] for k in ("resume_id", "candidate_id", "candidate_name", "results_shared")}, "interview": match},
+        message="Interview retrieved successfully.",
     )

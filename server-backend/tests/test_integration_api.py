@@ -9,7 +9,8 @@ from app.core.api_key import get_integration_service
 from app.core.dependencies import get_current_active_user
 from app.main import app
 from app.middleware import integration_logger
-from app.routes.integration import get_resume_service
+from app.routes.integration import get_candidate_interview_service, get_resume_service
+from app.services.candidate_interview_service import CandidateInterviewService
 from app.services.integration_service import IntegrationService, endpoint_label, hash_api_key
 
 RESUME = {
@@ -33,11 +34,19 @@ class FakeIntegrationRepo:
 
     def __init__(self):
         self.enabled = True
+        self.share_results = True
         self.keys = {}
         self.logs = []
 
     async def is_enabled(self):
         return self.enabled
+
+    async def shares_interview_results(self):
+        return self.share_results
+
+    async def set_share_interview_results(self, share):
+        self.share_results = share
+        return share
 
     async def set_enabled(self, enabled):
         self.enabled = enabled
@@ -113,6 +122,36 @@ class FakeResumeService:
         return resumes
 
 
+INTERVIEWS = [
+    {   # round 1: done, candidate cleared it
+        "id": "inv-1", "candidate_id": "resume-1", "resume_id": "resume-1", "round_number": 1,
+        "interview_type": "SNOWFLAKE", "job_title": "Data Engineer", "status": "COMPLETED",
+        "scheduled_date": "2026-09-01", "scheduled_time": "10:00", "timezone": "Asia/Kolkata",
+        "meeting_link": "https://meet.example/old", "interviewer_name": "Asha", "interviewer_email": "asha@corp.example",
+        "rating": 4.5, "feedback": "Strong SQL", "recommendation": "Shortlisted", "final_fit_salary": "20 LPA",
+        "interviewers": [{"interviewer_name": "Asha", "interviewer_email": "asha@corp.example", "rating": 4.5}],
+    },
+    {   # round 2: upcoming, was moved once
+        "id": "inv-2", "candidate_id": "resume-1", "resume_id": "resume-1", "round_number": 2,
+        "interview_type": "HR", "job_title": "Data Engineer", "status": "RESCHEDULED",
+        "scheduled_date": "2099-01-15", "scheduled_time": "15:30", "timezone": "Asia/Kolkata", "duration_minutes": 45,
+        "meeting_link": "https://meet.example/next", "meeting_platform": "Google Meet", "interviewer_name": "Ravi",
+        "reschedule_history": [{"previous_date": "2099-01-10", "previous_time": "11:00"}],
+    },
+]
+
+
+class FakeCandidateInterviewService(CandidateInterviewService):
+    def __init__(self, interviews):
+        self.raw = interviews
+
+    async def _type_names(self):
+        return {"SNOWFLAKE": "Snowflake"}
+
+    async def _interviews_for(self, resume):
+        return [dict(i) for i in self.raw if i["resume_id"] == resume["id"]]
+
+
 ADMIN = {"id": "admin-1", "full_name": "Admin", "email": "admin@example.com", "role": "admin", "permissions": []}
 
 
@@ -126,6 +165,7 @@ async def async_client():
 def repo(monkeypatch):
     fake = FakeIntegrationRepo()
     app.dependency_overrides[get_integration_service] = lambda: IntegrationService(fake)
+    app.dependency_overrides[get_candidate_interview_service] = lambda: FakeCandidateInterviewService(INTERVIEWS)
     app.dependency_overrides[get_resume_service] = lambda: FakeResumeService(
         FakeResumeRepo([dict(RESUME)], aliases={"upload-2": "resume-1"})
     )
@@ -235,6 +275,9 @@ def test_endpoint_label():
     assert endpoint_label("GET", "/api/v1/integration/resumes/lookup") == "lookup"
     assert endpoint_label("GET", "/api/v1/integration/resumes/abc/status") == "status"
     assert endpoint_label("GET", "/api/v1/integration/resumes/abc") == "profile"
+    assert endpoint_label("GET", "/api/v1/integration/resumes/abc/interviews") == "interviews"
+    assert endpoint_label("GET", "/api/v1/integration/resumes/abc/interviews/inv-1") == "interviews"
+    assert endpoint_label("GET", "/api/v1/integration/interviews/lookup") == "interviews"
 
 
 # ── Integration API responses ──────────────────────────────────────────────
@@ -283,3 +326,99 @@ async def test_lookup(async_client, repo, api_key):
     assert res.json()["data"]["resume_id"] == "resume-1"
     res = await async_client.get("/api/v1/integration/resumes/lookup", headers=headers(api_key))
     assert res.status_code == 400
+
+
+# ── Candidate interviews ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_candidate_interviews_schedule_status_and_result(async_client, repo, api_key):
+    res = await async_client.get("/api/v1/integration/resumes/resume-1/interviews", headers=headers(api_key))
+    assert res.status_code == 200
+    data = res.json()["data"]
+    first, second = data["interviews"]
+
+    assert data["candidate_name"] == "John Doe"
+    assert data["overall"]["stage"] == "INTERVIEW_SCHEDULED"
+    assert data["overall"]["next_interview"]["interview_id"] == "inv-2"
+    assert (data["overall"]["total_rounds"], data["overall"]["completed_rounds"]) == (2, 1)
+
+    # Finished round: plain result, type display name, no joining link any more.
+    assert first["interview_type"] == "Snowflake"
+    assert first["result"] == {"outcome": "NEXT_ROUND", "label": "Moved to next round"}
+    assert first["meeting_link"] is None and first["is_upcoming"] is False
+
+    # Upcoming round: joining details, reschedule info, no result yet.
+    assert second["is_upcoming"] is True and second["status_label"] == "Rescheduled"
+    assert second["meeting_link"] == "https://meet.example/next"
+    assert second["scheduled_at"] == "2099-01-15T15:30:00+05:30"
+    assert second["previous_schedule"] == {"date": "2099-01-10", "time": "11:00"}
+    assert second["result"] is None
+
+
+@pytest.mark.asyncio
+async def test_candidate_interviews_never_leak_internal_fields(async_client, repo, api_key):
+    res = await async_client.get("/api/v1/integration/resumes/resume-1/interviews", headers=headers(api_key))
+    body = res.text
+    for secret in ("asha@corp.example", "Strong SQL", "20 LPA", "4.5", "rating", "feedback", "salary"):
+        assert secret not in body
+    assert res.json()["data"]["interviews"][0]["interviewer_names"] == ["Asha"]
+
+
+@pytest.mark.asyncio
+async def test_results_hidden_when_sharing_turned_off(async_client, repo, api_key):
+    res = await async_client.put("/api/v1/settings/integration/status", json={"share_interview_results": False})
+    assert res.json()["data"]["share_interview_results"] is False
+    assert res.json()["data"]["enabled"] is True  # untouched
+
+    res = await async_client.get("/api/v1/integration/resumes/resume-1/interviews", headers=headers(api_key))
+    data = res.json()["data"]
+    assert data["results_shared"] is False
+    assert all(r["result"] is None for r in data["interviews"])
+
+
+@pytest.mark.asyncio
+async def test_single_interview_and_lookup(async_client, repo, api_key):
+    res = await async_client.get("/api/v1/integration/resumes/resume-1/interviews/inv-2", headers=headers(api_key))
+    assert res.json()["data"]["interview"]["round_number"] == 2
+
+    res = await async_client.get("/api/v1/integration/resumes/resume-1/interviews/nope", headers=headers(api_key))
+    assert res.status_code == 404
+
+    res = await async_client.get("/api/v1/integration/interviews/lookup?candidate_id=CND0001", headers=headers(api_key))
+    assert len(res.json()["data"]["interviews"]) == 2
+    assert repo.logs[-1]["endpoint"] == "interviews"
+    assert repo.logs[-1]["resume_id"] == "resume-1"
+
+
+def _round(status, recommendation=None, date="2026-01-01", client_recommendation=None):
+    from app.services.candidate_interview_service import candidate_interview_view
+    return candidate_interview_view(
+        {"id": date, "status": status, "recommendation": recommendation, "client_recommendation": client_recommendation,
+         "scheduled_date": date, "scheduled_time": "10:00"},
+        {}, share_results=True,
+    )
+
+
+@pytest.mark.parametrize("recommendation, client, expected", [
+    ("Selected", None, "SELECTED"),
+    ("Rejected", None, "NOT_SELECTED"),
+    ("Not Recommended", None, "NOT_SELECTED"),
+    ("Hold", None, "ON_HOLD"),
+    ("Need Further Evaluation", None, "PENDING"),
+    ("Pending", "Selected", "SELECTED"),  # falls back to the client's decision
+    (None, None, "PENDING"),
+    ("Something new", None, "PENDING"),  # unknown internal values are not shown raw
+])
+def test_outcome_mapping(recommendation, client, expected):
+    assert _round("COMPLETED", recommendation, client_recommendation=client)["result"]["outcome"] == expected
+
+
+def test_overall_progress_stages():
+    from app.services.candidate_interview_service import overall_progress
+    assert overall_progress([], True)["stage"] == "NOT_SCHEDULED"
+    assert overall_progress([_round("COMPLETED", "Shortlisted", "2026-01-01"), _round("COMPLETED", "Selected", "2026-02-01")], True)["stage"] == "SELECTED"
+    assert overall_progress([_round("COMPLETED", "Rejected")], True)["stage"] == "NOT_SELECTED"
+    assert overall_progress([_round("COMPLETED", "Shortlisted")], True)["stage"] == "NEXT_ROUND_PENDING"
+    assert overall_progress([_round("COMPLETED", "Rejected")], False)["stage"] == "UNDER_REVIEW"
+    assert overall_progress([_round("SCHEDULED", date="2026-01-01")], True)["stage"] == "AWAITING_UPDATE"
+    assert overall_progress([_round("CANCELLED")], True)["stage"] == "NOT_SCHEDULED"
