@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getResumes, exportResumesApi, type CandidateQueryParams } from "../utils/Api";
+import { getResumes, exportResumesApi, type CandidateQueryParams, type SortOption, SORT_OPTION_LABELS } from "../utils/Api";
 import { CandidateEditModal } from "../components/CandidateEditModal";
 
 export default function CandidateDatabase() {
@@ -20,6 +20,7 @@ export default function CandidateDatabase() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortOption>("latest");
 
   // Advanced Specific Field Filters State
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
@@ -50,7 +51,7 @@ export default function CandidateDatabase() {
 
   useEffect(() => {
     fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-  }, [page, limit]);
+  }, [page, limit, sortBy]);
 
   // Debounced search on typing
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function CandidateDatabase() {
         email: eVal,
         role: rVal,
         experience: expVal ? Number(expVal) : undefined,
+        sort_by: sortBy,
       };
 
       const resData = await getResumes(params);
@@ -91,8 +93,8 @@ export default function CandidateDatabase() {
         name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         candidateName: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         email: item.parsed_data?.email || item.email || "N/A",
-        role: item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "Software Professional",
-        targetRole: item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "N/A",
+        role: item.parsed_data?.current_role || item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "Software Professional",
+        targetRole: item.parsed_data?.current_role || item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "N/A",
         source: item.resume_source || "N/A",
         uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
         experience: item.parsed_data?.total_experience_years
@@ -100,9 +102,9 @@ export default function CandidateDatabase() {
           : item.parsed_data?.years_of_experience
             ? `${item.parsed_data.years_of_experience} Yrs`
             : "N/A",
-        match: item.ai_evaluation?.ai_technical_score
+        match: typeof item.ai_evaluation?.ai_technical_score === "number"
           ? `${item.ai_evaluation.ai_technical_score}%`
-          : "85%",
+          : "Not scored",
         status: item.status ? String(item.status).toUpperCase() : "PARSED",
         statusBg: "bg-emerald-50 border-emerald-200 text-emerald-700",
         s3Url: item.s3_url,
@@ -201,6 +203,19 @@ export default function CandidateDatabase() {
           </div>
 
           <div className="flex items-center gap-3 self-end sm:self-auto">
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setPage(1);
+                setSortBy(e.target.value as SortOption);
+              }}
+              aria-label="Sort candidates"
+              className="bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 shadow-sm cursor-pointer focus:outline-none focus:border-indigo-500"
+            >
+              {SORT_OPTION_LABELS.map((o) => (
+                <option key={o.value} value={o.value}>Sort: {o.label}</option>
+              ))}
+            </select>
             <button
               onClick={() => setShowFilterModal(!showFilterModal)}
               className={`flex items-center gap-2 border px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer ${nameFilter || emailFilter || roleFilter || expFilter
@@ -384,7 +399,7 @@ export default function CandidateDatabase() {
                     <td className="py-3.5 px-3">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-bold text-slate-800">{row.experience}</span>
-                        <span className="font-bold text-emerald-600 text-[11px]">{row.match}</span>
+                        <span className={`font-bold text-[11px] ${row.match === "Not scored" ? "text-slate-400" : "text-emerald-600"}`}>{row.match}</span>
                       </div>
                     </td>
                     {/* Interview Assignment Status */}

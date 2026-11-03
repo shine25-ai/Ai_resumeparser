@@ -508,10 +508,11 @@ class ResumeService:
         page: int = 1,
         search: Optional[str] = None,
         is_admin: bool = False,
+        sort_by: Optional[str] = None,
     ) -> ResumeListResponse:
         """Fetch list of resumes belonging to user (or all resumes if admin) with total_pages calculation."""
         import math
-        resumes = await self.resume_repo.get_by_user_id(user_id, skip=skip, limit=limit, is_admin=is_admin, search=search)
+        resumes = await self.resume_repo.get_by_user_id(user_id, skip=skip, limit=limit, is_admin=is_admin, search=search, sort_by=sort_by)
         resumes = await self.enrich_resumes_with_interviews(resumes)
         total = await self.resume_repo.count_by_user_id(user_id, is_admin=is_admin, search=search)
         items = [ResumeResponse.model_validate(r) for r in resumes]
@@ -538,6 +539,8 @@ class ResumeService:
         limit: int = 10,
         page: int = 1,
         is_admin: bool = False,
+        skill_mode: Optional[str] = "any",
+        sort_by: Optional[str] = None,
     ) -> ResumeListResponse:
         """Filter resumes matching criteria with backend pagination and total_pages calculation."""
         import math
@@ -559,6 +562,8 @@ class ResumeService:
             skip=skip,
             limit=limit,
             is_admin=is_admin,
+            skill_mode=skill_mode,
+            sort_by=sort_by,
         )
         resumes = res_dict.get("resumes", [])
         resumes = await self.enrich_resumes_with_interviews(resumes)
@@ -918,7 +923,7 @@ class ResumeService:
                         cand_name = p.get("full_name") or p.get("name") or r.get("original_filename") or f"Candidate_{idx+1}"
                         cand_email = p.get("email") or ""
                         cand_phone = p.get("phone") or p.get("mobile") or ""
-                        cand_role = p.get("designation") or p.get("role") or ""
+                        cand_role = p.get("current_role") or p.get("designation") or p.get("role") or ""
                         cand_exp = p.get("total_experience_years") if p.get("total_experience_years") is not None else p.get("years_of_experience", "")
                         cand_loc = p.get("location") or ""
                         pri_skills = ", ".join(p.get("primary_skills") or p.get("skills") or [])
@@ -983,7 +988,7 @@ class ResumeService:
                 cand_name = p.get("full_name") or p.get("name") or r.get("original_filename") or f"Candidate_{idx+1}"
                 cand_email = p.get("email") or ""
                 cand_phone = p.get("phone") or p.get("mobile") or ""
-                cand_role = p.get("designation") or p.get("role") or ""
+                cand_role = p.get("current_role") or p.get("designation") or p.get("role") or ""
                 cand_exp = p.get("total_experience_years") if p.get("total_experience_years") is not None else p.get("years_of_experience", "")
                 cand_loc = p.get("location") or ""
                 pri_skills = ", ".join(p.get("primary_skills") or p.get("skills") or [])
