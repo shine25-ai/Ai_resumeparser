@@ -7,7 +7,55 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.repositories.base_repository import BaseRepository
 from app.utils.constants import RESUMES_COLLECTION
 from app.utils.enums import ResumeStatus
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+
+
+# Fields that hold a candidate's skills in parsed_data.
+SKILL_FIELDS = [
+    "parsed_data.skills",
+    "parsed_data.primary_skills",
+    "parsed_data.programming_languages",
+    "parsed_data.frameworks",
+    "parsed_data.databases",
+    "parsed_data.cloud_tech",
+    "parsed_data.devops_and_infrastructure",
+    "parsed_data.other_technologies",
+]
+
+# Fields that hold a candidate's job title. The AI parser saves `current_role`;
+# `designation` / `role` come from older or HR-edited records.
+ROLE_FIELDS = ["parsed_data.current_role", "parsed_data.designation", "parsed_data.role"]
+
+# Allowed sort options -> MongoDB sort spec. Newest upload breaks ties.
+SORT_OPTIONS: Dict[str, List[Tuple[str, int]]] = {
+    "latest": [("upload_date", -1)],
+    "oldest": [("upload_date", 1)],
+    "ai_score": [("ai_evaluation.ai_technical_score", -1), ("upload_date", -1)],
+    "experience_desc": [("parsed_data.total_experience_years", -1), ("upload_date", -1)],
+    "experience_asc": [("parsed_data.total_experience_years", 1), ("upload_date", -1)],
+    "name": [("parsed_data.full_name", 1), ("upload_date", -1)],
+}
+DEFAULT_SORT = "latest"
+
+
+def resolve_sort(sort_by: Optional[str]) -> List[Tuple[str, int]]:
+    """Map a sort option name to a MongoDB sort spec, falling back to newest first."""
+    return SORT_OPTIONS.get((sort_by or DEFAULT_SORT).strip().lower(), SORT_OPTIONS[DEFAULT_SORT])
+
+
+def _global_search_or(regex: Any) -> List[Dict[str, Any]]:
+    """Fields searched by the free-text search box."""
+    return [
+        {"parsed_data.name": {"$regex": regex}},
+        {"parsed_data.full_name": {"$regex": regex}},
+        {"parsed_data.email": {"$regex": regex}},
+        {"email": {"$regex": regex}},
+        *[{f: {"$regex": regex}} for f in ROLE_FIELDS],
+        {"candidate_id": {"$regex": regex}},
+        {"original_filename": {"$regex": regex}},
+        {"extracted_text": {"$regex": regex}},
+        {"resume_source": {"$regex": regex}},
+    ]
 
 
 class ResumeRepository(BaseRepository):
@@ -41,6 +89,7 @@ class ResumeRepository(BaseRepository):
         limit: int = 100,
         is_admin: bool = False,
         search: Optional[str] = None,
+        sort_by: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch list of resumes belonging to user (or all resumes if is_admin or user_id is None)."""
         import re
@@ -51,22 +100,11 @@ class ResumeRepository(BaseRepository):
 
         if search and search.strip():
             s_regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
-            search_or = [
-                {"parsed_data.name": {"$regex": s_regex}},
-                {"parsed_data.full_name": {"$regex": s_regex}},
-                {"parsed_data.email": {"$regex": s_regex}},
-                {"email": {"$regex": s_regex}},
-                {"parsed_data.designation": {"$regex": s_regex}},
-                {"parsed_data.role": {"$regex": s_regex}},
-                {"candidate_id": {"$regex": s_regex}},
-                {"original_filename": {"$regex": s_regex}},
-                {"extracted_text": {"$regex": s_regex}},
-                {"resume_source": {"$regex": s_regex}},
-            ]
+            search_or = _global_search_or(s_regex)
             query = {"$and": [query, {"$or": search_or}]}
 
         logger.info(f"[GET_BY_USER_ID] Executing MongoDB query: {query}, skip={skip}, limit={limit}, is_admin={is_admin}")
-        results = await self.find_many(query=query, skip=skip, limit=limit, sort_by="upload_date", descending=True)
+        results = await self.find_many(query=query, skip=skip, limit=limit, sort=resolve_sort(sort_by))
         logger.info(f"[GET_BY_USER_ID] Query returned {len(results)} resume document(s)")
         return results
 
@@ -80,18 +118,7 @@ class ResumeRepository(BaseRepository):
 
         if search and search.strip():
             s_regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
-            search_or = [
-                {"parsed_data.name": {"$regex": s_regex}},
-                {"parsed_data.full_name": {"$regex": s_regex}},
-                {"parsed_data.email": {"$regex": s_regex}},
-                {"email": {"$regex": s_regex}},
-                {"parsed_data.designation": {"$regex": s_regex}},
-                {"parsed_data.role": {"$regex": s_regex}},
-                {"candidate_id": {"$regex": s_regex}},
-                {"original_filename": {"$regex": s_regex}},
-                {"extracted_text": {"$regex": s_regex}},
-                {"resume_source": {"$regex": s_regex}},
-            ]
+            search_or = _global_search_or(s_regex)
             query = {"$and": [query, {"$or": search_or}]}
 
         count_val = await self.count(query=query)
@@ -117,6 +144,8 @@ class ResumeRepository(BaseRepository):
         skip: int = 0,
         limit: int = 100,
         is_admin: bool = False,
+        skill_mode: Optional[str] = "any",
+        sort_by: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Filter resumes based on multiple criteria matching parsed_data fields and return (results, total)."""
         import re
@@ -128,20 +157,7 @@ class ResumeRepository(BaseRepository):
         # Global search filter across name, email, role, candidate_id, source, text
         if search and search.strip():
             s_regex = re.compile(re.escape(search.strip()), re.IGNORECASE)
-            and_conditions.append({
-                "$or": [
-                    {"parsed_data.name": {"$regex": s_regex}},
-                    {"parsed_data.full_name": {"$regex": s_regex}},
-                    {"parsed_data.email": {"$regex": s_regex}},
-                    {"email": {"$regex": s_regex}},
-                    {"parsed_data.designation": {"$regex": s_regex}},
-                    {"parsed_data.role": {"$regex": s_regex}},
-                    {"candidate_id": {"$regex": s_regex}},
-                    {"original_filename": {"$regex": s_regex}},
-                    {"extracted_text": {"$regex": s_regex}},
-                    {"resume_source": {"$regex": s_regex}},
-                ]
-            })
+            and_conditions.append({"$or": _global_search_or(s_regex)})
 
         # Specific Field Searches: Name, Email, Role, Experience
         if name and name.strip():
@@ -164,12 +180,7 @@ class ResumeRepository(BaseRepository):
 
         if role and role.strip():
             r_regex = re.compile(re.escape(role.strip()), re.IGNORECASE)
-            and_conditions.append({
-                "$or": [
-                    {"parsed_data.designation": {"$regex": r_regex}},
-                    {"parsed_data.role": {"$regex": r_regex}},
-                ]
-            })
+            and_conditions.append({"$or": [{f: {"$regex": r_regex}} for f in ROLE_FIELDS]})
 
         if experience is not None:
             and_conditions.append({
@@ -186,8 +197,7 @@ class ResumeRepository(BaseRepository):
                     jt_regex = re.compile(re.escape(j.strip()), re.IGNORECASE)
                     jt_queries.append({
                         "$or": [
-                            {"parsed_data.designation": {"$regex": jt_regex}},
-                            {"parsed_data.role": {"$regex": jt_regex}},
+                            *[{f: {"$regex": jt_regex}} for f in ROLE_FIELDS],
                             {"parsed_data.name": {"$regex": jt_regex}},
                             {"parsed_data.full_name": {"$regex": jt_regex}},
                             {"parsed_data.experience.designation": {"$regex": jt_regex}},
@@ -264,17 +274,13 @@ class ResumeRepository(BaseRepository):
             for s in skills:
                 if s.strip():
                     s_regex = re.compile(re.escape(s.strip()), re.IGNORECASE)
-                    skill_queries.append({
-                        "$or": [
-                            {"parsed_data.skills": {"$regex": s_regex}},
-                            {"parsed_data.primary_skills": {"$regex": s_regex}},
-                            {"parsed_data.frameworks": {"$regex": s_regex}},
-                            {"parsed_data.databases": {"$regex": s_regex}},
-                            {"parsed_data.cloud_tech": {"$regex": s_regex}},
-                        ]
-                    })
+                    skill_queries.append({"$or": [{f: {"$regex": s_regex}} for f in SKILL_FIELDS]})
             if skill_queries:
-                and_conditions.append({"$or": skill_queries})
+                if (skill_mode or "any").lower() == "all":
+                    # Candidate must have every requested skill.
+                    and_conditions.extend(skill_queries)
+                else:
+                    and_conditions.append({"$or": skill_queries})
                 
         if keywords and any(k.strip() for k in keywords):
             keyword_queries = []
@@ -289,7 +295,7 @@ class ResumeRepository(BaseRepository):
         logger.info(f"[FILTER_RESUMES] Params received -> user_id: {user_id}, search: {search}, name: {name}, email: {email}, role: {role}, exp: {experience}")
 
         final_query = {"$and": and_conditions} if len(and_conditions) > 1 else and_conditions[0]
-        results = await self.find_many(query=final_query, skip=skip, limit=limit, sort_by="upload_date", descending=True)
+        results = await self.find_many(query=final_query, skip=skip, limit=limit, sort=resolve_sort(sort_by))
         total_count = await self.count(query=final_query)
         logger.info(f"[FILTER_RESUMES] Returned {len(results)} matching resume document(s), total={total_count}")
         return {"resumes": results, "total": total_count}

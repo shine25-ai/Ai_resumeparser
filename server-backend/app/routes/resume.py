@@ -70,12 +70,13 @@ async def list_resumes(
     limit: int = Query(10, ge=1, le=500, description="Page size limit"),
     skip: Optional[int] = Query(None, ge=0, description="Optional manual skip offset"),
     search: Optional[str] = Query(None, description="Search term for name, email, role, candidate_id, source"),
+    sort_by: Optional[str] = Query(None, description="Sort order: latest, oldest, ai_score, experience_desc, experience_asc, name"),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
     calculated_skip = skip if skip is not None else (page - 1) * limit
     is_admin = is_admin_or_staff(current_user)
-    return await controller.list_resumes(current_user["id"], skip=calculated_skip, limit=limit, page=page, search=search, is_admin=is_admin)
+    return await controller.list_resumes(current_user["id"], skip=calculated_skip, limit=limit, page=page, search=search, is_admin=is_admin, sort_by=sort_by)
 
 
 @router.get(
@@ -101,6 +102,8 @@ async def match_resumes(
     year_of_passing: list[str] = Query(None, description="Year of passing graduation filter"),
     skills: list[str] = Query(None, description="List of required skills"),
     keywords: list[str] = Query(None, description="List of keywords to search in full resume text"),
+    skill_mode: str = Query("any", pattern="^(any|all)$", description="'all' = candidate must have every skill; 'any' = at least one"),
+    sort_by: Optional[str] = Query(None, description="Sort order: latest, oldest, ai_score, experience_desc, experience_asc, name"),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
@@ -125,6 +128,8 @@ async def match_resumes(
         limit=limit,
         page=page,
         is_admin=is_admin,
+        skill_mode=skill_mode,
+        sort_by=sort_by,
     )
 
 

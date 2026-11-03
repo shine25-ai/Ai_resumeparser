@@ -4,7 +4,7 @@ import {
   Briefcase, Clock, MapPin, ShieldCheck, Layers, AlignLeft, Sparkles, Video, Hash,
   Upload, Building2, AlertCircle, UserX, Plus, Trash2, Loader2, Eye
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, type MatchFilterParams, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem, type InterviewTypeItem } from "../utils/Api";
+import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, type MatchFilterParams, type SortOption, SORT_OPTION_LABELS, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem, type InterviewTypeItem } from "../utils/Api";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -51,6 +51,12 @@ export default function JDMatch() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [matchedResumes, setMatchedResumes] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [sortBy, setSortBy] = useState<SortOption>("ai_score");
+  const [skillMode, setSkillMode] = useState<"all" | "any">("all");
   const [showFilters, setShowFilters] = useState(true);
 
   // Selection & Interview Modal States
@@ -353,7 +359,11 @@ export default function JDMatch() {
   }, []);
 
   // Fetch matched resumes whenever search button is clicked or initial load
-  const fetchMatchedCandidates = async () => {
+  const fetchMatchedCandidates = async (
+    opts: { page?: number; limit?: number; sort?: SortOption; mode?: "all" | "any" } = {}
+  ) => {
+    const targetPage = opts.page ?? 1;
+    const targetLimit = opts.limit ?? pageSize;
     setLoading(true);
     try {
       const getValues = (cat: FilterCategory) => pills.filter((p) => p.category === cat).map((p) => String(p.value));
@@ -366,11 +376,19 @@ export default function JDMatch() {
         year_of_passing: getValues("Year of Passing").length > 0 ? getValues("Year of Passing") : undefined,
         skills: getValues("Skill").length > 0 ? getValues("Skill") : undefined,
         keywords: getValues("Keyword").length > 0 ? getValues("Keyword") : undefined,
+        skill_mode: opts.mode ?? skillMode,
+        sort_by: opts.sort ?? sortBy,
+        page: targetPage,
+        limit: targetLimit,
       };
 
       const res = await matchResumes(params);
       const items = Array.isArray(res) ? res : res.resumes || [];
+      const total = Array.isArray(res) ? items.length : res.total ?? items.length;
       setMatchedResumes(items);
+      setPage(targetPage);
+      setTotalCount(total);
+      setTotalPages(Array.isArray(res) ? 1 : res.total_pages || Math.ceil(total / targetLimit) || 1);
       setSelectedCandidateIds([]); // reset selection on new fetch
     } catch (err) {
       console.error("Error matching resumes:", err);
@@ -651,7 +669,7 @@ export default function JDMatch() {
               <Filter size={14} /> Unified JD Filter
             </h2>
             <button
-              onClick={fetchMatchedCandidates}
+              onClick={() => fetchMatchedCandidates({ page: 1 })}
               disabled={loading}
               className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm disabled:opacity-50 w-full md:w-auto"
             >
@@ -720,6 +738,28 @@ export default function JDMatch() {
               )}
             </div>
 
+            {/* Skill match mode */}
+            {pills.filter((p) => p.category === "Skill").length > 1 && (
+              <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                <span>Candidates must have:</span>
+                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+                  {(["all", "any"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setSkillMode(mode);
+                        fetchMatchedCandidates({ page: 1, mode });
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${skillMode === mode ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                    >
+                      {mode === "all" ? "All selected skills" : "Any selected skill"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Active Pills Display */}
             <div className="pt-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
@@ -767,7 +807,7 @@ export default function JDMatch() {
           <div className="flex items-center gap-3">
             <UserCheck size={18} className="text-emerald-600" />
             <h2 className="text-sm font-bold text-slate-900">
-              Matched Candidates ({matchedResumes.length})
+              Matched Candidates ({totalCount})
             </h2>
             {selectedCandidateIds.length > 0 && (
               <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] px-2.5 py-0.5 rounded-full font-bold">
@@ -776,7 +816,23 @@ export default function JDMatch() {
             )}
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+              Sort by
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  const next = e.target.value as SortOption;
+                  setSortBy(next);
+                  fetchMatchedCandidates({ page: 1, sort: next });
+                }}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                {SORT_OPTION_LABELS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
             <button
               onClick={handleOpenAssignModal}
               disabled={matchedResumes.length === 0}
@@ -830,7 +886,7 @@ export default function JDMatch() {
                   const p = row.parsed_data || {};
                   const evalInfo = row.ai_evaluation || {};
                   const name = p.full_name || p.name || row.original_filename || "Candidate";
-                  const role = p.designation || p.role || "Software Professional";
+                  const role = p.current_role || p.designation || p.role || p.experience?.[0]?.designation || "Role not specified";
                   const exp = p.total_experience_years !== undefined && p.total_experience_years !== null
                     ? `${p.total_experience_years} Yrs`
                     : p.years_of_experience !== undefined
@@ -838,7 +894,7 @@ export default function JDMatch() {
                       : "N/A";
                   const loc = p.location || "N/A";
                   const skillsList: string[] = p.primary_skills || p.skills || [];
-                  const score = evalInfo.ai_technical_score ?? 0;
+                  const score: number | null = typeof evalInfo.ai_technical_score === "number" ? evalInfo.ai_technical_score : null;
                   const isSelected = selectedCandidateIds.includes(row.id);
 
                   return (
@@ -900,14 +956,18 @@ export default function JDMatch() {
 
                       {/* AI Tech Score */}
                       <td className="py-3.5 px-3.5">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border shadow-2xs ${score >= 70
-                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                            : score >= 40
-                              ? "bg-amber-50 border-amber-200 text-amber-700"
-                              : "bg-slate-100 border-slate-200 text-slate-600"
-                          }`}>
-                          {score}%
-                        </span>
+                        {score === null ? (
+                          <span className="text-[11px] font-semibold text-slate-400">Not scored</span>
+                        ) : (
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border shadow-2xs ${score >= 70
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                              : score >= 40
+                                ? "bg-amber-50 border-amber-200 text-amber-700"
+                                : "bg-slate-100 border-slate-200 text-slate-600"
+                            }`}>
+                            {score}%
+                          </span>
+                        )}
                       </td>
 
                       {/* Last Interview Update Date */}
@@ -968,6 +1028,45 @@ export default function JDMatch() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalCount > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-600">
+            <span>
+              Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} candidates
+            </span>
+            <div className="flex items-center gap-2">
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setPageSize(next);
+                  fetchMatchedCandidates({ page: 1, limit: next });
+                }}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 cursor-pointer"
+              >
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n} / page</option>
+                ))}
+              </select>
+              <button
+                onClick={() => fetchMatchedCandidates({ page: page - 1 })}
+                disabled={loading || page <= 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+              >
+                Previous
+              </button>
+              <span className="font-semibold">Page {page} of {totalPages}</span>
+              <button
+                onClick={() => fetchMatchedCandidates({ page: page + 1 })}
+                disabled={loading || page >= totalPages}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* GLOBAL INTERVIEW ASSIGNMENT MODAL (COLORFUL & USER-FRIENDLY FULL PAGE UI) */}

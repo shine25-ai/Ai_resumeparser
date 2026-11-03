@@ -175,7 +175,19 @@ export interface CandidateQueryParams {
   experience?: number;
   min_experience?: number;
   max_experience?: number;
+  sort_by?: SortOption;
 }
+
+export type SortOption = "latest" | "oldest" | "ai_score" | "experience_desc" | "experience_asc" | "name";
+
+export const SORT_OPTION_LABELS: { value: SortOption; label: string }[] = [
+  { value: "latest", label: "Newest upload" },
+  { value: "ai_score", label: "Highest AI score" },
+  { value: "experience_desc", label: "Most experience" },
+  { value: "experience_asc", label: "Least experience" },
+  { value: "name", label: "Name (A-Z)" },
+  { value: "oldest", label: "Oldest upload" },
+];
 
 export interface PaginatedResumesResponse {
   total: number;
@@ -215,6 +227,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   let email = "";
   let role = "";
   let experience: number | undefined = undefined;
+  let sortBy: SortOption | undefined = undefined;
 
   if (typeof params === "object" && params !== null) {
     page = params.page || 1;
@@ -224,6 +237,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
     email = params.email || "";
     role = params.role || "";
     experience = params.experience;
+    sortBy = params.sort_by;
   } else if (typeof params === "number") {
     page = params;
   }
@@ -237,10 +251,12 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   if (email && email.trim()) queryParts.push(`email=${encodeURIComponent(email.trim())}`);
   if (role && role.trim()) queryParts.push(`role=${encodeURIComponent(role.trim())}`);
   if (experience !== undefined) queryParts.push(`experience=${experience}`);
+  if (sortBy) queryParts.push(`sort_by=${sortBy}`);
 
   const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
 
-  const response = await fetch(`${RESUME_LIST}${queryString}`, {
+  // The /match endpoint honours name, email, role and experience filters; /resumes ignores them.
+  const response = await fetch(`${RESUME_MATCH}${queryString}`, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -284,6 +300,10 @@ export interface MatchFilterParams {
   year_of_passing?: string[];
   skills?: string[];
   keywords?: string[];
+  skill_mode?: "any" | "all";
+  sort_by?: SortOption;
+  page?: number;
+  limit?: number;
 }
 
 export const matchResumes = async (params: MatchFilterParams = {}) => {
@@ -322,6 +342,11 @@ export const matchResumes = async (params: MatchFilterParams = {}) => {
       if (k.trim()) queryParts.push(`keywords=${encodeURIComponent(k.trim())}`);
     });
   }
+
+  if (params.skill_mode) queryParts.push(`skill_mode=${params.skill_mode}`);
+  if (params.sort_by) queryParts.push(`sort_by=${params.sort_by}`);
+  if (params.page) queryParts.push(`page=${params.page}`);
+  if (params.limit) queryParts.push(`limit=${params.limit}`);
 
   const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
 

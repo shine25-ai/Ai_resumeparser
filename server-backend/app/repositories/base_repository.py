@@ -2,7 +2,7 @@
 Generic Async MongoDB repository providing reusable CRUD operations.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
 
@@ -42,6 +42,7 @@ class BaseRepository:
         limit: int = 100,
         sort_by: Optional[str] = None,
         descending: bool = True,
+        sort: Optional[List[Tuple[str, int]]] = None,
     ) -> List[Dict[str, Any]]:
         """Find multiple documents matching query with pagination, projection, and sorting."""
         query = query or {}
@@ -50,7 +51,9 @@ class BaseRepository:
         else:
             cursor = self.collection.find(query).skip(skip).limit(limit)
 
-        if sort_by:
+        if sort:
+            cursor = cursor.sort(sort)
+        elif sort_by:
             direction = -1 if descending else 1
             cursor = cursor.sort(sort_by, direction)
 
