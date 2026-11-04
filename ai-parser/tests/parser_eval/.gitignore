@@ -1,0 +1,6 @@
+# run outputs
+results*/
+*.log
+compare.json
+# 6.5 MB; regenerate with scripts/make_corpus.py
+corpus/R05_scanned_image.pdf
