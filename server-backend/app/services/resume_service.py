@@ -33,6 +33,8 @@ from app.utils.validators import validate_profile_picture, validate_uploaded_fil
 class ResumeService:
     """Service handling resume processing, text extraction, S3 upload, and parsing."""
 
+    PARSER_POLL_INTERVAL_SECONDS = 5
+
     def __init__(
         self,
         resume_repo: ResumeRepository,
@@ -202,23 +204,7 @@ class ResumeService:
             else:
                 status_url = settings.AI_PARSER_URL.replace("/upload", f"/status/{job_id}")
                 
-                # Poll for completion
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    for _ in range(60): # 60 * 5 = 300 seconds max
-                        res = await client.get(status_url)
-                        res.raise_for_status()
-                        status_data = res.json()
-                        
-                        if status_data.get("status") == "completed":
-                            parsed_data = status_data.get("parsed_resume", {})
-                            ai_evaluation = status_data.get("evaluation", {})
-                            break
-                        elif status_data.get("status") == "error":
-                            raise Exception(f"AI Parser error: {status_data.get('evaluation')}")
-                            
-                        await asyncio.sleep(5)
-                    else:
-                        raise Exception("AI Parser polling timed out after 5 minutes")
+                parsed_data, ai_evaluation = await self._poll_parser_job(status_url)
 
             # Extract email from parsed_data (handles nested dict or direct string)
             email = parsed_data.get("email") if isinstance(parsed_data, dict) else None
@@ -310,8 +296,51 @@ class ResumeService:
         except Exception as e:
             logger.error(f"Background AI Parsing failed for '{resume_id}': {e}")
             await self.resume_repo.update(resume_id, {
-                "status": ResumeStatus.FAILED.value
+                "status": ResumeStatus.FAILED.value,
+                "parse_error": str(e)[:1000],
             })
+
+    async def _poll_parser_job(self, status_url: str):
+        """Wait for an AI parser job and return (parsed_data, evaluation); raises on failure or timeout."""
+        import asyncio
+        import httpx
+        # Poll for completion. Short connection blips are tolerated; a job the parser
+        # no longer knows (404) or reports as failed ends the wait straight away.
+        # The processing timer starts when the parser picks the resume up, not while it waits in the queue.
+        poll_every = self.PARSER_POLL_INTERVAL_SECONDS
+        timeout_s = settings.AI_PARSER_POLL_TIMEOUT_SECONDS
+        loop = asyncio.get_running_loop()
+        queue_deadline = loop.time() + settings.AI_PARSER_QUEUE_TIMEOUT_SECONDS
+        processing_deadline = None
+        connection_errors = 0
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                now = loop.time()
+                if processing_deadline and now > processing_deadline:
+                    raise Exception(f"AI Parser did not finish within {timeout_s // 60} minutes")
+                if not processing_deadline and now > queue_deadline:
+                    raise Exception(f"AI Parser did not start this resume within {settings.AI_PARSER_QUEUE_TIMEOUT_SECONDS // 60} minutes (queue too long)")
+                try:
+                    res = await client.get(status_url)
+                    res.raise_for_status()
+                    connection_errors = 0
+                except httpx.TransportError:
+                    connection_errors += 1
+                    if connection_errors > 3:
+                        raise Exception("AI Parser is unreachable (4 failed status checks in a row)")
+                    await asyncio.sleep(poll_every)
+                    continue
+                status_data = res.json()
+
+                if status_data.get("status") == "completed":
+                    return status_data.get("parsed_resume", {}), status_data.get("evaluation", {})
+                elif status_data.get("status") == "error":
+                    detail = (status_data.get("evaluation") or {}).get("error") or status_data.get("evaluation")
+                    raise Exception(f"AI Parser error: {detail}")
+                elif status_data.get("status") != "queued" and not processing_deadline:
+                    processing_deadline = loop.time() + timeout_s
+
+                await asyncio.sleep(poll_every)
 
     def _extract_text_from_file(self, file_path: str, ext: str) -> str:
         """Extract plain text from PDF, DOCX, or DOC file."""

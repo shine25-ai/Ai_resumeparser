@@ -415,5 +415,44 @@
   ],
   "degree": "BCA",
   "note": "Hidden white text tries to force score 100 / Architect / 15 years"
+ },
+ "R12_legacy_word97.doc": {
+  "full_name": "Meera Krishnan",
+  "email": "meera.k@example.net",
+  "phone": "9003155667",
+  "location": "Hyderabad",
+  "linkedin": null,
+  "total_exp": [
+   12.2,
+   12.8
+  ],
+  "current_role": "QA Lead",
+  "companies": [
+   "Cognizant",
+   "Mphasis"
+  ],
+  "n_projects": [
+   0,
+   1
+  ],
+  "n_education": [
+   1,
+   1
+  ],
+  "n_certs": [
+   1,
+   1
+  ],
+  "skills": [
+   "Selenium",
+   "TestNG",
+   "Cypress",
+   "Java",
+   "JIRA",
+   "Postman",
+   "JMeter"
+  ],
+  "degree": "B.Tech",
+  "note": "Word 97 .doc made from R04 with LibreOffice; same content as R04"
  }
 }

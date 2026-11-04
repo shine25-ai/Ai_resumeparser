@@ -237,5 +237,13 @@ open(os.path.join(OUT, "X01_corrupt.pdf"), "wb").write(open(os.path.join(OUT, "R
 b = fitz.open(); b.new_page(); b.save(os.path.join(OUT, "X02_blank.pdf"))
 open(os.path.join(OUT, "X03_legacy.doc"), "wb").write(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 504 + "Ravi Teja ravi.teja@example.com Java Developer".encode("utf-16-le") + b"\x00" * 2000)
 
+# R12 real Word 97 .doc, converted from R04 (needs LibreOffice; skipped if not installed)
+import shutil, subprocess
+soffice = shutil.which("soffice") or "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+if os.path.exists(soffice):
+    subprocess.run([soffice, "--headless", "--convert-to", "doc", "--outdir", OUT, os.path.join(OUT, "R04_docx_header_table.docx")], check=True, capture_output=True)
+    os.replace(os.path.join(OUT, "R04_docx_header_table.doc"), os.path.join(OUT, "R12_legacy_word97.doc"))
+    truth["R12_legacy_word97.doc"] = dict(truth["R04_docx_header_table.docx"], note="Word 97 .doc made from R04 with LibreOffice; same content as R04")
+
 json.dump(truth, open(os.path.join(OUT, "ground_truth.json"), "w"), indent=1, ensure_ascii=False)
 print("wrote", len(truth), "resumes")
