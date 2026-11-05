@@ -136,3 +136,17 @@ class CandidateEvaluationSchema(BaseModel):
     interview_focus_areas: List[str] = Field(default_factory=list, description="Suggested areas to verify during an interview")
     personality_analysis: AIPersonalityScore = Field(default_factory=AIPersonalityScore)
     career_analysis: CareerAnalysis = Field(default_factory=CareerAnalysis)
+
+
+class SearchPlanSchema(BaseModel):
+    """A recruiter's request or job description turned into search filters (JD Match prompt mode)."""
+    role_titles: List[str] = Field(default_factory=list, description="Job titles that fit the request, most specific first (e.g. 'Java Developer', 'Backend Engineer'). At most 4.")
+    role_family: Optional[str] = Field(default=None, description="Role family, one of: Software Engineering, Data, QA, DevOps, Product, Design, HR, Finance, Sales, Operations, Other")
+    must_have_skills: List[str] = Field(default_factory=list, description="Skills or tools the request says are required. Only skills actually named or clearly required. At most 8.")
+    nice_to_have_skills: List[str] = Field(default_factory=list, description="Skills described as optional, preferred, a plus, or 'good to have'. At most 8.")
+    min_experience: Optional[float] = Field(default=None, description="Minimum total years of experience, if stated")
+    max_experience: Optional[float] = Field(default=None, description="Maximum total years of experience, if stated")
+    level: Optional[str] = Field(default=None, description="Seniority if stated: Fresher, Junior, Mid-Level, Senior or Architect")
+    locations: List[str] = Field(default_factory=list, description="Cities or 'Remote' if stated")
+    education: List[str] = Field(default_factory=list, description="Required degrees or fields of study if stated (e.g. 'B.Tech', 'MBA', 'Computer Science')")
+    keywords: List[str] = Field(default_factory=list, description="Other short must-match terms such as a domain or industry (e.g. 'payments', 'healthcare'). At most 5.")

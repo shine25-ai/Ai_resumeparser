@@ -23,6 +23,10 @@ class GenerateQuestionsRequest(BaseModel):
     ai_config: Optional[Dict[str, Any]] = None
     existing_questions: Optional[str] = None
 
+class SearchPlanRequest(BaseModel):
+    prompt: str
+    ai_config: Optional[Dict[str, Any]] = None
+
 class EvaluateAnswerRequest(BaseModel):
     transcript: str
     expected_answer: str
@@ -234,6 +238,20 @@ async def generate_questions(request: GenerateQuestionsRequest):
     except Exception as e:
         logger.error(f"Error generating questions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/search-plan")
+def search_plan_endpoint(request: SearchPlanRequest):
+    """JD Match prompt mode: a recruiter's request or job description -> search filters."""
+    from search_plan import build_search_plan
+    if not request.prompt or not request.prompt.strip():
+        raise HTTPException(status_code=400, detail="Describe the role or paste a job description.")
+    try:
+        plan, usage = build_search_plan(request.prompt, request.ai_config)
+    except Exception as e:
+        logger.error(f"Search plan failed: {str(e)[:300]}")
+        status = 429 if "rate limit" in str(e).lower() else 502
+        raise HTTPException(status_code=status, detail=f"Could not read the request: {str(e)[:300]}")
+    return {"status": "success", "plan": plan, "token_usage": usage}
 
 @app.post("/api/evaluate-answer")
 async def evaluate_answer(request: EvaluateAnswerRequest):

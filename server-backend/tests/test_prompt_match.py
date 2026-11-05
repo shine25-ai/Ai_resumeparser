@@ -1,0 +1,206 @@
+"""Tests for JD Match prompt mode (phase 1): the match score, ranking, the plan cache and widening the pool.
+The MongoDB tests use a throwaway database on localhost and are skipped when MongoDB isn't running."""
+
+import asyncio
+import os
+import uuid
+from unittest import mock
+
+import httpx
+import pytest
+from motor.motor_asyncio import AsyncIOMotorClient
+
+from app.core.exceptions import AppException, BadRequestError
+from app.repositories.resume_repository import ResumeRepository
+from app.services.prompt_match_service import (PromptMatchService, match_score, normalise_plan, rank_candidates,
+                                               title_matches)
+
+MONGO_URL = os.getenv("TEST_MONGO_URL", "mongodb://localhost:27017")
+
+
+def cand(cid, skills=(), years=None, role=None, location=None, text="", ai=None, past_roles=(), family=None, education=()):
+    return {"id": cid, "status": "PARSED", "redirect_id": None, "user_id": "u1", "filename": f"{cid}.pdf",
+            "original_filename": f"{cid}.pdf", "file_path": f"/tmp/{cid}.pdf", "file_size": 1, "content_type": "application/pdf",
+            "upload_date": "2026-10-01T00:00:00", "extracted_text": text,
+            "parsed_data": {"full_name": cid, "primary_skills": list(skills), "total_experience_years": years,
+                            "current_role": role, "location": location,
+                            "experience": [{"designation": r} for r in past_roles],
+                            "education": [{"degree": d} for d in education]},
+            "ai_evaluation": {"ai_technical_score": ai, "role_family": family}}
+
+
+JAVA_PLAN = normalise_plan({"role_titles": ["Java Developer"], "must_have_skills": ["Java", "Spring Boot", "Kafka"],
+                            "nice_to_have_skills": ["AWS"], "min_experience": 5, "max_experience": 8, "locations": ["Chennai"]})
+
+
+# ---------------------------------------------------------------- the score (no database)
+
+def test_perfect_match_scores_high_and_lists_skills():
+    m = match_score(cand("a", ["Java", "Spring Boot", "Kafka", "AWS"], 6, "Senior Java Developer", "Chennai", ai=80), JAVA_PLAN)
+    assert m["match_score"] == 99          # everything but 1 of the 5 general-AI-score points
+    assert m["matched_skills"] == ["Java", "Spring Boot", "Kafka"] and m["missing_skills"] == []
+    assert m["role_match"] == "current role"
+
+
+def test_missing_skill_and_experience_outside_range_cost_points():
+    full = match_score(cand("a", ["Java", "Spring Boot", "Kafka"], 6, "Java Developer", "Chennai"), JAVA_PLAN)["match_score"]
+    missing = match_score(cand("b", ["Java", "Spring Boot"], 6, "Java Developer", "Chennai"), JAVA_PLAN)
+    junior = match_score(cand("c", ["Java", "Spring Boot", "Kafka"], 3, "Java Developer", "Chennai"), JAVA_PLAN)["match_score"]
+    assert missing["missing_skills"] == ["Kafka"] and missing["match_score"] < full
+    assert junior < full
+
+
+def test_skill_only_in_resume_text_gets_half_credit():
+    listed = match_score(cand("a", ["Java", "Spring Boot", "Kafka"]), JAVA_PLAN)["score_parts"]["must_have"]
+    in_text = match_score(cand("b", ["Java", "Spring Boot"], text="Built Kafka consumers"), JAVA_PLAN)
+    assert "Kafka" in in_text["matched_skills"] and in_text["score_parts"]["must_have"] == pytest.approx(listed - 50 / 3 / 2, abs=0.1)
+
+
+def test_whole_word_skills_java_is_not_javascript():
+    m = match_score(cand("a", ["JavaScript", "Spring Boot", "Kafka"]), JAVA_PLAN)
+    assert "Java" in m["missing_skills"]
+
+
+def test_parts_not_in_plan_are_left_out():
+    plan = normalise_plan({"role_titles": ["HR Generalist"], "min_experience": 3})
+    m = match_score(cand("hr", [], 4, "HR Generalist", ai=70), plan)
+    assert set(m["score_parts"]) == {"experience", "role", "ai_score"}
+    assert m["match_score"] == round(100 * (15 + 10 + 3.5) / 30)
+
+
+def test_title_matching():
+    assert title_matches("Backend Engineer", "Software Engineer - Backend")
+    assert title_matches("Java Developer", "Sr. Java Developer")
+    assert not title_matches("Java Developer", "JavaScript Developer")
+    assert not title_matches("Data Engineer", "Data Analyst")
+
+
+def test_role_from_earlier_job_or_family():
+    plan = normalise_plan({"role_titles": ["Team Lead"], "role_family": "Software Engineering"})
+    assert match_score(cand("a", role="Engineering Manager", past_roles=["Team Lead"]), plan)["role_match"] == "earlier role"
+    assert match_score(cand("b", role="Developer", family="Software Engineering"), plan)["role_match"] == "same role family"
+
+
+def test_remote_location_counts_for_everyone():
+    plan = normalise_plan({"must_have_skills": ["Go"], "locations": ["Bengaluru", "Remote"]})
+    assert match_score(cand("a", ["Go"], location="Pune"), plan)["score_parts"]["location"] == 5
+
+
+def test_ranking_order_and_tie_break():
+    pool = [cand("weak", ["Java"], 6, ai=90), cand("best", ["Java", "Spring Boot", "Kafka"], 6, "Java Developer", "Chennai", ai=50),
+            cand("tie_low", ["Java", "Spring Boot"], 6, ai=40), cand("tie_high", ["Java", "Spring Boot"], 6, ai=60)]
+    assert [r["id"] for r, _ in rank_candidates(pool, JAVA_PLAN)] == ["best", "tie_high", "tie_low", "weak"]
+
+
+def test_edited_plan_is_cleaned():
+    plan = normalise_plan({"must_have_skills": "Java", "nice_to_have_skills": ["java", "AWS"], "min_experience": "8", "max_experience": 5})
+    assert plan["must_have_skills"] == ["Java"] and plan["nice_to_have_skills"] == ["AWS"]
+    assert (plan["min_experience"], plan["max_experience"]) == (5, 8)
+
+
+# ---------------------------------------------------------------- the search, against MongoDB
+
+def with_service(test):
+    async def run():
+        client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=1500)
+        try:
+            await client.admin.command("ping")
+        except Exception:
+            pytest.skip("MongoDB is not running on localhost")
+        name = f"prompt_match_tests_{uuid.uuid4().hex[:8]}"
+        try:
+            repo = ResumeRepository(client[name])
+            return await test(repo, PromptMatchService(repo))
+        finally:
+            await client.drop_database(name)
+            client.close()
+    return asyncio.run(run())
+
+
+def fake_parser(plan, calls, status_code=200):
+    def handler(request):
+        calls.append(request.url.path)
+        if status_code != 200:
+            return httpx.Response(status_code, json={"detail": "LLM rate limit (429)"})
+        return httpx.Response(200, json={"status": "success", "plan": plan})
+    real = httpx.AsyncClient
+    return mock.patch.object(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+
+def no_ai_settings():
+    return mock.patch("app.services.prompt_match_service.PromptMatchService._ai_config", mock.AsyncMock(return_value={}))
+
+
+async def seed(repo):
+    for c in [cand("best", ["Java", "Spring Boot", "Kafka"], 6, "Java Developer", "Chennai", ai=70),
+              cand("no_kafka", ["Java", "Spring Boot"], 7, "Backend Developer", "Chennai", ai=80),
+              cand("js_dev", ["JavaScript", "React"], 6, "Frontend Developer", ai=90),
+              cand("hr", [], 6, "HR Manager", ai=60)]:
+        await repo.create(c)
+
+
+def test_prompt_search_ranks_and_caches_plan():
+    async def t(repo, service):
+        await seed(repo)
+        calls = []
+        with no_ai_settings(), fake_parser(JAVA_PLAN, calls):
+            first = await service.search("Senior Java dev with Spring Boot and Kafka, 5-8 yrs, Chennai", None, "u1", True)
+            again = await service.search("senior java dev with spring boot and kafka,  5-8 yrs, chennai", None, "u1", True, page=1)
+        assert calls == ["/api/search-plan"]                    # second search used the cached plan
+        assert first["plan_cached"] is False and again["plan_cached"] is True
+        ids = [r["id"] for r in first["resumes"]]
+        assert ids[:2] == ["best", "no_kafka"]
+        # Only 2 have a requested skill, so others with the right years are added below them, with a note.
+        assert sorted(ids[2:]) == ["hr", "js_dev"] and all(r["match"]["match_score"] < 40 for r in first["resumes"][2:])
+        assert any("Few candidates have the requested skills" in n for n in first["notes"])
+        assert first["resumes"][0]["match"]["missing_skills"] == []
+        assert "1 candidate has every must-have skill." in first["notes"]
+    with_service(t)
+
+
+def test_edited_plan_skips_the_ai():
+    async def t(repo, service):
+        await seed(repo)
+        calls = []
+        with no_ai_settings(), fake_parser({}, calls):
+            res = await service.search(None, {"must_have_skills": ["React"]}, "u1", True)
+        assert calls == [] and [r["id"] for r in res["resumes"]] == ["js_dev"]
+    with_service(t)
+
+
+def test_pool_widens_with_a_note_when_too_few():
+    async def t(repo, service):
+        await seed(repo)
+        with no_ai_settings():
+            res = await service.search(None, {"must_have_skills": ["Rust"], "min_experience": 5}, "u1", True)
+        assert len(res["resumes"]) == 4 and all(r["match"]["missing_skills"] == ["Rust"] for r in res["resumes"])
+        assert any("Few candidates have the requested skills" in n for n in res["notes"])
+    with_service(t)
+
+
+def test_paging():
+    async def t(repo, service):
+        await seed(repo)
+        with no_ai_settings():
+            res = await service.search(None, {"min_experience": 5}, "u1", True, page=2, limit=3)
+        assert res["total"] == 4 and res["total_pages"] == 2 and len(res["resumes"]) == 1
+    with_service(t)
+
+
+def test_errors():
+    async def t(repo, service):
+        with pytest.raises(BadRequestError):
+            await service.search("   ", None, "u1", True)
+        with pytest.raises(BadRequestError):
+            await service.search(None, {"keywords": []}, "u1", True)
+        with no_ai_settings(), fake_parser({}, [], status_code=429), pytest.raises(AppException) as err:
+            await service.search("Java developer", None, "u1", True)
+        assert err.value.status_code == 429 and "busy" in err.value.message
+    with_service(t)
+
+
+def test_other_word_forms_for_non_technology_skills():
+    plan = normalise_plan({"must_have_skills": ["Product Roadmaps", "Business Requirements", "Java", "Recruitment"]})
+    m = match_score(cand("pm", ["Product Roadmapping", "Business Requirement", "JavaScript", "Recruiter"]), plan)
+    assert m["matched_skills"] == ["Product Roadmaps", "Business Requirements"]
+    assert m["missing_skills"] == ["Java", "Recruitment"]

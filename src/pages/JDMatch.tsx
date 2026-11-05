@@ -4,7 +4,7 @@ import {
   Briefcase, Clock, MapPin, ShieldCheck, Layers, AlignLeft, Sparkles, Video, Hash,
   Upload, Building2, AlertCircle, UserX, Plus, Trash2, Loader2, Eye
 } from "lucide-react";
-import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, type MatchFilterParams, type SortOption, SORT_OPTION_LABELS, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem, type InterviewTypeItem } from "../utils/Api";
+import { matchResumes, promptMatch, type SearchPlan, type CandidateMatch, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, type MatchFilterParams, type SortOption, SORT_OPTION_LABELS, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem, type InterviewTypeItem } from "../utils/Api";
 import { getCandidateRole, formatExperience, getAllSkills } from "../utils/candidateFields";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
@@ -59,6 +59,14 @@ export default function JDMatch() {
   const [sortBy, setSortBy] = useState<SortOption>("ai_score");
   const [skillMode, setSkillMode] = useState<"all" | "any">("all");
   const [showFilters, setShowFilters] = useState(true);
+
+  // Prompt mode: the recruiter describes the role; the AI turns it into a search plan once.
+  const [searchMode, setSearchMode] = useState<"filters" | "prompt">("filters");
+  const [promptText, setPromptText] = useState("");
+  const [plan, setPlan] = useState<SearchPlan | null>(null);
+  const [matchNotes, setMatchNotes] = useState<string[]>([]);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [newPlanSkill, setNewPlanSkill] = useState("");
 
   // Selection & Interview Modal States
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
@@ -398,6 +406,73 @@ export default function JDMatch() {
     }
   };
 
+  // Prompt mode search. With `plan` the edited plan is searched again and the AI is not called.
+  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan } = {}) => {
+    const targetPage = opts.page ?? 1;
+    const targetLimit = opts.limit ?? pageSize;
+    if (!opts.plan && !promptText.trim()) {
+      setPromptError("Describe the role or paste a job description.");
+      return;
+    }
+    setLoading(true);
+    setPromptError(null);
+    try {
+      const res = await promptMatch(
+        opts.plan ? { plan: opts.plan, page: targetPage, limit: targetLimit } : { prompt: promptText, page: targetPage, limit: targetLimit }
+      );
+      setPlan(res.plan);
+      setMatchNotes(res.notes || []);
+      setMatchedResumes(res.resumes || []);
+      setPage(res.page);
+      setTotalCount(res.total);
+      setTotalPages(res.total_pages || 1);
+      setSelectedCandidateIds([]);
+    } catch (err: any) {
+      setPromptError(err.message || "Search failed. Try again, or use Filters.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Paging and page size work in both modes.
+  const loadPage = (opts: { page?: number; limit?: number }) => {
+    if (searchMode === "prompt") {
+      if (plan) runPromptSearch({ ...opts, plan });
+    } else {
+      fetchMatchedCandidates(opts);
+    }
+  };
+
+  const switchMode = (mode: "filters" | "prompt") => {
+    if (mode === searchMode) return;
+    setSearchMode(mode);
+    setPromptError(null);
+    setMatchedResumes([]);
+    setTotalCount(0);
+    setTotalPages(1);
+    setSelectedCandidateIds([]);
+    if (mode === "filters") {
+      fetchMatchedCandidates({ page: 1 });
+    } else if (plan) {
+      runPromptSearch({ plan });
+    }
+  };
+
+  const editPlan = (change: Partial<SearchPlan>) => {
+    if (!plan) return;
+    const next = { ...plan, ...change };
+    setPlan(next);
+    runPromptSearch({ plan: next });
+  };
+
+  const addPlanSkill = () => {
+    const skill = newPlanSkill.trim();
+    if (!plan || !skill) return;
+    setNewPlanSkill("");
+    if (plan.must_have_skills.some((s) => s.toLowerCase() === skill.toLowerCase())) return;
+    editPlan({ must_have_skills: [...plan.must_have_skills, skill] });
+  };
+
   useEffect(() => {
     fetchMatchedCandidates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -662,8 +737,123 @@ export default function JDMatch() {
         </button>
       </div>
 
-      {/* Multi-Filter Input Card Panel */}
+      {/* Search mode toggle */}
       {showFilters && (
+        <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+          {([["filters", "Filters", Filter], ["prompt", "Describe the role", Sparkles]] as const).map(([mode, label, Icon]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => switchMode(mode)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${searchMode === mode ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-white"}`}
+            >
+              <Icon size={13} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Prompt mode panel */}
+      {showFilters && searchMode === "prompt" && (
+        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-3">
+            <h2 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
+              <Sparkles size={14} /> Describe the role
+            </h2>
+            <button
+              onClick={() => runPromptSearch({ page: 1 })}
+              disabled={loading || !promptText.trim()}
+              className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm disabled:opacity-50 w-full md:w-auto"
+            >
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+              Find candidates
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="jd-prompt" className="text-[11px] font-semibold text-slate-600 block">
+              Type what you need, or paste the full job description
+            </label>
+            <textarea
+              id="jd-prompt"
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && promptText.trim()) runPromptSearch({ page: 1 });
+              }}
+              rows={promptText.length > 300 ? 8 : 3}
+              maxLength={15000}
+              placeholder="e.g. Senior Java developer with Spring Boot and Kafka, 5-8 years, Chennai or remote. AWS is a plus."
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 placeholder-slate-400 resize-y"
+            />
+            <div className="flex justify-between text-[10px] text-slate-400">
+              <span>Ctrl/Cmd + Enter to search. Age, gender and similar details are ignored.</span>
+              <span>{promptText.length.toLocaleString()} / 15,000</span>
+            </div>
+          </div>
+
+          {promptError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-2">
+              <AlertCircle size={14} /> {promptError}
+            </div>
+          )}
+
+          {plan && (
+            <div className="space-y-2 border-t border-slate-200 pt-3">
+              <span className="text-[11px] font-semibold text-slate-600">We understood (remove anything that's wrong; the search updates without calling the AI again):</span>
+              <div className="flex flex-wrap gap-2">
+                {plan.role_titles.map((t) => (
+                  <PlanChip key={`t-${t}`} label="Role" value={t} onRemove={() => editPlan({ role_titles: plan.role_titles.filter((x) => x !== t) })} />
+                ))}
+                {plan.must_have_skills.map((sk) => (
+                  <PlanChip key={`m-${sk}`} label="Must have" value={sk} tone="strong" onRemove={() => editPlan({ must_have_skills: plan.must_have_skills.filter((x) => x !== sk) })} />
+                ))}
+                {plan.nice_to_have_skills.map((sk) => (
+                  <PlanChip key={`n-${sk}`} label="Nice to have" value={sk} onRemove={() => editPlan({ nice_to_have_skills: plan.nice_to_have_skills.filter((x) => x !== sk) })} />
+                ))}
+                {plan.min_experience != null && (
+                  <PlanChip label="Min Exp" value={`${plan.min_experience} Yrs`} onRemove={() => editPlan({ min_experience: null })} />
+                )}
+                {plan.max_experience != null && (
+                  <PlanChip label="Max Exp" value={`${plan.max_experience} Yrs`} onRemove={() => editPlan({ max_experience: null })} />
+                )}
+                {plan.locations.map((l) => (
+                  <PlanChip key={`l-${l}`} label="Location" value={l} onRemove={() => editPlan({ locations: plan.locations.filter((x) => x !== l) })} />
+                ))}
+                {plan.education.map((ed) => (
+                  <PlanChip key={`e-${ed}`} label="Education" value={ed} onRemove={() => editPlan({ education: plan.education.filter((x) => x !== ed) })} />
+                ))}
+                {plan.keywords.map((k) => (
+                  <PlanChip key={`k-${k}`} label="Keyword" value={k} onRemove={() => editPlan({ keywords: plan.keywords.filter((x) => x !== k) })} />
+                ))}
+                <span className="flex items-center gap-1 bg-white border border-dashed border-slate-300 rounded-xl px-2 py-1">
+                  <input
+                    value={newPlanSkill}
+                    onChange={(e) => setNewPlanSkill(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") addPlanSkill(); }}
+                    placeholder="Add must-have skill"
+                    aria-label="Add must-have skill"
+                    className="w-32 bg-transparent text-xs focus:outline-none placeholder-slate-400"
+                  />
+                  <button type="button" onClick={addPlanSkill} disabled={!newPlanSkill.trim()} className="text-indigo-600 disabled:opacity-30 cursor-pointer" aria-label="Add skill">
+                    <Plus size={13} />
+                  </button>
+                </span>
+              </div>
+              {matchNotes.length > 0 && (
+                <ul className="text-[11px] text-slate-500 space-y-0.5">
+                  {matchNotes.map((n) => (
+                    <li key={n} className="flex items-center gap-1.5"><AlertCircle size={11} className="text-amber-500 flex-shrink-0" /> {n}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Multi-Filter Input Card Panel */}
+      {showFilters && searchMode === "filters" && (
         <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-3">
             <h2 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
@@ -818,6 +1008,9 @@ export default function JDMatch() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            {searchMode === "prompt" ? (
+              <span className="text-[11px] font-semibold text-slate-500">Sorted by best match</span>
+            ) : (
             <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
               Sort by
               <select
@@ -834,6 +1027,7 @@ export default function JDMatch() {
                 ))}
               </select>
             </label>
+            )}
             <button
               onClick={handleOpenAssignModal}
               disabled={matchedResumes.length === 0}
@@ -858,6 +1052,7 @@ export default function JDMatch() {
                     )}
                   </button>
                 </th>
+                {searchMode === "prompt" && <th className="py-3 px-3.5">Match</th>}
                 <th className="py-3 px-3.5">Candidate & Role</th>
                 <th className="py-3 px-3.5">Experience & Location</th>
                 <th className="py-3 px-3.5">Primary Skills</th>
@@ -869,7 +1064,7 @@ export default function JDMatch() {
             <tbody className="divide-y divide-slate-200 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={searchMode === "prompt" ? 8 : 7} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw size={16} className="animate-spin text-indigo-600" />
                       <span>Fetching matched candidates from backend API...</span>
@@ -878,8 +1073,10 @@ export default function JDMatch() {
                 </tr>
               ) : matchedResumes.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
-                    No matching candidate records found. Try adjusting filter parameters.
+                  <td colSpan={searchMode === "prompt" ? 8 : 7} className="py-12 text-center text-slate-500">
+                    {searchMode === "prompt" && !plan
+                      ? "Describe the role above and click Find candidates."
+                      : "No matching candidate records found. Try adjusting filter parameters."}
                   </td>
                 </tr>
               ) : (
@@ -893,6 +1090,7 @@ export default function JDMatch() {
                   const skillsList: string[] = getAllSkills(p);
                   const score: number | null = typeof evalInfo.ai_technical_score === "number" ? evalInfo.ai_technical_score : null;
                   const isSelected = selectedCandidateIds.includes(row.id);
+                  const match: CandidateMatch | undefined = row.match;
 
                   return (
                     <tr key={row.id} className={`hover:bg-slate-50/80 transition-colors ${isSelected ? "bg-indigo-50/40" : ""}`}>
@@ -901,6 +1099,37 @@ export default function JDMatch() {
                           {isSelected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} />}
                         </button>
                       </td>
+
+                      {searchMode === "prompt" && (
+                        <td className="py-3.5 px-3.5 align-top">
+                          {match ? (
+                            <div className="space-y-1.5 min-w-[150px] max-w-[220px]">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border ${match.match_score >= 75
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                  : match.match_score >= 50
+                                    ? "bg-amber-50 border-amber-200 text-amber-700"
+                                    : "bg-slate-100 border-slate-200 text-slate-600"
+                                }`} title="How well this candidate fits the request (0-100)">
+                                {match.match_score}% match
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {match.matched_skills.map((sk) => (
+                                  <span key={`ok-${sk}`} className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md">{sk}</span>
+                                ))}
+                                {match.missing_skills.map((sk) => (
+                                  <span key={`no-${sk}`} className="bg-rose-50 border border-rose-200 text-rose-600 text-[10px] font-bold px-1.5 py-0.5 rounded-md line-through" title="Must-have skill not found">{sk}</span>
+                                ))}
+                                {match.nice_to_have_matched.map((sk) => (
+                                  <span key={`nice-${sk}`} className="bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md" title="Nice-to-have skill">+{sk}</span>
+                                ))}
+                              </div>
+                              {match.role_match && <div className="text-[10px] text-slate-500">Title fits: {match.role_match}</div>}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">-</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Candidate Name & Designation / Role */}
                       <td className="py-3.5 px-3.5">
@@ -1038,7 +1267,7 @@ export default function JDMatch() {
                 onChange={(e) => {
                   const next = Number(e.target.value);
                   setPageSize(next);
-                  fetchMatchedCandidates({ page: 1, limit: next });
+                  loadPage({ page: 1, limit: next });
                 }}
                 className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 cursor-pointer"
               >
@@ -1047,7 +1276,7 @@ export default function JDMatch() {
                 ))}
               </select>
               <button
-                onClick={() => fetchMatchedCandidates({ page: page - 1 })}
+                onClick={() => loadPage({ page: page - 1 })}
                 disabled={loading || page <= 1}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
               >
@@ -1055,7 +1284,7 @@ export default function JDMatch() {
               </button>
               <span className="font-semibold">Page {page} of {totalPages}</span>
               <button
-                onClick={() => fetchMatchedCandidates({ page: page + 1 })}
+                onClick={() => loadPage({ page: page + 1 })}
                 disabled={loading || page >= totalPages}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
               >
@@ -1774,5 +2003,20 @@ export default function JDMatch() {
   );
 }
 
-
-
+/** One item of the understood search plan, removable. */
+function PlanChip({ label, value, onRemove, tone }: { label: string; value: string; onRemove: () => void; tone?: "strong" }) {
+  return (
+    <span className={`text-xs px-3 py-1.5 rounded-xl font-semibold flex items-center gap-2 border ${tone === "strong" ? "bg-indigo-600 border-indigo-600 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-700"}`}>
+      <span className="opacity-70 text-[10px] uppercase tracking-wider">{label}:</span>
+      <span>{value}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${label} ${value}`}
+        className={`font-bold ml-1 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${tone === "strong" ? "bg-indigo-500 hover:bg-indigo-400" : "bg-indigo-100 text-indigo-600 hover:text-indigo-900"}`}
+      >
+        <X size={12} />
+      </button>
+    </span>
+  );
+}

@@ -133,6 +133,41 @@ async def match_resumes(
     )
 
 
+class PromptMatchRequest(BaseModel):
+    prompt: Optional[str] = None
+    plan: Optional[dict] = None
+    page: int = 1
+    limit: int = 25
+
+
+@router.post(
+    "/prompt-match",
+    status_code=status.HTTP_200_OK,
+    summary="Find candidates from a written request or job description",
+    description=(
+        "JD Match prompt mode. Send `prompt` (a request or a pasted job description, up to 15,000 characters) "
+        "and the AI turns it into a search plan once (cached for 24 hours). Send `plan` instead, for example after "
+        "the recruiter edits the filters, to search again without calling the AI. Candidates come back best match "
+        "first, each with `match.match_score` (0-100), matched and missing skills."
+    ),
+)
+async def prompt_match(
+    body: PromptMatchRequest,
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    from app.services.prompt_match_service import PromptMatchService
+    from app.utils.response import success_response
+
+    resume_repo = ResumeRepository(db)
+    service = PromptMatchService(resume_repo, ResumeService(resume_repo, resume_log_repo=ResumeLogRepository(db)))
+    data = await service.search(
+        prompt=body.prompt, plan=body.plan, user_id=current_user["id"], is_admin=is_admin_or_staff(current_user),
+        page=max(1, body.page), limit=min(max(1, body.limit), 100),
+    )
+    return success_response(data=data, message="Matched candidates retrieved successfully.")
+
+
 @router.get(
     "/parsed-summary",
     status_code=status.HTTP_200_OK,
