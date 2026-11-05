@@ -3,7 +3,11 @@
 - compute_total_experience: works out total years from job dates in code (gap G01)
 - coerce_and_validate: makes LLM output match the Pydantic schema (gap G02)
 - missing_sections: finds sections the resume has but the parse left empty (gap G03)
+- normalise_resume: one format for phones, skills and dates (gap G12)
+- experience_level: level worked out from years and title, so it doesn't change between runs (gap G14)
 """
+import json
+import os
 import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
@@ -49,20 +53,37 @@ def parse_ym(text: Optional[str], is_end: bool) -> Optional[Tuple[int, int]]:
     return None
 
 
+def _duration_range(duration: str) -> Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
+    """(start, end) read from the dates as written, e.g. 'Jun 2018 – Present' or 'Since Aug 2022'."""
+    duration = str(duration or "")
+    parts = [p for p in RANGE_SPLIT.split(duration, maxsplit=1) if p.strip()]
+    start = parse_ym(PRESENT_WORDS.sub("", parts[0]), False) if parts else None
+    if len(parts) > 1:
+        end = parse_ym(parts[1], True)
+    else:
+        end = today_ym() if PRESENT_WORDS.search(duration) else None   # "Since Aug 2022"
+    return start, end
+
+
+def _written_dates(duration: Any) -> Tuple[Optional[str], Optional[str]]:
+    """Start and end as written, normalised: 'Jun 2018 – Present' -> ('2018-06', 'Present'); a bare year stays a year."""
+    duration = str(duration or "")
+    parts = [p for p in RANGE_SPLIT.split(duration, maxsplit=1) if p.strip()]
+    if not parts:
+        return None, None
+    start = normalise_month(PRESENT_WORDS.sub("", parts[0]), False)
+    end = normalise_month(parts[1], True) if len(parts) > 1 else ("Present" if PRESENT_WORDS.search(duration) else None)
+    ok = lambda v: v if v and re.fullmatch(r"\d{4}(-\d{2})?|Present", v) else None
+    return ok(start), ok(end)
+
+
 def job_interval(item: Dict[str, Any]) -> Optional[Tuple[int, int]]:
-    """Return a job's (first_month, last_month) as month numbers, or None if the dates can't be read."""
-    start = parse_ym(item.get("start_date"), False)
-    end = parse_ym(item.get("end_date"), True)
-    duration = str(item.get("duration") or "")
-    if (start is None or end is None) and duration:
-        parts = [p for p in RANGE_SPLIT.split(duration, maxsplit=1) if p.strip()]
-        if start is None and parts:
-            start = parse_ym(PRESENT_WORDS.sub("", parts[0]), False)
-        if end is None:
-            if len(parts) > 1:
-                end = parse_ym(parts[1], True)
-            elif PRESENT_WORDS.search(duration):          # "Since Aug 2022"
-                end = today_ym()
+    """Return a job's (first_month, last_month) as month numbers, or None if the dates can't be read.
+    The dates as written in the resume (`duration`) win; the model's start_date/end_date only fill gaps.
+    (In testing the model once wrote start_date 2022-06 for 'Jun 2018 – Present'.)"""
+    start, end = _duration_range(item.get("duration"))
+    start = start or parse_ym(item.get("start_date"), False)
+    end = end or parse_ym(item.get("end_date"), True)
     if start is None or end is None:
         return None
     now = today_ym()
@@ -195,6 +216,8 @@ SECTION_HEADINGS = {
                  r"|academic\s+(qualifications?|background|details)|qualifications",
     "certifications": r"certifications?|certificates|licen[cs]es(\s*(&|and)\s*certifications?)?"
                       r"|(education\s*(&|and)\s*)?certifications?",
+    "skills": r"((technical|core|key|professional|functional)\s+)?(skills|competencies|expertise)(\s*(&|and)\s*tools)?"
+              r"|tools(\s*(&|and)\s*technologies)?",
 }
 _HEADING_RE = {k: re.compile(rf"^\s*(?:{v})\s*:?\s*$", re.I) for k, v in SECTION_HEADINGS.items()}
 
@@ -215,6 +238,151 @@ def sections_in_text(text: str) -> set:
 
 
 def missing_sections(parsed: Dict[str, Any], text: str) -> List[str]:
-    """Sections the resume clearly has but the parsed output left empty."""
-    return [s for s in ("experience", "projects", "education", "certifications")
-            if s in sections_in_text(text) and not parsed.get(s)]
+    """Sections the resume clearly has but the parsed output left empty. 'skills' = every skill list empty."""
+    found = sections_in_text(text)
+    missing = [s for s in ("experience", "projects", "education", "certifications") if s in found and not parsed.get(s)]
+    if "skills" in found and not any(parsed.get(f) for f in SKILL_LIST_FIELDS):
+        missing.append("skills")
+    return missing
+
+
+# ------------------------------------------------------- normalisation (G12)
+
+DEFAULT_PHONE_REGION = os.getenv("DEFAULT_PHONE_REGION", "IN")
+SKILL_LIST_FIELDS = ["primary_skills", "functional_skills", "programming_languages", "frameworks", "databases",
+                     "cloud_tech", "devops_and_infrastructure", "other_technologies"]
+
+
+def normalise_phone(raw: Any) -> Tuple[str, Optional[str]]:
+    """Return (phone in E.164 form, e.g. +919845012345, or the text as written; issue or None).
+    Numbers without a country code are read as DEFAULT_PHONE_REGION. When several are listed, the first valid one is kept."""
+    text = str(raw or "").strip()
+    if not text:
+        return "", None
+    try:
+        import phonenumbers
+        for match in phonenumbers.PhoneNumberMatcher(text, DEFAULT_PHONE_REGION):
+            return phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164), None
+        number = phonenumbers.parse(text, DEFAULT_PHONE_REGION)
+        if phonenumbers.is_valid_number(number):
+            return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164), None
+    except Exception:
+        pass
+    return text, f"phone {text!r} kept as written (not a valid number)"
+
+
+def _skill_key(name: str) -> str:
+    return re.sub(r"\s+", " ", name.strip().lower())
+
+
+def _load_aliases() -> Dict[str, str]:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skill_aliases.json")
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    lookup = {}
+    for canonical, aliases in data.items():
+        if canonical.startswith("_"):
+            continue
+        for name in [canonical, *aliases]:
+            lookup[_skill_key(name)] = canonical
+    return lookup
+
+
+SKILL_LOOKUP = _load_aliases()
+
+
+def canonical_skill(name: str) -> str:
+    """One spelling per skill: 'ReactJS', 'react.js' -> 'React'. Unknown skills are kept as written."""
+    name = re.sub(r"\s+", " ", str(name)).strip()
+    return SKILL_LOOKUP.get(_skill_key(name), name)
+
+
+def canonical_skills(items: List[str]) -> List[str]:
+    out, seen = [], set()
+    for item in items or []:
+        skill = canonical_skill(item)
+        if skill and _skill_key(skill) not in seen:
+            seen.add(_skill_key(skill))
+            out.append(skill)
+    return out
+
+
+def normalise_month(text: Any, is_end: bool) -> Optional[str]:
+    """Job dates as YYYY-MM, YYYY (year only) or 'Present'; text that can't be read is kept as written."""
+    s = str(text or "").strip()
+    if not s:
+        return None
+    if is_end and PRESENT_WORDS.search(s):
+        return "Present"
+    if re.fullmatch(r"(19|20)\d{2}", s):
+        return s
+    ym = parse_ym(s, is_end)
+    return f"{ym[0]:04d}-{ym[1]:02d}" if ym else s
+
+
+def normalise_resume(parsed: Dict[str, Any]) -> List[str]:
+    """Normalise phone, skills and job dates in place. Returns notes about values that could not be normalised."""
+    issues = []
+    if parsed.get("phone"):
+        parsed["phone"], issue = normalise_phone(parsed["phone"])
+        if issue:
+            issues.append(issue)
+    for field in SKILL_LIST_FIELDS:
+        if isinstance(parsed.get(field), list):
+            parsed[field] = canonical_skills(parsed[field])
+    for job in parsed.get("experience") or []:
+        job["technologies_used"] = canonical_skills(job.get("technologies_used") or [])
+        job["start_date"] = normalise_month(job.get("start_date"), False)
+        job["end_date"] = normalise_month(job.get("end_date"), True)
+        # Keep start/end in line with the dates as written (they are what the total is computed from).
+        written = _written_dates(job.get("duration"))
+        for key, value in zip(("start_date", "end_date"), written):
+            if value and job.get(key) != value and not (value.isdigit() and str(job.get(key) or "").startswith(value)):
+                issues.append(f"{job.get('company')}: {key} {job[key]} corrected to {value} from '{job.get('duration')}'")
+                job[key] = value
+    for project in parsed.get("projects") or []:
+        project["tech_stack"] = canonical_skills(project.get("tech_stack") or [])
+    for edu in parsed.get("education") or []:
+        m = re.search(r"\b(19|20)\d{2}\b", str(edu.get("year_of_passing") or ""))
+        if m:
+            edu["year_of_passing"] = m.group(0)
+    return issues
+
+
+CONTACT_HINT = re.compile(r"@|\+?\d[\d\s().-]{7,}\d|linkedin", re.I)
+
+
+def location_from_contact_line(text: str) -> Optional[str]:
+    """City from the contact line at the top, e.g. 'name@x.com | +91 98450 12345 | Chennai' -> 'Chennai'.
+    Used only when the model leaves location empty (seen in testing on R03, R04, R07, R09)."""
+    for line in (text or "").splitlines()[:6]:
+        if not CONTACT_HINT.search(line):
+            continue
+        # The city usually comes last; a name on the same line comes first.
+        for part in reversed(re.split(r"\s*[|•·;]\s*", line)[1:]):
+            part = part.strip(" ,")
+            if part and not CONTACT_HINT.search(part) and re.fullmatch(r"[A-Za-z][A-Za-z .,'-]{1,39}", part) \
+                    and not re.search(r"\b(street|road|www|http|github)\b", part, re.I):
+                return part
+    return None
+
+
+# ---------------------------------------------------------- consistency (G14)
+
+LEVEL_BANDS = [(1, "Fresher"), (3, "Junior"), (7, "Mid-Level")]   # years below the limit -> level
+ARCHITECT_TITLES = re.compile(
+    r"architect|principal|\bstaff\b|distinguished|\bcto\b|chief technology|engineering (director|head|manager)"
+    r"|(director|head|vp|vice president) of (engineering|technology)", re.I)
+
+
+def experience_level(years: Optional[float], current_role: Optional[str]) -> str:
+    """Fresher < 1 year, Junior < 3, Mid-Level < 7, otherwise Senior; Architect for 10+ years in an
+    architect or engineering-leadership title."""
+    if years is None:
+        return "Unknown"
+    for limit, level in LEVEL_BANDS:
+        if years < limit:
+            return level
+    if years >= 10 and ARCHITECT_TITLES.search(current_role or ""):
+        return "Architect"
+    return "Senior"

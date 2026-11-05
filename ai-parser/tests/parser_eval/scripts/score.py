@@ -53,7 +53,7 @@ def score(rec):
     certs = p.get("certifications") or []
     out["_n_cert"] = len(certs)
     out["certifications"] = t["n_certs"][0] <= len(certs) <= t["n_certs"][1]
-    skill_lists = ["primary_skills", "programming_languages", "frameworks", "databases", "cloud_tech", "devops_and_infrastructure", "other_technologies"]
+    skill_lists = ["primary_skills", "functional_skills", "programming_languages", "frameworks", "databases", "cloud_tech", "devops_and_infrastructure", "other_technologies"]
     allskills = " | ".join(norm(x) for k in skill_lists for x in (p.get(k) or []))
     hit = [s for s in t["skills"] if norm(s) in allskills]
     out["_skill_recall"] = round(len(hit) / len(t["skills"]), 2)

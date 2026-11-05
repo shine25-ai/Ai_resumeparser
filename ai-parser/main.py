@@ -107,7 +107,8 @@ def _process_resume_task(job_id: int, file_path: str, ai_config_dict: dict = Non
                 logger.info(f"[Job {job_id}] Workflow completed successfully.")
                 candidate.status = "completed"
                 candidate.parsed_resume = result.get("parsed_resume", {})
-                candidate.evaluation = result.get("evaluation", {})
+                # The text the AI read is handed back so the backend can search the same text (gap G13).
+                candidate.evaluation = {**result.get("evaluation", {}), "_resume_text": result.get("raw_text", "")}
             db.commit()
             
     except Exception as e:
@@ -182,11 +183,14 @@ async def get_status(job_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Job not found")
         
+    evaluation = dict(candidate.evaluation or {})
+    resume_text = evaluation.pop("_resume_text", None)
     return {
         "job_id": candidate.id,
         "status": candidate.status,
         "parsed_resume": candidate.parsed_resume,
-        "evaluation": candidate.evaluation
+        "evaluation": evaluation,
+        "resume_text": resume_text,
     }
 
 @app.post("/api/generate-questions")

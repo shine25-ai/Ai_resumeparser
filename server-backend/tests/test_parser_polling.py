@@ -33,7 +33,7 @@ DONE = {"status": "completed", "parsed_resume": {"full_name": "A"}, "evaluation"
 
 
 def test_completed_job_returns_results():
-    assert run_poll([{"status": "queued"}, {"status": "processing"}, DONE]) == ({"full_name": "A"}, {"ai_technical_score": 50})
+    assert run_poll([{"status": "queued"}, {"status": "processing"}, DONE]) == ({"full_name": "A"}, {"ai_technical_score": 50}, "")
 
 
 def test_connection_blips_are_tolerated():

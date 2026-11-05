@@ -124,7 +124,8 @@ async def _load_resume(service: ResumeService, resume_id: str) -> Dict[str, Any]
     summary="Upload a resume for parsing",
     description=(
         "Upload a PDF, DOC or DOCX resume (max 10 MB). Parsing runs in the background: "
-        "poll GET /api/v1/integration/resumes/{resume_id}/status until parsing_status is PARSED or FAILED."
+        "poll GET /api/v1/integration/resumes/{resume_id}/status until parsing_status is PARSED or FAILED. "
+        "Returns 409 if exactly the same file was uploaded before; errors[0].existing_resume_id names that resume."
     ),
 )
 async def upload_resume(

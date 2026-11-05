@@ -3,6 +3,7 @@
 - Hidden PDF text (white, tiny or invisible) is removed before parsing and reported (gap G08).
 - PDFs with no readable text are OCR'd when Tesseract is installed, otherwise rejected (gap G06).
 - Legacy .doc files are converted with LibreOffice when it is installed, otherwise rejected (gap G07).
+- Text is NFKC-normalised (ligatures such as "ﬂ" become "fl") and returned to the backend for search (gap G13).
 """
 import logging
 import os
@@ -10,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 from typing import Any, Dict, Tuple
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,16 @@ SOFFICE_TIMEOUT = int(os.getenv("SOFFICE_TIMEOUT_SECONDS", "90"))
 
 class ExtractionError(Exception):
     """A problem with the file itself; the message is shown to the user."""
+
+
+ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u00ad]")
+
+
+def normalise_text(text: str) -> str:
+    """NFKC turns ligatures, full-width letters and non-breaking spaces into plain characters."""
+    text = ZERO_WIDTH.sub("", unicodedata.normalize("NFKC", text or ""))
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _meaningful_chars(text: str) -> int:
@@ -196,6 +208,7 @@ def extract_resume_text(path: str) -> Tuple[str, Dict[str, Any]]:
         text = _extract_doc(path, info)
     else:
         raise ExtractionError("Only PDF, DOCX and DOC files are supported.")
+    text = normalise_text(text)
     if _meaningful_chars(text) < MIN_TEXT_CHARS:
         raise ExtractionError("The document has almost no text, so there is nothing to parse.")
     return text, info

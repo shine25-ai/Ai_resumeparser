@@ -56,7 +56,8 @@ class BasicInfoSchema(BaseModel):
     cloud_tech: List[str] = Field(default_factory=list, description="Cloud technologies (AWS, Azure, GCP, etc.)")
     devops_and_infrastructure: List[str] = Field(default_factory=list, description="DevOps and infrastructure tools")
     other_technologies: List[str] = Field(default_factory=list, description="Other technical skills (e.g., testing, security)")
-    primary_skills: List[str] = Field(default_factory=list, description="Main technical skills")
+    primary_skills: List[str] = Field(default_factory=list, description="Main skills for the candidate's own role (technical or not)")
+    functional_skills: List[str] = Field(default_factory=list, description="Non-technical professional skills and business tools (e.g., Talent Acquisition, Payroll, Stakeholder Management, Financial Modelling, SAP SuccessFactors, Figma). Empty list if none.")
 
 class WorkExperienceSchema(BaseModel):
     experience: List[ExperienceItem] = Field(default_factory=list, description="List of past professional work experience (employment at companies). DO NOT INCLUDE PROJECTS HERE.")
@@ -86,7 +87,8 @@ class ResumeSchema(BaseModel):
     cloud_tech: List[str] = Field(default_factory=list, description="Cloud technologies (AWS, Azure, GCP, etc.)")
     devops_and_infrastructure: List[str] = Field(default_factory=list, description="DevOps and infrastructure tools")
     other_technologies: List[str] = Field(default_factory=list, description="Other technical skills (e.g., testing, security)")
-    primary_skills: List[str] = Field(default_factory=list, description="Main technical skills")
+    primary_skills: List[str] = Field(default_factory=list, description="Main skills for the candidate's own role (technical or not)")
+    functional_skills: List[str] = Field(default_factory=list, description="Non-technical professional skills and business tools (e.g., Talent Acquisition, Payroll, Stakeholder Management, Financial Modelling, SAP SuccessFactors, Figma). Empty list if none.")
     experience: List[ExperienceItem] = Field(default_factory=list, description="List of past work experience. DO NOT INCLUDE ACADEMIC PROJECTS HERE.")
     projects: List[ProjectItem] = Field(default_factory=list, description="List of projects worked on. SEPARATE THESE FROM EXPERIENCE. Return empty list [] if none.")
     education: List[EducationItem] = Field(default_factory=list, description="List of educational qualifications")
@@ -111,12 +113,21 @@ class SkillProficiencyItem(BaseModel):
     years_used: Optional[float] = Field(default=None, description="Estimated years of usage")
     recent_usage: Optional[str] = Field(default=None, description="Where or when it was most recently used")
 
+class ScoreBreakdown(BaseModel):
+    skills_depth: int = Field(default=0, description="0-30: depth and breadth of the core skills for this role family")
+    experience_relevance: int = Field(default=0, description="0-25: how relevant and progressive the work history is for this role family")
+    impact_and_projects: int = Field(default=0, description="0-20: measurable outcomes, ownership, scale of work")
+    skill_recency: int = Field(default=0, description="0-15: how current the skills and tools are")
+    education_and_certifications: int = Field(default=0, description="0-10: relevant degrees and certifications")
+
 class CandidateEvaluationSchema(BaseModel):
+    role_family: str = Field(default="Other", description="The candidate's own role family, e.g. Software Engineering, Data, QA, DevOps, Product, Design, HR, Finance, Sales, Operations, Other")
     experience_level: str = Field(default="Unknown", description="Classification: Fresher, Junior, Mid-Level, Senior, Architect")
+    score_breakdown: ScoreBreakdown = Field(default_factory=ScoreBreakdown, description="Rubric scores; ai_technical_score is their sum")
     domain_expertise: List[str] = Field(default_factory=list, description="Top domains the candidate has worked in")
-    ai_technical_score: int = Field(default=0, description="Overall technical strength score 1-100")
+    ai_technical_score: int = Field(default=0, description="Overall score 0-100 for the candidate's own role family (sum of score_breakdown)")
     skill_strengths: List[str] = Field(default_factory=list, description="Candidate's strongest skills")
-    skill_weaknesses: List[str] = Field(default_factory=list, description="Candidate's weak areas compared to typical full stack roles")
+    skill_weaknesses: List[str] = Field(default_factory=list, description="Weak areas compared to typical roles in the candidate's own role family")
     skill_proficiency_analysis: List[SkillProficiencyItem] = Field(default_factory=list, description="Proficiency assessment for key skills")
     architecture_and_design_capabilities: Optional[str] = Field(default=None, description="Assessment of architecture and system design skills")
     problem_solving_ability: Optional[str] = Field(default=None, description="Evidence of solving technically difficult problems")

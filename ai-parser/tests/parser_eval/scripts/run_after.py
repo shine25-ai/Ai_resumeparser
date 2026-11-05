@@ -1,4 +1,4 @@
-"""Run the corpus through a parser build: rounds a2 (single), a3 (multi), a4 (repeats).
+"""Run the corpus through a parser build: rounds a2 (single), a3 (multi), a4 (repeats), a5 (optional extra repeats).
 Usage: python run_after.py <eval_dir> [provider] [parser_dir] [out_name]
 parser_dir defaults to this repo's ai-parser (the fixed code); pass a copy of the old code for a baseline."""
 import json, os, sys, time
@@ -13,6 +13,8 @@ out_dir = f"{E}/" + (sys.argv[4] if len(sys.argv) > 4 else "results_after"); os.
 files = sorted(f for f in os.listdir(f"{E}/corpus") if f.startswith("R"))
 plan = [("a2", "single", f, 1) for f in files] + [("a3", "multi", f, 1) for f in files] + \
        [("a4", "single", f, i) for f in ["R01_standard.pdf", "R06_mixed_dates.pdf", "R10_long_4page.pdf"] for i in (2, 3, 4)]
+# Extra repeat runs for score consistency (G14), e.g. EXTRA_REPEATS=R07_unicode.pdf,R09_non_tech_hr.pdf
+plan += [("a5", "single", f, i) for f in filter(None, os.getenv("EXTRA_REPEATS", "").split(",")) for i in (2, 3, 4)]
 for rnd, mode, f, i in plan:
     out = f"{out_dir}/{rnd}_{mode}_{f}_{i}.json"
     if os.path.exists(out): continue
