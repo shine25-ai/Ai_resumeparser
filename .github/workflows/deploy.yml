@@ -5,6 +5,11 @@ on:
     branches:
       - development
 
+# Shares the server checkout with the backend deploy, so the two run one at a time.
+concurrency:
+  group: resumeparser-server-deploy
+  cancel-in-progress: false
+
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
