@@ -5,6 +5,7 @@ import {
   Upload, Building2, AlertCircle, UserX, Plus, Trash2, Loader2, Eye
 } from "lucide-react";
 import { matchResumes, getParsedResumeSummary, batchCreateInterviews, checkCandidateActiveInterviewStatus, getUsers, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, type MatchFilterParams, type SortOption, SORT_OPTION_LABELS, type InterviewTypeEnum, type UserProfile, type InterviewerItem, type ClientFeedbackItem, type InterviewTypeItem } from "../utils/Api";
+import { getCandidateRole, formatExperience, getAllSkills } from "../utils/candidateFields";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
 
@@ -886,14 +887,10 @@ export default function JDMatch() {
                   const p = row.parsed_data || {};
                   const evalInfo = row.ai_evaluation || {};
                   const name = p.full_name || p.name || row.original_filename || "Candidate";
-                  const role = p.current_role || p.designation || p.role || p.experience?.[0]?.designation || "Role not specified";
-                  const exp = p.total_experience_years !== undefined && p.total_experience_years !== null
-                    ? `${p.total_experience_years} Yrs`
-                    : p.years_of_experience !== undefined
-                      ? `${p.years_of_experience} Yrs`
-                      : "N/A";
+                  const role = getCandidateRole(p);
+                  const exp = formatExperience(p);
                   const loc = p.location || "N/A";
-                  const skillsList: string[] = p.primary_skills || p.skills || [];
+                  const skillsList: string[] = getAllSkills(p);
                   const score: number | null = typeof evalInfo.ai_technical_score === "number" ? evalInfo.ai_technical_score : null;
                   const isSelected = selectedCandidateIds.includes(row.id);
 

@@ -5,6 +5,7 @@ import {
   ExternalLink, User, Award, Brain, Briefcase, GraduationCap, Code, Edit3, X, Save, Paperclip, FileText, Upload, Camera, Trash2
 } from "lucide-react";
 import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFILE_PICTURE } from "../utils/Api";
+import { formatExperience, getAllSkills } from "../utils/candidateFields";
 
 export default function Evaluation() {
   const { id } = useParams();
@@ -146,25 +147,16 @@ export default function Evaluation() {
   const specialization = parsed.specialization || "";
   const scoreLabel = evalData.recommendation || (aiScore >= 80 ? "Highly Recommended Candidate" : aiScore >= 60 ? "Suitable Candidate" : "Needs Review");
 
-  const totalExp = parsed.total_experience_years !== undefined && parsed.total_experience_years !== null
-    ? `${parsed.total_experience_years} Years`
-    : parsed.years_of_experience !== undefined
-      ? `${parsed.years_of_experience} Years`
-      : "N/A";
+  const totalExp = formatExperience(parsed, "Years");
 
-  // Combine primary_skills, frameworks, databases, cloud_tech into categorized skill matrix
+  // Skill groups shown on the profile; allSkills combines every group
   const primarySkills = parsed.primary_skills || [];
-  const frameworks = parsed.frameworks || [];
   const databases = parsed.databases || [];
-  const cloudTech = parsed.cloud_tech || [];
   const programmingLanguages = parsed.programming_languages || [];
   const devopsAndInfra = parsed.devops_and_infrastructure || [];
   const otherTechnologies = parsed.other_technologies || [];
-  const allSkills = [...new Set([
-    ...primarySkills, ...frameworks, ...databases, ...cloudTech,
-    ...programmingLanguages, ...devopsAndInfra, ...otherTechnologies,
-    ...(parsed.skills || [])
-  ])];
+  const functionalSkills: string[] = parsed.functional_skills || [];
+  const allSkills = getAllSkills(parsed);
 
   const s3Url = candidate?.s3_url || "";
   const experiences = parsed.experience || [];
@@ -949,6 +941,19 @@ export default function Evaluation() {
                 <div className="flex flex-wrap gap-2">
                   {devopsAndInfra.map((s: string, i: number) => (
                     <span key={i} className="bg-orange-50 border border-orange-200 text-orange-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {functionalSkills.length > 0 && (
+              <div>
+                <span className="text-xs text-slate-500 block mb-2 font-semibold font-mono">Functional Skills</span>
+                <div className="flex flex-wrap gap-2">
+                  {functionalSkills.map((s: string, i: number) => (
+                    <span key={i} className="bg-slate-100 border border-slate-300 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-semibold">
                       {s}
                     </span>
                   ))}

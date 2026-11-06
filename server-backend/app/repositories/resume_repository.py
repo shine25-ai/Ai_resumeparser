@@ -8,6 +8,9 @@ from app.repositories.base_repository import BaseRepository
 from app.utils.constants import RESUMES_COLLECTION
 from app.utils.enums import ResumeStatus
 from typing import Any, Dict, List, Tuple
+import json
+import re
+from pathlib import Path
 
 
 # Fields that hold a candidate's skills in parsed_data.
@@ -20,7 +23,37 @@ SKILL_FIELDS = [
     "parsed_data.cloud_tech",
     "parsed_data.devops_and_infrastructure",
     "parsed_data.other_technologies",
+    "parsed_data.functional_skills",
 ]
+
+# Other spellings of the same skill (gap G12). Keep in sync with ai-parser/skill_aliases.json.
+def _load_skill_groups() -> Dict[str, List[str]]:
+    data = json.loads((Path(__file__).resolve().parent.parent / "data" / "skill_aliases.json").read_text(encoding="utf-8"))
+    groups: Dict[str, List[str]] = {}
+    for canonical, aliases in data.items():
+        if canonical.startswith("_"):
+            continue
+        names = [canonical, *aliases]
+        for name in names:
+            groups[" ".join(name.lower().split())] = names
+    return groups
+
+
+SKILL_GROUPS = _load_skill_groups()
+
+
+def skill_regex(skill: str) -> "re.Pattern":
+    """Whole-word, case-insensitive match for a skill and its other spellings (gap G12).
+    'Java' no longer matches 'JavaScript', 'C' no longer matches 'C++' or 'C#', and 'JS' no longer matches 'Node.js';
+    'Node' still matches 'Node.js'."""
+    names = SKILL_GROUPS.get(" ".join(skill.lower().split()), [skill.strip()])
+    alternatives = "|".join(sorted((re.escape(n) for n in names), key=len, reverse=True))
+    return re.compile(rf"(?<![A-Za-z0-9.])(?:{alternatives})(?![A-Za-z0-9+#])", re.IGNORECASE)
+
+
+def phone_digits(phone: Any) -> str:
+    """Last 10 digits, so '+91 98450 12345', '+919845012345' and '09845012345' compare equal."""
+    return re.sub(r"\D", "", str(phone or ""))[-10:]
 
 # Fields that hold a candidate's job title. The AI parser saves `current_role`;
 # `designation` / `role` come from older or HR-edited records.
@@ -273,7 +306,7 @@ class ResumeRepository(BaseRepository):
             skill_queries = []
             for s in skills:
                 if s.strip():
-                    s_regex = re.compile(re.escape(s.strip()), re.IGNORECASE)
+                    s_regex = skill_regex(s)
                     skill_queries.append({"$or": [{f: {"$regex": s_regex}} for f in SKILL_FIELDS]})
             if skill_queries:
                 if (skill_mode or "any").lower() == "all":
@@ -305,8 +338,33 @@ class ResumeRepository(BaseRepository):
         return await self.find_one({"user_id": user_id, "original_filename": original_filename})
 
     async def find_by_file_hash(self, file_hash: str) -> Optional[Dict[str, Any]]:
-        """Check if a file with this hash already exists across the system."""
-        return await self.find_one({"file_hash": file_hash})
+        """An earlier upload of exactly the same file (gap G11). Failed uploads and merged records are ignored,
+        so a file whose parse failed can be uploaded again."""
+        if not file_hash:
+            return None
+        return await self.find_one({
+            "file_hash": file_hash,
+            "status": {"$ne": ResumeStatus.FAILED.value},
+            "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}],
+        })
+
+    async def find_by_name_and_phone(self, full_name: str, phone: str, exclude_resume_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """A candidate with the same name and phone number but possibly another email (gap G11)."""
+        name = " ".join(str(full_name or "").split())
+        digits = phone_digits(phone)
+        if not name or len(digits) < 10:
+            return None
+        name_pattern = r"\s+".join(re.escape(part) for part in name.split())
+        query: Dict[str, Any] = {
+            "parsed_data.full_name": {"$regex": re.compile(rf"^\s*{name_pattern}\s*$", re.IGNORECASE)},
+            "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}],
+        }
+        if exclude_resume_id:
+            query["id"] = {"$ne": exclude_resume_id}
+        for doc in await self.find_many(query=query, limit=20):
+            if phone_digits((doc.get("parsed_data") or {}).get("phone")) == digits:
+                return doc
+        return None
 
     async def find_by_email(self, email: str, user_id: Optional[str] = None, exclude_resume_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Check if a parsed resume already exists with this email across MongoDB (case-insensitive)."""

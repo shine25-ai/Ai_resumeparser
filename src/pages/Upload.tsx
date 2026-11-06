@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip, Clock, Sparkles, Cpu, Send, Brain, AlertCircle } from "lucide-react";
 import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS, SETTINGS_APP } from "../utils/Api";
 import { notifySessionExpired } from "../utils/session";
+import { formatScore } from "../utils/candidateFields";
 
 export default function Upload() {
   const [isDragging, setIsDragging] = useState(false);
@@ -262,7 +263,7 @@ export default function Upload() {
             currentStatus = (finalResult.status || "").toLowerCase();
 
             if (currentStatus === "failed" || currentStatus === "error") {
-              throw new Error("AI Parsing failed on the backend.");
+              throw new Error(finalResult.parse_error || "AI Parsing failed on the backend.");
             }
           } catch (pollErr: any) {
             consecutiveErrors++;
@@ -334,6 +335,7 @@ export default function Upload() {
     frameworks: pData.frameworks || [],
     databases: pData.databases || [],
     cloud_technologies: pData.cloud_tech || [],
+    functional_skills: pData.functional_skills || [],
   };
   const otherDocs = parsedResponse?.other_documents || [];
 
@@ -932,6 +934,7 @@ export default function Upload() {
                     <SkillPillGroup title="Frameworks" items={skills.frameworks} />
                     <SkillPillGroup title="Databases" items={skills.databases} />
                     <SkillPillGroup title="Cloud Technologies" items={skills.cloud_technologies} />
+                    <SkillPillGroup title="Functional Skills" items={skills.functional_skills} />
                   </div>
                 </div>
               )}
@@ -967,7 +970,7 @@ export default function Upload() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div className="bg-white border border-indigo-200 p-4 rounded-xl flex flex-col items-center justify-center text-center shadow-xs">
                       <span className="text-xs font-bold text-slate-500 mb-1">AI Technical Score</span>
-                      <span className="text-3xl font-black text-indigo-600">{aiEval.ai_technical_score || "N/A"}/100</span>
+                      <span className="text-3xl font-black text-indigo-600">{formatScore(aiEval.ai_technical_score)}/100</span>
                     </div>
                     <FieldBox label="Experience Level" value={aiEval.experience_level} />
                     <FieldBox label="Job Hopping Risk" value={aiEval.career_analysis?.job_hopping_risk} />

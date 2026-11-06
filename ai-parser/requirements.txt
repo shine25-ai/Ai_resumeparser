@@ -13,3 +13,5 @@ langchain-ollama
 langchain-community
 docx2txt
 langchain-openai
+pymupdf
+phonenumbers

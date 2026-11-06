@@ -3,6 +3,8 @@ Resume service handling file storage, text extraction (PyMuPDF & docx), metadata
 """
 
 import os
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import docx
@@ -11,7 +13,7 @@ from fastapi import UploadFile, BackgroundTasks
 from loguru import logger
 from app.core.config import settings
 from app.core.database import get_next_sequence
-from app.core.exceptions import FileUploadError, NotFoundError
+from app.core.exceptions import ConflictError, FileUploadError, NotFoundError
 from app.models.resume import ResumeDocument
 from app.models.resume_log import ResumeLogDocument
 from app.repositories.resume_repository import ResumeRepository
@@ -32,6 +34,8 @@ from app.utils.validators import validate_profile_picture, validate_uploaded_fil
 
 class ResumeService:
     """Service handling resume processing, text extraction, S3 upload, and parsing."""
+
+    PARSER_POLL_INTERVAL_SECONDS = 5
 
     def __init__(
         self,
@@ -68,6 +72,16 @@ class ResumeService:
         import hashlib
         file_hash = hashlib.sha256(content).hexdigest()
 
+        # Exactly the same file was uploaded before (gap G11): don't parse it again or create a second profile.
+        duplicate = await self.resume_repo.find_by_file_hash(file_hash)
+        if duplicate:
+            name = (duplicate.get("parsed_data") or {}).get("full_name") or duplicate.get("original_filename")
+            raise ConflictError(
+                f"This exact file was already uploaded as candidate {duplicate.get('candidate_id') or duplicate.get('id')} ({name}). "
+                "No new profile was created.",
+                errors=[{"existing_resume_id": duplicate.get("id"), "candidate_id": duplicate.get("candidate_id")}],
+            )
+
         ext = original_filename.rsplit(".", 1)[-1].lower()
         resume_id = generate_uuid()
         unique_filename = f"{resume_id}_{original_filename}"
@@ -85,16 +99,13 @@ class ResumeService:
 
         # 2. Extract plain text
         extracted_text = ""
-        status = ResumeStatus.PARSED
 
+        # This quick text is only used for search until the parser returns the text it read (gap G13).
+        # An empty result is not a failure: scanned PDFs and .doc files are read by the parser (OCR / conversion).
         try:
             extracted_text = self._extract_text_from_file(file_path, ext)
-            if not extracted_text or not extracted_text.strip():
-                status = ResumeStatus.FAILED
-                extracted_text = ""
         except Exception as e:
-            logger.error(f"Text extraction failed for file '{unique_filename}': {e}")
-            status = ResumeStatus.FAILED
+            logger.warning(f"Quick text extraction failed for file '{unique_filename}'; the parser will read it: {e}")
             extracted_text = ""
 
         # 3. Queue AI Parsing in background
@@ -122,25 +133,22 @@ class ResumeService:
             ai_evaluation=ai_evaluation,
             resume_source=resume_source,
             resume_source_informer_name=resume_source_informer_name,
-            # Text extraction failure means no parsing job is queued, so mark it FAILED now
-            # instead of leaving it stuck in PENDING.
-            status=ResumeStatus.FAILED if status == ResumeStatus.FAILED else ResumeStatus.PENDING,
+            status=ResumeStatus.PENDING,
         )
 
         created = await self.resume_repo.create(resume_doc.to_dict())
         logger.info(f"Recorded temporary upload document in MongoDB: ID '{resume_id}' for user '{user_id}' with S3 URL '{s3_url}'")
         
-        if status != ResumeStatus.FAILED:
-            # Enqueue the background task for AI parsing
-            background_tasks.add_task(
-                self._process_ai_parsing_async,
-                resume_id=resume_id,
-                user_id=user_id,
-                file_path=file_path,
-                original_filename=original_filename,
-                content_type=file.content_type or "application/pdf"
-            )
-            
+        # Every upload goes to the parser, which reports unreadable files with a clear error.
+        background_tasks.add_task(
+            self._process_ai_parsing_async,
+            resume_id=resume_id,
+            user_id=user_id,
+            file_path=file_path,
+            original_filename=original_filename,
+            content_type=file.content_type or "application/pdf"
+        )
+
         return ResumeResponse.model_validate(created)
 
     async def _process_ai_parsing_async(self, resume_id: str, user_id: str, file_path: str, original_filename: str, content_type: str):
@@ -180,6 +188,7 @@ class ResumeService:
                     
             parsed_data = {}
             ai_evaluation = {}
+            parser_text = ""
 
             job_id = ai_result.get("job_id")
             if not job_id:
@@ -202,34 +211,29 @@ class ResumeService:
             else:
                 status_url = settings.AI_PARSER_URL.replace("/upload", f"/status/{job_id}")
                 
-                # Poll for completion
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    for _ in range(60): # 60 * 5 = 300 seconds max
-                        res = await client.get(status_url)
-                        res.raise_for_status()
-                        status_data = res.json()
-                        
-                        if status_data.get("status") == "completed":
-                            parsed_data = status_data.get("parsed_resume", {})
-                            ai_evaluation = status_data.get("evaluation", {})
-                            break
-                        elif status_data.get("status") == "error":
-                            raise Exception(f"AI Parser error: {status_data.get('evaluation')}")
-                            
-                        await asyncio.sleep(5)
-                    else:
-                        raise Exception("AI Parser polling timed out after 5 minutes")
+                parsed_data, ai_evaluation, parser_text = await self._poll_parser_job(status_url)
+                if parser_text and parser_text.strip():
+                    # Search the same text the AI read: hidden text removed, OCR for scans, .doc converted (gap G13).
+                    await self.resume_repo.update(resume_id, {"extracted_text": parser_text})
 
             # Extract email from parsed_data (handles nested dict or direct string)
             email = parsed_data.get("email") if isinstance(parsed_data, dict) else None
             clean_email = email.strip() if (email and isinstance(email, str) and email.strip()) else None
 
             existing_doc = None
+            match_reason = "email"
             if clean_email:
                 logger.info(f"[EXISTING_EMAIL_CHECK] Extracted email '{clean_email}' from parsed data for upload '{resume_id}'. Searching MongoDB...")
                 existing_doc = await self.resume_repo.find_by_email(email=clean_email, exclude_resume_id=resume_id)
             else:
                 logger.info(f"[EXISTING_EMAIL_CHECK] No valid email found in parsed_data for upload '{resume_id}'. Keys in parsed_data: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
+            if not existing_doc and isinstance(parsed_data, dict):
+                # Same person with a different (or no) email: match on name + phone (gap G11).
+                existing_doc = await self.resume_repo.find_by_name_and_phone(
+                    parsed_data.get("full_name"), parsed_data.get("phone"), exclude_resume_id=resume_id)
+                if existing_doc:
+                    match_reason = "name and phone"
+                    logger.info(f"[EXISTING_NAME_PHONE_CHECK] Upload '{resume_id}' matches candidate '{existing_doc['id']}' on name and phone.")
 
             if existing_doc and existing_doc["id"] != resume_id:
                 logger.info(f"========== [EXISTING EMAIL FLOW TRIGGERED] ==========")
@@ -246,7 +250,7 @@ class ResumeService:
                     user_id=user_id,
                     email=clean_email,
                     old_data=old_snapshot,
-                    action="AUTOMATIC_EMAIL_UPDATE",
+                    action="AUTOMATIC_EMAIL_UPDATE" if match_reason == "email" else "AUTOMATIC_NAME_PHONE_UPDATE",
                 )
                 await self.resume_log_repo.create(log_doc.to_dict())
                 logger.info(f"[EXISTING_EMAIL_FLOW] Step 1/3: Created ResumeLog snapshot ID '{log_doc.id}' in 'resume_logs' collection for candidate '{existing_doc['id']}'")
@@ -266,7 +270,7 @@ class ResumeService:
 
                 hr_updates = existing_doc.get("hr_updates") or []
                 hr_updates.append({
-                    "comment": f"Auto-updated profile with new resume upload '{original_filename}'. Previous version backed up to resume_log.",
+                    "comment": f"Auto-updated profile with new resume upload '{original_filename}' (same {match_reason}). Previous version backed up to resume_log.",
                     "author": "System",
                     "updated_at": utc_now().isoformat()
                 })
@@ -277,7 +281,7 @@ class ResumeService:
                     "file_path": file_path,
                     "s3_url": temp_doc.get("s3_url"),
                     "file_hash": temp_doc.get("file_hash"),
-                    "extracted_text": temp_doc.get("extracted_text"),
+                    "extracted_text": parser_text if job_id and parser_text else temp_doc.get("extracted_text"),
                     "parsed_data": parsed_data,
                     "ai_evaluation": ai_evaluation,
                     "other_documents": other_docs,
@@ -310,19 +314,66 @@ class ResumeService:
         except Exception as e:
             logger.error(f"Background AI Parsing failed for '{resume_id}': {e}")
             await self.resume_repo.update(resume_id, {
-                "status": ResumeStatus.FAILED.value
+                "status": ResumeStatus.FAILED.value,
+                "parse_error": str(e)[:1000],
             })
 
+    async def _poll_parser_job(self, status_url: str):
+        """Wait for an AI parser job and return (parsed_data, evaluation, resume_text); raises on failure or timeout."""
+        import asyncio
+        import httpx
+        # Poll for completion. Short connection blips are tolerated; a job the parser
+        # no longer knows (404) or reports as failed ends the wait straight away.
+        # The processing timer starts when the parser picks the resume up, not while it waits in the queue.
+        poll_every = self.PARSER_POLL_INTERVAL_SECONDS
+        timeout_s = settings.AI_PARSER_POLL_TIMEOUT_SECONDS
+        loop = asyncio.get_running_loop()
+        queue_deadline = loop.time() + settings.AI_PARSER_QUEUE_TIMEOUT_SECONDS
+        processing_deadline = None
+        connection_errors = 0
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                now = loop.time()
+                if processing_deadline and now > processing_deadline:
+                    raise Exception(f"AI Parser did not finish within {timeout_s // 60} minutes")
+                if not processing_deadline and now > queue_deadline:
+                    raise Exception(f"AI Parser did not start this resume within {settings.AI_PARSER_QUEUE_TIMEOUT_SECONDS // 60} minutes (queue too long)")
+                try:
+                    res = await client.get(status_url)
+                    res.raise_for_status()
+                    connection_errors = 0
+                except httpx.TransportError:
+                    connection_errors += 1
+                    if connection_errors > 3:
+                        raise Exception("AI Parser is unreachable (4 failed status checks in a row)")
+                    await asyncio.sleep(poll_every)
+                    continue
+                status_data = res.json()
+
+                if status_data.get("status") == "completed":
+                    return (status_data.get("parsed_resume", {}), status_data.get("evaluation", {}),
+                            status_data.get("resume_text") or "")
+                elif status_data.get("status") == "error":
+                    detail = (status_data.get("evaluation") or {}).get("error") or status_data.get("evaluation")
+                    raise Exception(f"AI Parser error: {detail}")
+                elif status_data.get("status") != "queued" and not processing_deadline:
+                    processing_deadline = loop.time() + timeout_s
+
+                await asyncio.sleep(poll_every)
+
     def _extract_text_from_file(self, file_path: str, ext: str) -> str:
-        """Extract plain text from PDF, DOCX, or DOC file."""
+        """Extract plain text from PDF, DOCX, or DOC file, NFKC-normalised like the parser's text (gap G13)."""
         if ext == "pdf":
-            return self._extract_text_from_pdf(file_path)
+            text = self._extract_text_from_pdf(file_path)
         elif ext == "docx":
-            return self._extract_text_from_docx(file_path)
+            text = self._extract_text_from_docx(file_path)
         elif ext == "doc":
-            return self._extract_text_from_doc(file_path)
+            # Binary .doc can't be read here; the parser converts it and its text replaces this one.
+            return ""
         else:
             raise FileUploadError(f"Unsupported extension: {ext}")
+        text = re.sub("[\u200b\u200c\u200d\u2060\ufeff\u00ad]", "", unicodedata.normalize("NFKC", text))
+        return text.strip()
 
     def _extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from PDF using PyMuPDF (fitz)."""
@@ -335,24 +386,19 @@ class ResumeService:
     def _extract_text_from_docx(self, file_path: str) -> str:
         """Extract text from DOCX using python-docx."""
         doc = docx.Document(file_path)
-        text_parts = [para.text for para in doc.paragraphs if para.text.strip()]
+        text_parts: List[str] = []
+        # Page headers often hold the name and contact details (seen in testing: R04).
+        for section in doc.sections:
+            for para in section.header.paragraphs:
+                if para.text.strip() and para.text not in text_parts:
+                    text_parts.append(para.text)
+        text_parts += [para.text for para in doc.paragraphs if para.text.strip()]
         for table in doc.tables:
             for row in table.rows:
                 row_text = " | ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
                 if row_text:
                     text_parts.append(row_text)
         return "\n".join(text_parts).strip()
-
-    def _extract_text_from_doc(self, file_path: str) -> str:
-        """Fallback text extraction for legacy binary DOC format."""
-        try:
-            with open(file_path, "rb") as f:
-                content = f.read().decode("utf-8", errors="ignore")
-                # Filter printable ASCII/text characters
-                clean = "".join([c for c in content if c.isprintable() or c in ("\n", "\r", "\t")])
-                return clean.strip()
-        except Exception:
-            return ""
 
     async def get_resume_by_id(self, resume_id: str, user_id: str, is_admin: bool = False) -> ResumeResponse:
         """Fetch single resume by ID, checking ownership if non-admin."""

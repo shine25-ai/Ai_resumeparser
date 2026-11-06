@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Edit, Download, Search, FileText, CheckCircle, AlertCircle, Eye, X, Code, Info } from "lucide-react";
 import { getResumes } from "../utils/Api";
+import { getCandidateRole } from "../utils/candidateFields";
 
 // Local API wrapper
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
@@ -304,12 +305,11 @@ export default function ResumeTemplates() {
 
   const getCandidateName = (c: Candidate) =>
     c.parsed_data?.full_name || c.parsed_data?.name || "Unknown Candidate";
-  const getCandidateRole = (c: Candidate) =>
-    c.parsed_data?.role || c.parsed_data?.designation || c.parsed_data?.email || "No details";
+  const getCandidateRoleLabel = (c: Candidate) => getCandidateRole(c.parsed_data, "No details");
 
   const filteredCandidates = candidates.filter(c => {
     const q = candidateSearch.toLowerCase();
-    return getCandidateName(c).toLowerCase().includes(q) || getCandidateRole(c).toLowerCase().includes(q);
+    return getCandidateName(c).toLowerCase().includes(q) || getCandidateRoleLabel(c).toLowerCase().includes(q);
   });
 
   return (
@@ -480,7 +480,7 @@ export default function ResumeTemplates() {
                             className="rounded accent-indigo-600 w-4 h-4 shrink-0" />
                           <div className="min-w-0">
                             <div className="font-semibold text-slate-900 text-sm truncate">{getCandidateName(c)}</div>
-                            <div className="text-xs text-slate-500 truncate">{getCandidateRole(c)}</div>
+                            <div className="text-xs text-slate-500 truncate">{getCandidateRoleLabel(c)}</div>
                           </div>
                         </label>
                       )) : (

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     UPLOAD_FOLDER: str = "uploads"
     OPENAI_API_KEY: str = "sk-placeholder-api-key"
     AI_PARSER_URL: str = "http://localhost:8001/api/upload"
+    # How long to wait for the AI parser: once it starts a resume (includes rate-limit waits),
+    # and in total while the resume is still queued behind others
+    AI_PARSER_POLL_TIMEOUT_SECONDS: int = 900
+    AI_PARSER_QUEUE_TIMEOUT_SECONDS: int = 3600
 
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""

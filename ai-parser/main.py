@@ -44,14 +44,45 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Only a few resumes are parsed at once (gap G04): the rest wait as "queued" instead of all hitting the
+# LLM provider together and running into its per-minute limits.
+from concurrent.futures import ThreadPoolExecutor
+MAX_CONCURRENT_JOBS = int(os.getenv("PARSER_MAX_CONCURRENT_JOBS", "2"))
+_job_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS, thread_name_prefix="parse-job")
+
+
+@app.on_event("startup")
+def fail_interrupted_jobs():
+    """Jobs still queued/processing at startup were cut off by a restart (gap G05): mark them failed
+    so nothing waits on them forever."""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        stuck = db.query(CandidateDB).filter(CandidateDB.status.in_(["processing", "queued"])).all()
+        for c in stuck:
+            c.status = "error"
+            c.evaluation = {"error": "Parsing was interrupted because the parser service restarted. Please upload the resume again."}
+        db.commit()
+        if stuck:
+            logger.warning(f"Marked {len(stuck)} interrupted job(s) as failed: {[c.id for c in stuck]}")
+        for name in os.listdir(UPLOAD_DIR):  # their files will never be processed
+            if name.split("_", 1)[0] in {str(c.id) for c in stuck}:
+                os.remove(os.path.join(UPLOAD_DIR, name))
+    finally:
+        db.close()
+
 def _process_resume_task(job_id: int, file_path: str, ai_config_dict: dict = None):
     # Use a new DB session for the background task
     from database import SessionLocal
     db = SessionLocal()
-    
+
     logger.info(f"[Job {job_id}] Starting background task for file: {file_path}")
-    
+
     try:
+        candidate = db.query(CandidateDB).filter(CandidateDB.id == job_id).first()
+        if candidate:
+            candidate.status = "processing"
+            db.commit()
         initial_state = {
             "file_path": file_path,
             "raw_text": "",
@@ -76,7 +107,8 @@ def _process_resume_task(job_id: int, file_path: str, ai_config_dict: dict = Non
                 logger.info(f"[Job {job_id}] Workflow completed successfully.")
                 candidate.status = "completed"
                 candidate.parsed_resume = result.get("parsed_resume", {})
-                candidate.evaluation = result.get("evaluation", {})
+                # The text the AI read is handed back so the backend can search the same text (gap G13).
+                candidate.evaluation = {**result.get("evaluation", {}), "_resume_text": result.get("raw_text", "")}
             db.commit()
             
     except Exception as e:
@@ -117,7 +149,7 @@ async def upload_resume(
         logger.warning("No AI config provided in payload, and env vars missing. Will proceed but might fail during parsing.")
 
     # Create a DB record immediately
-    candidate_record = CandidateDB(status="processing", full_name="Processing...")
+    candidate_record = CandidateDB(status="queued", full_name="Processing...")
     db.add(candidate_record)
     db.commit()
     db.refresh(candidate_record)
@@ -129,12 +161,12 @@ async def upload_resume(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        background_tasks.add_task(_process_resume_task, candidate_record.id, file_path, ai_config_dict)
+        _job_pool.submit(_process_resume_task, candidate_record.id, file_path, ai_config_dict)
         
         return {
             "message": "Resume upload accepted, processing in background.",
             "job_id": candidate_record.id,
-            "status": "processing"
+            "status": "queued"
         }
         
     except Exception as e:
@@ -151,11 +183,14 @@ async def get_status(job_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Job not found")
         
+    evaluation = dict(candidate.evaluation or {})
+    resume_text = evaluation.pop("_resume_text", None)
     return {
         "job_id": candidate.id,
         "status": candidate.status,
         "parsed_resume": candidate.parsed_resume,
-        "evaluation": candidate.evaluation
+        "evaluation": evaluation,
+        "resume_text": resume_text,
     }
 
 @app.post("/api/generate-questions")

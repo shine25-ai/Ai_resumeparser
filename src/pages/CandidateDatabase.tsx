@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getResumes, exportResumesApi, type CandidateQueryParams, type SortOption, SORT_OPTION_LABELS } from "../utils/Api";
+import { getCandidateRole, formatExperience } from "../utils/candidateFields";
 import { CandidateEditModal } from "../components/CandidateEditModal";
 
 export default function CandidateDatabase() {
@@ -93,15 +94,11 @@ export default function CandidateDatabase() {
         name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         candidateName: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         email: item.parsed_data?.email || item.email || "N/A",
-        role: item.parsed_data?.current_role || item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "Software Professional",
-        targetRole: item.parsed_data?.current_role || item.parsed_data?.designation || item.parsed_data?.role || item.parsed_data?.experience?.[0]?.designation || "N/A",
+        role: getCandidateRole(item.parsed_data, "Role not specified"),
+        targetRole: getCandidateRole(item.parsed_data, "N/A"),
         source: item.resume_source || "N/A",
         uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
-        experience: item.parsed_data?.total_experience_years
-          ? `${item.parsed_data.total_experience_years} Yrs`
-          : item.parsed_data?.years_of_experience
-            ? `${item.parsed_data.years_of_experience} Yrs`
-            : "N/A",
+        experience: formatExperience(item.parsed_data),
         match: typeof item.ai_evaluation?.ai_technical_score === "number"
           ? `${item.ai_evaluation.ai_technical_score}%`
           : "Not scored",
