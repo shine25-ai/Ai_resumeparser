@@ -32,6 +32,11 @@ MAX_PROMPT_CHARS = 15000
 WEIGHTS = {"must_have": 50, "nice_to_have": 15, "experience": 15, "role": 10,
            "location": 5, "education": 5, "keywords": 5, "ai_score": 5}
 
+# Too few years is a near-requirement, not just 15 points: a fresher with the right skills should not
+# rank above people who have the years. Each missing year takes 15% off the total, at most half.
+SHORT_YEARS_PENALTY = 0.15
+SHORT_YEARS_FLOOR = 0.5
+
 PLAN_LIST_FIELDS = ["role_titles", "must_have_skills", "nice_to_have_skills", "locations", "education", "keywords"]
 TITLE_STOP_WORDS = {"and", "or", "of", "the", "for", "with", "in", "a", "an", "to", "sr", "jr"}
 
@@ -169,6 +174,7 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
         earned["nice_to_have"] = WEIGHTS["nice_to_have"] * credit / len(plan["nice_to_have_skills"])
 
     lo, hi = plan["min_experience"], plan["max_experience"]
+    years_factor = 1.0
     if lo is not None or hi is not None:
         years = _years(parsed)
         if years is None:
@@ -176,6 +182,8 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
         else:
             gap = max((lo or 0) - years, 0) + (max(years - hi, 0) if hi is not None else 0)
             earned["experience"] = max(0.0, WEIGHTS["experience"] - 5 * gap)
+            short = max((lo or 0) - years, 0)
+            years_factor = max(SHORT_YEARS_FLOOR, 1 - SHORT_YEARS_PENALTY * short)
         out["experience_years"] = years
 
     if plan["role_titles"] or plan["role_family"]:
@@ -217,8 +225,10 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
     earned["ai_score"] = WEIGHTS["ai_score"] * min(max(float(ai), 0), 100) / 100 if isinstance(ai, (int, float)) else 0.0
 
     possible = sum(WEIGHTS[k] for k in earned)
-    out["match_score"] = round(100 * sum(earned.values()) / possible) if possible else 0
+    out["match_score"] = round(100 * years_factor * sum(earned.values()) / possible) if possible else 0
     out["score_parts"] = {k: round(v, 1) for k, v in earned.items()}
+    if years_factor < 1:
+        out["score_parts"]["below_min_years_factor"] = round(years_factor, 2)
     return out
 
 

@@ -262,15 +262,18 @@ export default function Upload() {
             finalResult = statusData.data || statusData;
             currentStatus = (finalResult.status || "").toLowerCase();
 
-            if (currentStatus === "failed" || currentStatus === "error") {
-              throw new Error(finalResult.parse_error || "AI Parsing failed on the backend.");
-            }
           } catch (pollErr: any) {
             consecutiveErrors++;
             if (consecutiveErrors >= 5) {
               throw pollErr;
             }
           }
+        }
+
+        // Checked after the loop: a failure thrown inside it was caught by the retry handler and the
+        // file was then reported as parsed.
+        if (currentStatus === "failed" || currentStatus === "error") {
+          throw new Error(finalResult.parse_error || "AI Parsing failed on the backend.");
         }
 
         if (currentStatus === "pending") {

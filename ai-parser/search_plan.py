@@ -63,6 +63,18 @@ def is_alternative(skill: str, prompt: str) -> bool:
     return bool(re.search(rf"(?<![A-Za-z0-9]){name}\s+or\s+[A-Za-z0-9]|[A-Za-z0-9.+#]\s+or\s+{name}(?![A-Za-z0-9])", prompt, re.IGNORECASE))
 
 
+DOMAIN_SKILL = re.compile(r"^(?P<domain>.+?)\s+(?:domain|industry|sector)(?:\s+(?:experience|knowledge|background|expertise))?$", re.IGNORECASE)
+
+
+def split_domain_skills(skills: List[str]) -> Tuple[List[str], List[str]]:
+    """'Banking domain experience' is a domain, not a skill: return (skills, domains)."""
+    kept, domains = [], []
+    for skill in skills:
+        m = DOMAIN_SKILL.match(skill.strip())
+        (domains if m else kept).append(m.group("domain").strip().lower() if m else skill)
+    return kept, domains
+
+
 def clean_plan(plan: Dict[str, Any], prompt: str = "") -> Dict[str, Any]:
     """Make the plan safe and consistent: standard skill names, no duplicates, no protected traits,
     alternatives not required, a sensible experience range, and years filled in from a seniority word."""
@@ -71,6 +83,8 @@ def clean_plan(plan: Dict[str, Any], prompt: str = "") -> Dict[str, Any]:
     moved = [x for x in must_all if x not in must]
     nice_all = canonical_skills(moved + [_short_name(x) for x in _clean_list(plan.get("nice_to_have_skills"), 8)])
     nice = [x for x in nice_all if x.lower() not in {m.lower() for m in must}][:8]
+    must, must_domains = split_domain_skills(must)
+    nice, nice_domains = split_domain_skills(nice)
     lo, hi = _year(plan.get("min_experience")), _year(plan.get("max_experience"))
     if lo is not None and hi is not None and lo > hi:
         lo, hi = hi, lo
@@ -88,7 +102,7 @@ def clean_plan(plan: Dict[str, Any], prompt: str = "") -> Dict[str, Any]:
         "level": level,
         "locations": _clean_list(plan.get("locations"), 5),
         "education": _clean_list(plan.get("education"), 4),
-        "keywords": _clean_list(plan.get("keywords"), 5),
+        "keywords": _clean_list(list(plan.get("keywords") or []) + must_domains + nice_domains, 5),
     }
 
 
