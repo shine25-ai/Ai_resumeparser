@@ -41,3 +41,11 @@ def test_alternatives_become_nice_to_have():
 
 def test_bracketed_notes_removed():
     assert clean_plan({"must_have_skills": ["Agile (Scrum)", "AWS (EC2, S3)"]})["must_have_skills"] == ["Agile", "AWS"]
+
+
+def test_domain_skills_become_keywords():
+    plan = clean_plan({"must_have_skills": ["Selenium", "Healthcare domain knowledge"],
+                       "nice_to_have_skills": ["Appium", "Banking domain experience", "Retail industry"],
+                       "keywords": ["banking"]})
+    assert plan["must_have_skills"] == ["Selenium"] and plan["nice_to_have_skills"] == ["Appium"]
+    assert plan["keywords"] == ["banking", "healthcare", "retail"]       # no duplicate 'banking'

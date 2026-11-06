@@ -60,6 +60,7 @@ class ResumeResponse(BaseModel):
     resume_source_informer_name: Optional[str] = None
     upload_date: str
     status: ResumeStatus
+    parse_error: Optional[str] = None  # why parsing failed, shown on the upload page
     interview_assigned: Optional[bool] = False
     interview_status: Optional[str] = "NOT_ASSIGNED"
     last_interview_assigned_date: Optional[str] = None

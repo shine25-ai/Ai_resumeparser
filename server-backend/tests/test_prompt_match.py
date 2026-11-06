@@ -204,3 +204,25 @@ def test_other_word_forms_for_non_technology_skills():
     m = match_score(cand("pm", ["Product Roadmapping", "Business Requirement", "JavaScript", "Recruiter"]), plan)
     assert m["matched_skills"] == ["Product Roadmaps", "Business Requirements"]
     assert m["missing_skills"] == ["Java", "Recruitment"]
+
+
+def test_too_few_years_lowers_the_whole_score():
+    # The live case: a 0-year candidate with both skills ranked above a 4-year one for a 3-6 year role.
+    plan = normalise_plan({"must_have_skills": ["Java", "Spring Boot"], "min_experience": 3, "max_experience": 6,
+                           "locations": ["Chennai"]})
+    fresher = match_score(cand("fresher", ["Java", "Spring Boot"], 0, location="Chennai", ai=38), plan)
+    in_range = match_score(cand("mid", ["Java"], 4, location="Chennai", ai=78), plan)
+    assert fresher["score_parts"]["below_min_years_factor"] == 0.55
+    assert fresher["match_score"] < 60 and fresher["match_score"] < in_range["match_score"]
+    one_short = match_score(cand("a", ["Java", "Spring Boot"], 2, location="Chennai"), plan)
+    assert one_short["score_parts"]["below_min_years_factor"] == 0.85
+    assert "below_min_years_factor" not in in_range["score_parts"]
+    unknown = match_score(cand("b", ["Java", "Spring Boot"], None, location="Chennai"), plan)
+    assert "below_min_years_factor" not in unknown["score_parts"]   # unknown years: only the 15 points are lost
+
+
+def test_resume_response_carries_parse_error():
+    from app.schemas.resume import ResumeResponse
+    doc = cand("bad")
+    doc.update(status="FAILED", parse_error="The file looks damaged or is not a real PDF.")
+    assert ResumeResponse.model_validate(doc).model_dump()["parse_error"] == "The file looks damaged or is not a real PDF."
