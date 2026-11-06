@@ -5,6 +5,7 @@ export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8
 export const RESUME_UPLOAD = `${BASE_URL}/resumes/upload`;
 export const RESUME_LIST = `${BASE_URL}/resumes`;
 export const RESUME_MATCH = `${BASE_URL}/resumes/match`;
+export const RESUME_PROMPT_MATCH = `${BASE_URL}/resumes/prompt-match`;
 export const RESUME_SUMMARY = `${BASE_URL}/resumes/parsed-summary`;
 export const RESUME_MERGE = (id: string) => `${BASE_URL}/resumes/${id}/merge`;
 export const RESUME_DOCUMENTS = (id: string) => `${BASE_URL}/resumes/${id}/documents`;
@@ -369,6 +370,57 @@ export const matchResumes = async (params: MatchFilterParams = {}) => {
     throw new Error(resData.detail || "Failed to fetch matched resumes");
   }
 
+  return resData.data || resData;
+};
+
+export interface SearchPlan {
+  role_titles: string[];
+  role_family?: string | null;
+  must_have_skills: string[];
+  nice_to_have_skills: string[];
+  min_experience?: number | null;
+  max_experience?: number | null;
+  level?: string | null;
+  locations: string[];
+  education: string[];
+  keywords: string[];
+}
+
+export interface CandidateMatch {
+  match_score: number;
+  matched_skills: string[];
+  missing_skills: string[];
+  nice_to_have_matched: string[];
+  role_match?: string;
+  experience_years?: number | null;
+  keywords_found?: string[];
+  score_parts: Record<string, number>;
+}
+
+export interface PromptMatchResponse {
+  plan: SearchPlan;
+  plan_cached: boolean;
+  notes: string[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  resumes: any[];
+}
+
+/** JD Match prompt mode: send a written request (the AI reads it once) or an edited plan (no AI call). */
+export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number }): Promise<PromptMatchResponse> => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(RESUME_PROMPT_MATCH, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.message || resData.detail || "Failed to search candidates");
+  }
   return resData.data || resData;
 };
 
