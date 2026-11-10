@@ -70,6 +70,7 @@ export default function JDMatch() {
   // Phase 2: the AI scores the top 25 against the request and explains each. Off until the recruiter asks.
   const [explainOn, setExplainOn] = useState(false);
   const [reranked, setReranked] = useState(false);
+  const [explainWaiting, setExplainWaiting] = useState(false);
 
   // Selection & Interview Modal States
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
@@ -420,6 +421,7 @@ export default function JDMatch() {
       return;
     }
     setLoading(true);
+    setExplainWaiting(explain);
     setPromptError(null);
     try {
       const res = await promptMatch(
@@ -440,6 +442,7 @@ export default function JDMatch() {
       setPromptError(err.message || "Search failed. Try again, or use Filters.");
     } finally {
       setLoading(false);
+      setExplainWaiting(false);
     }
   };
 
@@ -870,11 +873,16 @@ export default function JDMatch() {
                     onClick={() => runPromptSearch({ plan, explain: true })}
                     disabled={loading}
                     className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer shadow-sm disabled:opacity-50"
-                    title="The AI reads the top 25 candidates against your request, adjusts their order and writes why each fits (about 10-20 seconds)"
+                    title="The AI reads the top 25 candidates against your request, adjusts their order and writes why each fits (up to about 40 seconds the first time; repeat searches are quick)"
                   >
                     {loading ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
                     Explain top results
                   </button>
+                )}
+                {explainWaiting && !reranked && (
+                  <span className="text-[11px] text-slate-500">
+                    The AI is reading the top 25 candidates. This can take up to about 40 seconds the first time; repeat searches are quick.
+                  </span>
                 )}
               </div>
               {matchNotes.length > 0 && (
