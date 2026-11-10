@@ -395,11 +395,17 @@ export interface CandidateMatch {
   experience_years?: number | null;
   keywords_found?: string[];
   score_parts: Record<string, number>;
+  // Present when the AI re-ranked this candidate (phase 2): match_score = 70% code_score + 30% ai_fit_score.
+  code_score?: number;
+  ai_fit_score?: number;
+  why?: string;
+  gaps?: string;
 }
 
 export interface PromptMatchResponse {
   plan: SearchPlan;
   plan_cached: boolean;
+  reranked?: boolean;
   notes: string[];
   total: number;
   page: number;
@@ -409,7 +415,7 @@ export interface PromptMatchResponse {
 }
 
 /** JD Match prompt mode: send a written request (the AI reads it once) or an edited plan (no AI call). */
-export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number }): Promise<PromptMatchResponse> => {
+export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number; rerank?: boolean }): Promise<PromptMatchResponse> => {
   const token = localStorage.getItem("access_token") || "";
   const response = await fetch(RESUME_PROMPT_MATCH, {
     method: "POST",

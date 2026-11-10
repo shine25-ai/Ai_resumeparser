@@ -67,6 +67,9 @@ export default function JDMatch() {
   const [matchNotes, setMatchNotes] = useState<string[]>([]);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [newPlanSkill, setNewPlanSkill] = useState("");
+  // Phase 2: the AI scores the top 25 against the request and explains each. Off until the recruiter asks.
+  const [explainOn, setExplainOn] = useState(false);
+  const [reranked, setReranked] = useState(false);
 
   // Selection & Interview Modal States
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
@@ -407,9 +410,11 @@ export default function JDMatch() {
   };
 
   // Prompt mode search. With `plan` the edited plan is searched again and the AI is not called.
-  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan } = {}) => {
+  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan; explain?: boolean } = {}) => {
     const targetPage = opts.page ?? 1;
     const targetLimit = opts.limit ?? pageSize;
+    // A new request starts without explanations; paging and chip edits keep the current choice.
+    const explain = opts.explain ?? (opts.plan ? explainOn : false);
     if (!opts.plan && !promptText.trim()) {
       setPromptError("Describe the role or paste a job description.");
       return;
@@ -418,8 +423,12 @@ export default function JDMatch() {
     setPromptError(null);
     try {
       const res = await promptMatch(
-        opts.plan ? { plan: opts.plan, page: targetPage, limit: targetLimit } : { prompt: promptText, page: targetPage, limit: targetLimit }
+        opts.plan
+          ? { plan: opts.plan, prompt: promptText.trim() || undefined, page: targetPage, limit: targetLimit, rerank: explain }
+          : { prompt: promptText, page: targetPage, limit: targetLimit, rerank: explain }
       );
+      setExplainOn(explain);
+      setReranked(!!res.reranked);
       setPlan(res.plan);
       setMatchNotes(res.notes || []);
       setMatchedResumes(res.resumes || []);
@@ -840,6 +849,34 @@ export default function JDMatch() {
                   </button>
                 </span>
               </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {explainOn ? (
+                  <>
+                    <span className="text-[11px] font-semibold text-violet-700 flex items-center gap-1.5">
+                      <Sparkles size={12} /> {reranked ? "Top 25 re-ranked and explained by AI" : "AI explanations requested"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => runPromptSearch({ plan, explain: false })}
+                      disabled={loading}
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer disabled:opacity-50"
+                    >
+                      Show match score only
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => runPromptSearch({ plan, explain: true })}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer shadow-sm disabled:opacity-50"
+                    title="The AI reads the top 25 candidates against your request, adjusts their order and writes why each fits (about 10-20 seconds)"
+                  >
+                    {loading ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    Explain top results
+                  </button>
+                )}
+              </div>
               {matchNotes.length > 0 && (
                 <ul className="text-[11px] text-slate-500 space-y-0.5">
                   {matchNotes.map((n) => (
@@ -1103,15 +1140,20 @@ export default function JDMatch() {
                       {searchMode === "prompt" && (
                         <td className="py-3.5 px-3.5 align-top">
                           {match ? (
-                            <div className="space-y-1.5 min-w-[150px] max-w-[220px]">
+                            <div className="space-y-1.5 min-w-[160px] max-w-[260px]">
                               <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border ${match.match_score >= 75
                                   ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                                   : match.match_score >= 50
                                     ? "bg-amber-50 border-amber-200 text-amber-700"
                                     : "bg-slate-100 border-slate-200 text-slate-600"
-                                }`} title="How well this candidate fits the request (0-100)">
+                                }`} title={match.ai_fit_score !== undefined
+                                  ? `Match score ${match.code_score} and AI fit ${match.ai_fit_score}, combined 70/30`
+                                  : "How well this candidate fits the request (0-100)"}>
                                 {match.match_score}% match
+                                {match.ai_fit_score !== undefined && <Sparkles size={11} className="ml-1 text-violet-500" />}
                               </span>
+                              {match.why && <div className="text-[11px] text-slate-700 leading-snug">{match.why}</div>}
+                              {match.gaps && <div className="text-[10px] text-amber-700 leading-snug">Gaps: {match.gaps}</div>}
                               <div className="flex flex-wrap gap-1">
                                 {match.matched_skills.map((sk) => (
                                   <span key={`ok-${sk}`} className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md">{sk}</span>
