@@ -41,6 +41,34 @@ WEIGHTS = {"must_have": 50, "nice_to_have": 15, "experience": 15, "role": 10,
 SHORT_YEARS_PENALTY = 0.15
 SHORT_YEARS_FLOOR = 0.5
 
+# A clearly different specialism (a Data Engineer for a backend role) is a near-requirement too:
+# it takes 15% off the total, on top of losing the role points.
+ROLE_MISMATCH_FACTOR = 0.85
+
+# Specialisms, found in the request's role titles and in the candidate's current role and specialization.
+SPECIALISMS = {
+    "data": ["data engineer", "data engineering", "etl", "elt", "data warehouse", "data warehousing", "snowflake",
+             "data analyst", "data analytics", "business intelligence", "bi developer", "dbt", "big data", "databricks"],
+    "qa": ["qa", "quality assurance", "test", "tester", "testing", "sdet", "quality engineer", "test automation"],
+    "devops": ["devops", "sre", "site reliability", "infrastructure engineer", "cloud engineer", "platform engineer"],
+    "frontend": ["frontend", "front-end", "front end", "ui developer", "ui engineer", "web designer"],
+    "mobile": ["android", "ios", "mobile", "flutter", "react native"],
+    "backend": ["backend", "back-end", "back end", "api developer", "server-side"],
+    "fullstack": ["full stack", "full-stack", "fullstack", "mean stack", "mern stack"],
+    "ml": ["machine learning", "data scientist", "data science", "ai engineer", "ml engineer", "generative ai",
+           "llm", "deep learning", "ai/ml"],
+}
+# Specialisms that do the same kind of work: a full-stack developer fits a backend role, and
+# AI engineers usually build Python services and data pipelines.
+COMPATIBLE = {
+    "backend": {"fullstack", "ml"}, "frontend": {"fullstack"}, "fullstack": {"backend", "frontend"},
+    "data": {"ml"}, "ml": {"data", "backend"},
+}
+SPECIALISM_PATTERNS = {
+    name: re.compile("|".join(rf"(?<![a-z0-9]){re.escape(t)}(?![a-z0-9])" for t in terms), re.IGNORECASE)
+    for name, terms in SPECIALISMS.items()
+}
+
 PLAN_LIST_FIELDS = ["role_titles", "must_have_skills", "nice_to_have_skills", "locations", "education", "keywords"]
 TITLE_STOP_WORDS = {"and", "or", "of", "the", "for", "with", "in", "a", "an", "to", "sr", "jr"}
 
@@ -148,6 +176,17 @@ def title_matches(title: str, role: str) -> bool:
     return bool(words) and all(re.search(rf"(?<![a-z0-9]){re.escape(w)}(?![a-z0-9])", role_l) for w in words)
 
 
+def specialisms(text: str) -> set:
+    return {name for name, pat in SPECIALISM_PATTERNS.items() if pat.search(text or "")}
+
+
+def specialism_fit(wanted: set, has: set) -> Optional[bool]:
+    """True: same or compatible specialism. False: clearly different. None: one side names none."""
+    if not wanted or not has:
+        return None
+    return any(h in wanted or h in COMPATIBLE.get(w, set()) for w in wanted for h in has)
+
+
 def _years(parsed: Dict[str, Any]) -> Optional[float]:
     for field in ("total_experience_years", "years_of_experience"):
         try:
@@ -190,13 +229,19 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
             years_factor = max(SHORT_YEARS_FLOOR, 1 - SHORT_YEARS_PENALTY * short)
         out["experience_years"] = years
 
+    role_factor = 1.0
     if plan["role_titles"] or plan["role_family"]:
         current = " ".join(_strings(parsed.get("current_role")) + _strings(parsed.get("designation")) + _strings(parsed.get("role")))
         past = " | ".join(str(j.get("designation") or "") for j in parsed.get("experience") or [] if isinstance(j, dict))
         family = str(evaluation.get("role_family") or "")
-        if any(title_matches(t, current) for t in plan["role_titles"]):
+        wanted = specialisms(" | ".join(plan["role_titles"] + _strings(plan["role_family"])))
+        fit_now = specialism_fit(wanted, specialisms(f"{current} | {' | '.join(_strings(parsed.get('specialization')))}"))
+        if any(title_matches(t, current) for t in plan["role_titles"]) or fit_now:
             role_points, out["role_match"] = 1.0, "current role"
-        elif any(title_matches(t, past) for t in plan["role_titles"]):
+        elif fit_now is False:
+            role_points, out["role_match"] = 0.0, "different specialism"
+            role_factor = ROLE_MISMATCH_FACTOR
+        elif any(title_matches(t, past) for t in plan["role_titles"]) or specialism_fit(wanted, specialisms(past)):
             role_points, out["role_match"] = 0.6, "earlier role"
         elif plan["role_family"] and family.lower() == str(plan["role_family"]).lower():
             role_points, out["role_match"] = 0.6, "same role family"
@@ -229,10 +274,12 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
     earned["ai_score"] = WEIGHTS["ai_score"] * min(max(float(ai), 0), 100) / 100 if isinstance(ai, (int, float)) else 0.0
 
     possible = sum(WEIGHTS[k] for k in earned)
-    out["match_score"] = round(100 * years_factor * sum(earned.values()) / possible) if possible else 0
+    out["match_score"] = round(100 * years_factor * role_factor * sum(earned.values()) / possible) if possible else 0
     out["score_parts"] = {k: round(v, 1) for k, v in earned.items()}
     if years_factor < 1:
         out["score_parts"]["below_min_years_factor"] = round(years_factor, 2)
+    if role_factor < 1:
+        out["score_parts"]["different_specialism_factor"] = role_factor
     return out
 
 

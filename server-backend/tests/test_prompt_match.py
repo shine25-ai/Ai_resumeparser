@@ -323,3 +323,73 @@ def test_no_rerank_by_default():
             res = await service.search(None, JAVA_PLAN, "u1", True)
         assert calls == [] and res["reranked"] is False
     with_service(t)
+
+
+# ---------------------------------------------------------------- specialism (role) fit
+
+from app.services.prompt_match_service import ROLE_MISMATCH_FACTOR, specialism_fit, specialisms
+
+BACKEND_PLAN = normalise_plan({"role_titles": ["Python Backend Developer", "Backend Engineer"], "must_have_skills": ["Python"],
+                               "nice_to_have_skills": ["AWS"], "role_family": "Software Engineering"})
+
+
+def with_spec(c, specialization):
+    c["parsed_data"]["specialization"] = specialization
+    return c
+
+
+def test_specialisms_found_in_titles():
+    assert specialisms("Senior Snowflake Data Engineer") == {"data"}
+    assert specialisms("ETL Test Engineer") == {"data", "qa"}
+    assert specialisms("Full-Stack Developer | MEAN Stack") == {"fullstack"}
+    assert specialisms("Technical Lead") == set() and specialisms("Software Engineer II") == set()
+    assert specialisms("Java Developer") == set()                 # a language, not a specialism
+
+
+def test_specialism_fit_rules():
+    assert specialism_fit({"backend"}, {"fullstack"}) is True       # full stack does backend work
+    assert specialism_fit({"backend"}, {"data"}) is False
+    assert specialism_fit({"qa"}, {"data", "qa"}) is True           # an ETL tester fits a QA role
+    assert specialism_fit({"backend"}, set()) is None               # generic title: no judgement
+    assert specialism_fit(set(), {"data"}) is None                  # request names no specialism
+
+
+def test_data_engineer_ranks_below_backend_developer_for_backend_role():
+    data = cand("data", ["Python", "AWS"], 5, "Data Engineer")
+    full = cand("full", ["Python", "AWS"], 5, "Full-Stack Developer")
+    m_data, m_full = match_score(data, BACKEND_PLAN), match_score(full, BACKEND_PLAN)
+    assert m_full["role_match"] == "current role" and m_data["role_match"] == "different specialism"
+    assert m_data["score_parts"]["different_specialism_factor"] == ROLE_MISMATCH_FACTOR
+    assert m_full["match_score"] > m_data["match_score"]
+    assert [r["id"] for r, _ in rank_candidates([data, full], BACKEND_PLAN)] == ["full", "data"]
+
+
+def test_specialization_counts_when_the_title_is_generic():
+    lead = with_spec(cand("lead", ["Python"], 8, "Technical Lead"), "Data Engineering")
+    assert match_score(lead, BACKEND_PLAN)["role_match"] == "different specialism"
+
+
+def test_generic_title_is_not_penalised():
+    dev = cand("dev", ["Python", "AWS"], 5, "Senior Software Engineer")
+    m = match_score(dev, BACKEND_PLAN)
+    assert m.get("role_match") is None and "different_specialism_factor" not in m["score_parts"]
+
+
+def test_qa_engineer_fits_qa_automation_role():
+    plan = normalise_plan({"role_titles": ["QA Automation Engineer"], "must_have_skills": ["Selenium"], "role_family": "QA"})
+    qa = with_spec(cand("qa", ["Selenium"], 4, "QA Engineer"), "Automation Testing")
+    data = cand("data", ["Selenium"], 4, "Data Engineer")
+    assert match_score(qa, plan)["role_match"] == "current role"
+    assert match_score(data, plan)["role_match"] == "different specialism"
+
+
+def test_data_role_still_prefers_data_engineers():
+    plan = normalise_plan({"role_titles": ["Data Engineer"], "must_have_skills": ["Python", "Snowflake"]})
+    data = cand("data", ["Python", "Snowflake"], 5, "Snowflake Developer")
+    full = cand("full", ["Python", "Snowflake"], 5, "Full Stack Developer")
+    assert [r["id"] for r, _ in rank_candidates([full, data], plan)] == ["data", "full"]
+
+
+def test_past_specialism_gives_earlier_role_credit():
+    c = cand("c", ["Python"], 6, "Technical Lead", past_roles=["Backend Developer", "Software Engineer"])
+    assert match_score(c, BACKEND_PLAN)["role_match"] == "earlier role"
