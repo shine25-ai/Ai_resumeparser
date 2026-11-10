@@ -5,6 +5,12 @@ on:
     branches:
       - development
 
+# The backend and the AI parser run from the same checkout on the server and both restart services,
+# so their deploys run one at a time.
+concurrency:
+  group: resumeparser-server-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -16,26 +22,6 @@ jobs:
       # ==========================================
       - name: Checkout Source
         uses: actions/checkout@v4
-
-
-      # ==========================================
-      # Upload Backend
-      # ==========================================
-      - name: Upload Backend
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-
-          source: "server-backend/*"
-
-          target: "/root/ai_resume/Ai_resumeparser"
-
-          strip_components: 1
-
-          overwrite: true
 
 
       # ==========================================
@@ -70,6 +56,20 @@ jobs:
             ENV_FILE="$APP_DIR/.env"
             APP_NAME="python-app"
             PORT="8012"
+
+            # ==========================================
+            # Update Code
+            # ==========================================
+            # The server runs from a git checkout of this repo. Pulling it is what updates the backend:
+            # the old scp step copied files to /root/ai_resume/Ai_resumeparser/app instead of server-backend/app.
+            REPO_DIR="/root/ai_resume/Ai_resumeparser"
+            DEPLOY_SHA="${{ github.sha }}"
+            git -C "$REPO_DIR" pull origin development
+            if ! git -C "$REPO_DIR" merge-base --is-ancestor "$DEPLOY_SHA" HEAD; then
+              echo "ERROR: server checkout does not contain $DEPLOY_SHA after pulling."
+              exit 1
+            fi
+            echo "Server code: $(git -C "$REPO_DIR" log -1 --oneline)"
 
             cd "$APP_DIR"
 
