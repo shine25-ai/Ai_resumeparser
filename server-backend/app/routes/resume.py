@@ -138,6 +138,7 @@ class PromptMatchRequest(BaseModel):
     plan: Optional[dict] = None
     page: int = 1
     limit: int = 25
+    rerank: bool = False
 
 
 @router.post(
@@ -148,7 +149,9 @@ class PromptMatchRequest(BaseModel):
         "JD Match prompt mode. Send `prompt` (a request or a pasted job description, up to 15,000 characters) "
         "and the AI turns it into a search plan once (cached for 24 hours). Send `plan` instead, for example after "
         "the recruiter edits the filters, to search again without calling the AI. Candidates come back best match "
-        "first, each with `match.match_score` (0-100), matched and missing skills."
+        "first, each with `match.match_score` (0-100), matched and missing skills. With `rerank: true` the AI also "
+        "scores the top 25 against the request (cached 24 hours): their `match_score` becomes 70% code score + "
+        "30% AI fit score, with `why` and `gaps` lines. If the AI fails, the code ranking is returned with a note."
     ),
 )
 async def prompt_match(
@@ -163,7 +166,7 @@ async def prompt_match(
     service = PromptMatchService(resume_repo, ResumeService(resume_repo, resume_log_repo=ResumeLogRepository(db)))
     data = await service.search(
         prompt=body.prompt, plan=body.plan, user_id=current_user["id"], is_admin=is_admin_or_staff(current_user),
-        page=max(1, body.page), limit=min(max(1, body.limit), 100),
+        page=max(1, body.page), limit=min(max(1, body.limit), 100), rerank=body.rerank,
     )
     return success_response(data=data, message="Matched candidates retrieved successfully.")
 

@@ -226,3 +226,86 @@ def test_resume_response_carries_parse_error():
     doc = cand("bad")
     doc.update(status="FAILED", parse_error="The file looks damaged or is not a real PDF.")
     assert ResumeResponse.model_validate(doc).model_dump()["parse_error"] == "The file looks damaged or is not a real PDF."
+
+
+# ---------------------------------------------------------------- phase 2: AI re-rank
+
+from app.services.prompt_match_service import apply_rerank, blend_scores, candidate_summary, RERANK_TOP
+
+
+def test_summary_has_work_facts_but_no_contact_details():
+    r = cand("a", ["Java", "Kafka"], 6, "Java Developer", "Chennai", text="call 9845012345")
+    r["parsed_data"].update(email="a@x.com", phone="+919845012345", full_name="Arjun Ramesh",
+                            experience=[{"designation": "Java Developer", "company": "Acme", "duration": "2020 - Present",
+                                         "technologies_used": ["Kafka"], "responsibilities": "Built payment APIs"}])
+    s = candidate_summary(r, {"matched_skills": ["Java"], "missing_skills": ["Spring Boot"]})
+    text = str(s)
+    assert "Arjun" not in text and "a@x.com" not in text and "9845012345" not in text
+    assert s["recent_jobs"][0]["company"] == "Acme" and "Kafka" in s["skills"] and s["total_years"] == 6
+    assert s["code_check"]["missing_must_haves"] == ["Spring Boot"]
+
+
+def test_blend_reorders_only_the_top_block():
+    ranked = [(cand(f"c{i}"), {"match_score": 90 - i}) for i in range(RERANK_TOP + 2)]
+    ai = {"c0": {"fit_score": 20, "why": "Mostly QA work", "gaps": "No Java"},
+          "c1": {"fit_score": 95, "why": "7 yrs Java at two jobs", "gaps": ""}}
+    out = apply_rerank(ranked, ai)
+    assert [r["id"] for r, _ in out[:2]] == ["c1", "c2"]                 # c0 fell to blend(90, 20) = 69
+    c1 = out[0][1]
+    assert c1["code_score"] == 89 and c1["ai_fit_score"] == 95 and c1["match_score"] == blend_scores(89, 95) == 91
+    assert c1["why"] == "7 yrs Java at two jobs"
+    assert [r["id"] for r, _ in out[-2:]] == [f"c{RERANK_TOP}", f"c{RERANK_TOP + 1}"]   # below the block: unchanged
+    assert "why" not in out[-1][1]
+
+
+def rerank_parser(calls, results=None, status_code=200):
+    """Fake AI parser: /search-plan returns JAVA_PLAN, /rerank scores every candidate it is sent."""
+    def handler(request):
+        import json as _json
+        calls.append(request.url.path)
+        if status_code != 200:
+            return httpx.Response(status_code, json={"detail": "LLM rate limit (429)"})
+        if request.url.path.endswith("/search-plan"):
+            return httpx.Response(200, json={"plan": JAVA_PLAN})
+        sent = _json.loads(request.read())["candidates"]
+        out = [{"id": c["id"], "fit_score": (results or {}).get(c["id"], 50), "why": f"why {c['id']}", "gaps": ""} for c in sent]
+        return httpx.Response(200, json={"results": out})
+    real = httpx.AsyncClient
+    return mock.patch.object(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+
+def test_rerank_search_uses_ai_scores_and_caches_them():
+    async def t(repo, service):
+        await seed(repo)
+        calls = []
+        with no_ai_settings(), rerank_parser(calls, {"no_kafka": 100, "best": 10}):
+            res = await service.search(None, JAVA_PLAN, "u1", True, rerank=True)
+            again = await service.search(None, JAVA_PLAN, "u1", True, rerank=True, page=1, limit=2)
+        assert calls == ["/api/rerank"]                                      # second search fully cached
+        assert res["reranked"] is True and again["reranked"] is True
+        top = res["resumes"][0]
+        assert top["id"] == "no_kafka" and top["match"]["ai_fit_score"] == 100 and top["match"]["why"] == "why no_kafka"
+        best = next(r for r in res["resumes"] if r["id"] == "best")
+        assert best["match"]["code_score"] > best["match"]["match_score"]
+    with_service(t)
+
+
+def test_rerank_failure_falls_back_to_code_ranking():
+    async def t(repo, service):
+        await seed(repo)
+        with no_ai_settings(), rerank_parser([], status_code=429):
+            res = await service.search(None, JAVA_PLAN, "u1", True, rerank=True)
+        assert res["reranked"] is False and res["resumes"][0]["id"] == "best"
+        assert any("AI explanations are unavailable right now (rate limit)" in n for n in res["notes"])
+        assert "why" not in res["resumes"][0]["match"]
+    with_service(t)
+
+
+def test_no_rerank_by_default():
+    async def t(repo, service):
+        await seed(repo)
+        calls = []
+        with no_ai_settings(), rerank_parser(calls):
+            res = await service.search(None, JAVA_PLAN, "u1", True)
+        assert calls == [] and res["reranked"] is False
+    with_service(t)

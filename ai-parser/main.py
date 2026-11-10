@@ -27,6 +27,12 @@ class SearchPlanRequest(BaseModel):
     prompt: str
     ai_config: Optional[Dict[str, Any]] = None
 
+class RerankRequest(BaseModel):
+    prompt: Optional[str] = None
+    plan: Dict[str, Any]
+    candidates: list
+    ai_config: Optional[Dict[str, Any]] = None
+
 class EvaluateAnswerRequest(BaseModel):
     transcript: str
     expected_answer: str
@@ -252,6 +258,22 @@ def search_plan_endpoint(request: SearchPlanRequest):
         status = 429 if "rate limit" in str(e).lower() else 502
         raise HTTPException(status_code=status, detail=f"Could not read the request: {str(e)[:300]}")
     return {"status": "success", "plan": plan, "token_usage": usage}
+
+@app.post("/api/rerank")
+def rerank_endpoint(request: RerankRequest):
+    """JD Match prompt mode, phase 2: the AI scores the top candidates against the request and says why."""
+    from rerank import rerank_candidates, MAX_CANDIDATES
+    if not request.candidates:
+        return {"status": "success", "results": [], "token_usage": {}}
+    if len(request.candidates) > MAX_CANDIDATES:
+        raise HTTPException(status_code=400, detail=f"Send at most {MAX_CANDIDATES} candidates.")
+    try:
+        results, usage = rerank_candidates(request.prompt or "", request.plan, request.candidates, request.ai_config)
+    except Exception as e:
+        logger.error(f"Rerank failed: {str(e)[:300]}")
+        status = 429 if "rate limit" in str(e).lower() else 502
+        raise HTTPException(status_code=status, detail=f"Could not rank candidates: {str(e)[:300]}")
+    return {"status": "success", "results": results, "token_usage": usage}
 
 @app.post("/api/evaluate-answer")
 async def evaluate_answer(request: EvaluateAnswerRequest):

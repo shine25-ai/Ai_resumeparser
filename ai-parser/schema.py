@@ -150,3 +150,14 @@ class SearchPlanSchema(BaseModel):
     locations: List[str] = Field(default_factory=list, description="Cities or 'Remote' if stated")
     education: List[str] = Field(default_factory=list, description="Required degrees or fields of study if stated (e.g. 'B.Tech', 'MBA', 'Computer Science')")
     keywords: List[str] = Field(default_factory=list, description="Other short must-match terms such as a domain or industry (e.g. 'payments', 'healthcare'). At most 5.")
+
+
+class RerankItem(BaseModel):
+    id: str = Field(description="The candidate id exactly as given")
+    fit_score: int = Field(default=0, description="0-100: how well this candidate fits the request")
+    why: str = Field(default="", description="One short line (max 20 words) with concrete evidence: years, skills, roles, projects")
+    gaps: str = Field(default="", description="One short line naming important requirements the candidate lacks; empty if none")
+
+
+class RerankSchema(BaseModel):
+    results: List[RerankItem] = Field(default_factory=list, description="One entry per candidate given")
