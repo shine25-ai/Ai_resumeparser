@@ -258,6 +258,20 @@ def test_blend_reorders_only_the_top_block():
     assert "why" not in out[-1][1]
 
 
+def test_top_block_scores_never_shown_below_page_two():
+    # Code scores 80, 79, ...; the first candidate after the block has 55.
+    ranked = [(cand(f"c{i}"), {"match_score": 80 - i}) for i in range(RERANK_TOP)] + [(cand("next"), {"match_score": 55})]
+    ai = {"c0": {"fit_score": 0, "why": "Different field", "gaps": "No Java"},      # blend(80, 0) = 56
+          "c1": {"fit_score": 0, "why": "Different field", "gaps": "No Java"}}      # blend(79, 0) = 55
+    ai.update({f"c{i}": {"fit_score": 0, "why": "", "gaps": ""} for i in range(20, RERANK_TOP)})   # c24: blend(56, 0) = 39
+    out = apply_rerank(ranked, ai)
+    shown = [m["match_score"] for _, m in out]
+    assert min(shown[:RERANK_TOP]) >= 55 and out[-1][0]["id"] == "next"
+    assert out[RERANK_TOP - 1][0]["id"] == "c24"          # still ordered by the real blend: c24 (39) is last
+    assert out[RERANK_TOP - 1][1]["match_score"] == 55     # but shown at the floor
+    assert out[RERANK_TOP - 1][1]["code_score"] == 56 and out[RERANK_TOP - 1][1]["ai_fit_score"] == 0
+
+
 def rerank_parser(calls, results=None, status_code=200):
     """Fake AI parser: /search-plan returns JAVA_PLAN, /rerank scores every candidate it is sent."""
     def handler(request):

@@ -291,9 +291,14 @@ def blend_scores(code_score: int, ai_score: int) -> int:
 
 def apply_rerank(ranked: List[Tuple[Dict[str, Any], Dict[str, Any]]], ai: Dict[str, Dict[str, Any]]):
     """The top block gets the AI's score and reasons and is re-ordered by the blended score.
-    Candidates below the top block keep their code score and order."""
+    Candidates below the top block keep their code score and order.
+    A shown score in the top block never drops below the best score after it, so page 1
+    never shows a lower percentage than the start of page 2 (the order still uses the blend)."""
     top, rest = ranked[:RERANK_TOP], ranked[RERANK_TOP:]
+    floor = max((m["match_score"] for _, m in rest), default=0)
+    order: Dict[str, int] = {}
     for resume, match in top:
+        order[resume["id"]] = match["match_score"]
         result = ai.get(resume["id"])
         if not result:
             continue
@@ -301,8 +306,10 @@ def apply_rerank(ranked: List[Tuple[Dict[str, Any], Dict[str, Any]]], ai: Dict[s
         match["ai_fit_score"] = result["fit_score"]
         match["why"] = result.get("why") or ""
         match["gaps"] = result.get("gaps") or ""
-        match["match_score"] = blend_scores(match["code_score"], result["fit_score"])
-    top.sort(key=lambda item: item[1]["match_score"], reverse=True)
+        blended = blend_scores(match["code_score"], result["fit_score"])
+        order[resume["id"]] = blended
+        match["match_score"] = max(blended, floor)
+    top.sort(key=lambda item: order[item[0]["id"]], reverse=True)
     return top + rest
 
 
