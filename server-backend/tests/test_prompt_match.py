@@ -588,3 +588,73 @@ def test_unreadable_settings_mean_off():
         with mock.patch("app.repositories.settings_repository.SettingsRepository.__init__", side_effect=RuntimeError("no db")):
             assert await service.meaning_enabled() is False
     with_service(t)
+
+
+# ---------------------------------------------------------------- phase 3: preparing resumes without timing out
+
+import app.services.prompt_match_service as pms
+
+
+def small_batches_no_time():
+    """One batch of 2 is prepared during the search; everything else goes to the background."""
+    return mock.patch.multiple(pms, MEANING_BATCH=2, MEANING_SYNC_SECONDS=0)
+
+
+async def finish_background():
+    while pms._background:
+        await asyncio.gather(*list(pms._background))
+
+
+def test_first_search_prepares_a_batch_and_the_rest_in_background():
+    async def t(repo, service):
+        await seed_payments(repo)                                   # 5 resumes, none prepared yet
+        store = repo.db[MEANING_COLLECTION]
+        with no_ai_settings(), meaning_switch(), small_batches_no_time(), fake_parser(PAY_PLAN, []):
+            first = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+            assert first["meaning_used"] is True
+            assert any("3 resumes are still being prepared" in n for n in first["notes"])
+            await finish_background()
+            assert await store.count_documents({}) == 5 and pms._preparing == set()
+            second = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        assert not any("still being prepared" in n for n in second["notes"])
+        assert second["resumes"][0]["id"] == "upi" and second["resumes"][0]["match"]["found_by_meaning"] is True
+    with_service(t)
+
+
+def test_no_second_background_run_while_one_is_going():
+    async def t(repo, service):
+        await seed_payments(repo)
+        calls = []
+        pms._preparing.add("test-model")
+        try:
+            with no_ai_settings(), meaning_switch(), fake_parser(PAY_PLAN, calls):
+                res = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        finally:
+            pms._preparing.discard("test-model")
+        assert calls.count("/api/embed") == 1                       # only the request; resumes are left to the running job
+        assert any("5 resumes are still being prepared" in n for n in res["notes"])
+        assert await repo.db[MEANING_COLLECTION].count_documents({}) == 0
+    with_service(t)
+
+
+def test_failed_background_run_lets_the_next_search_try_again():
+    async def t(repo, service):
+        await seed_payments(repo)
+        real = httpx.AsyncClient
+        state = {"passages": 0}
+
+        def handler(request):
+            import json as _json
+            body = _json.loads(request.read())
+            if body.get("kind") == "passage":
+                state["passages"] += 1
+                if state["passages"] > 1:                           # the background batches fail
+                    return httpx.Response(502, json={"detail": "model busy"})
+            return fake_embed(httpx.Request("POST", request.url, content=_json.dumps(body)))
+        with no_ai_settings(), meaning_switch(), small_batches_no_time(), \
+                mock.patch.object(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)):
+            await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+            await finish_background()
+        assert pms._preparing == set()                              # flag cleared, so the next search retries
+        assert await repo.db[MEANING_COLLECTION].count_documents({}) == 2
+    with_service(t)

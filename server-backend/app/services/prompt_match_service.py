@@ -6,11 +6,13 @@ filter query and ranks them with a fixed match score, so results are fast, repea
 """
 
 import array
+import asyncio
 import hashlib
 import json
 import math
 import operator
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,7 +46,13 @@ WEIGHTS = {"must_have": 50, "nice_to_have": 15, "experience": 15, "role": 10,
 # search missed ("payments" finding "UPI" or "card processing").
 MEANING_POOL = 20         # most candidates added to the pool by meaning alone
 MEANING_POOL_MIN = 0.5    # ...and only if at least halfway between the typical and the best resume
-MEANING_BATCH = 64        # resumes per embedding call
+MEANING_BATCH = 16        # resumes per embedding call
+# A search prepares new or changed resumes for at most this long (the site's proxy gives up after 60 s);
+# the rest are prepared in the background and join the next searches.
+MEANING_SYNC_SECONDS = 15
+
+_preparing: set = set()      # models with a background preparation running (one at a time per model)
+_background: set = set()     # keeps background tasks alive until they finish
 
 # Too few years is a near-requirement, not just 15 points: a fresher with the right skills should not
 # rank above people who have the years. Each missing year takes 15% off the total, at most half.
@@ -562,29 +570,55 @@ class PromptMatchService:
         body = response.json()
         return body["model"], body["vectors"]
 
-    async def meaning_similarities(self, text: str, user_id: str, is_admin: bool) -> Dict[str, float]:
-        """How close every resume this user may search is to the request, by meaning.
-        Resumes without a vector for the current model (new or changed) are embedded first, in batches."""
+    async def _prepare(self, model: str, ids: List[str], deadline: Optional[float] = None) -> Dict[str, List[float]]:
+        """Embed and store these resumes in batches. With a deadline, stop after the batch that passes it
+        (at least one batch is always done). Returns the vectors made."""
+        made: Dict[str, List[float]] = {}
+        for start in range(0, len(ids), MEANING_BATCH):
+            if deadline is not None and made and time.monotonic() >= deadline:
+                break
+            docs = await self.resume_repo.get_many_by_ids(ids[start:start + MEANING_BATCH])
+            texts = {d["id"]: meaning_text(d.get("parsed_data") or {}) for d in docs}
+            if not texts:
+                continue
+            _, vectors = await self._embed(list(texts.values()), "passage")
+            now = datetime.now(timezone.utc)
+            for rid, vector in zip(texts, vectors):
+                made[rid] = vector
+                await self.meaning_store.replace_one(
+                    {"_id": rid}, {"_id": rid, "model": model, "vector": pack_vector(vector), "created_at": now}, upsert=True)
+        return made
+
+    async def _prepare_in_background(self, model: str, ids: List[str]) -> None:
+        try:
+            made = await self._prepare(model, ids)
+            logger.info(f"[PROMPT_MATCH] prepared {len(made)} resume(s) for meaning search in the background")
+        except Exception as e:  # the next search simply tries again
+            logger.error(f"[PROMPT_MATCH] background meaning preparation failed: {e}")
+        finally:
+            _preparing.discard(model)
+
+    async def meaning_similarities(self, text: str, user_id: str, is_admin: bool) -> Tuple[Dict[str, float], int]:
+        """How close the resumes this user may search are to the request, by meaning, and how many are
+        still being prepared. New or changed resumes are prepared for up to MEANING_SYNC_SECONDS here;
+        the rest continue in the background so the search is never cut off."""
         model, (query_vector,) = await self._embed([text], "query")
         ids = await self.resume_repo.accessible_ids(user_id, is_admin)
         vectors: Dict[str, List[float]] = {}
         async for doc in self.meaning_store.find({"_id": {"$in": ids}, "model": model}):
             vectors[doc["_id"]] = unpack_vector(doc["vector"])
         missing = [i for i in ids if i not in vectors]
-        if missing:
-            docs = await self.resume_repo.get_many_by_ids(missing)
-            texts = {d["id"]: meaning_text(d.get("parsed_data") or {}) for d in docs}
-            todo = list(texts)
-            now = datetime.now(timezone.utc)
-            for start in range(0, len(todo), MEANING_BATCH):
-                batch = todo[start:start + MEANING_BATCH]
-                _, batch_vectors = await self._embed([texts[i] for i in batch], "passage")
-                for rid, vector in zip(batch, batch_vectors):
-                    vectors[rid] = vector
-                    await self.meaning_store.replace_one(
-                        {"_id": rid}, {"_id": rid, "model": model, "vector": pack_vector(vector), "created_at": now}, upsert=True)
-            logger.info(f"[PROMPT_MATCH] embedded {len(todo)} resume(s) for meaning search")
-        return {rid: similarity(query_vector, v) for rid, v in vectors.items()}
+        if missing and model not in _preparing:
+            vectors.update(await self._prepare(model, missing, deadline=time.monotonic() + MEANING_SYNC_SECONDS))
+            rest = [i for i in missing if i not in vectors]
+            if rest:
+                _preparing.add(model)
+                task = asyncio.create_task(self._prepare_in_background(model, rest))
+                _background.add(task)
+                task.add_done_callback(_background.discard)
+            logger.info(f"[PROMPT_MATCH] meaning: {len(missing) - len(rest)} resume(s) prepared now, {len(rest)} in the background")
+        pending = sum(1 for i in ids if i not in vectors)
+        return {rid: similarity(query_vector, v) for rid, v in vectors.items()}, pending
 
     async def _pool(self, plan: Dict[str, Any], user_id: str, is_admin: bool) -> Tuple[List[Dict[str, Any]], List[str]]:
         """Candidates worth scoring. Loose on purpose: any listed skill, years widened by 1 on each side.
@@ -639,7 +673,11 @@ class PromptMatchService:
         extra: List[str] = []
         if use_meaning:
             try:
-                meaning = meaning_points(await self.meaning_similarities(query_text(prompt, plan), user_id, is_admin))
+                sims, pending = await self.meaning_similarities(query_text(prompt, plan), user_id, is_admin)
+                meaning = meaning_points(sims)
+                if pending:
+                    notes.append(f"{pending} resume{'s are' if pending > 1 else ' is'} still being prepared for meaning-based "
+                                 f"matching and will be included in a minute or two.")
             except (httpx.HTTPError, RuntimeError, KeyError, ValueError) as e:
                 logger.error(f"[PROMPT_MATCH] meaning search failed: {e}")
                 notes.append("Meaning-based matching is unavailable right now; results use keywords only.")

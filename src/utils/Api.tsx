@@ -428,7 +428,17 @@ export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; pa
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const resData = await response.json();
+  let resData: any;
+  try {
+    resData = await response.json();
+  } catch {
+    // The web server sent an error page instead of data (for example a 504 when a search runs past 60 seconds).
+    throw new Error(
+      response.status === 504 || response.status === 502
+        ? "The search took too long to finish. Please try again in a minute."
+        : `The server could not complete the search (error ${response.status}). Please try again.`
+    );
+  }
   handleAuthError(response, resData);
   if (!response.ok) {
     throw new Error(resData.message || resData.detail || "Failed to search candidates");
