@@ -462,6 +462,16 @@ class PromptMatchService:
                 "api_key": decrypt_password(ai_config.api_key) if ai_config.api_key else "",
                 "base_url": ai_config.base_url}
 
+    async def meaning_enabled(self) -> bool:
+        """Admin switch in Settings > App Configuration (off by default)."""
+        from app.repositories.settings_repository import SettingsRepository
+        try:
+            config = await SettingsRepository().get_app_config()
+        except Exception as e:
+            logger.error(f"[PROMPT_MATCH] could not read app settings: {e}")
+            return False
+        return bool(config and config.enable_meaning_search)
+
     async def get_plan(self, prompt: str) -> Tuple[Dict[str, Any], bool]:
         """The search plan for a prompt: from the 24-hour cache, else one call to the AI parser."""
         prompt = " ".join(prompt.split())
@@ -608,7 +618,8 @@ class PromptMatchService:
         return list(pool.values()), notes
 
     async def search(self, prompt: Optional[str], plan: Optional[Dict[str, Any]], user_id: str, is_admin: bool,
-                     page: int = 1, limit: int = 25, rerank: bool = False) -> Dict[str, Any]:
+                     page: int = 1, limit: int = 25, rerank: bool = False, meaning: bool = True) -> Dict[str, Any]:
+        """`meaning` is the recruiter's per-search choice; it only applies when the admin switch is on."""
         cached = False
         if plan is None:
             if not prompt or not prompt.strip():
@@ -622,13 +633,16 @@ class PromptMatchService:
 
         pool, notes = await self._pool(plan, user_id, is_admin)
 
+        meaning_available = await self.meaning_enabled()
+        use_meaning = meaning and meaning_available
         meaning: Dict[str, float] = {}
         extra: List[str] = []
-        try:
-            meaning = meaning_points(await self.meaning_similarities(query_text(prompt, plan), user_id, is_admin))
-        except (httpx.HTTPError, RuntimeError, KeyError, ValueError) as e:
-            logger.error(f"[PROMPT_MATCH] meaning search failed: {e}")
-            notes.append("Meaning-based matching is unavailable right now; results use keywords only.")
+        if use_meaning:
+            try:
+                meaning = meaning_points(await self.meaning_similarities(query_text(prompt, plan), user_id, is_admin))
+            except (httpx.HTTPError, RuntimeError, KeyError, ValueError) as e:
+                logger.error(f"[PROMPT_MATCH] meaning search failed: {e}")
+                notes.append("Meaning-based matching is unavailable right now; results use keywords only.")
         if meaning:
             in_pool = {r["id"] for r in pool}
             extra = [rid for rid, pts in sorted(meaning.items(), key=lambda kv: kv[1], reverse=True)
@@ -676,5 +690,6 @@ class PromptMatchService:
             item["match"] = match
             items.append(item)
         logger.info(f"[PROMPT_MATCH] pool={len(pool)} good={good} page={page} plan_cached={cached} reranked={reranked}")
-        return {"plan": plan, "plan_cached": cached, "reranked": reranked, "notes": notes, "total": total, "page": page, "limit": limit,
+        return {"plan": plan, "plan_cached": cached, "reranked": reranked, "notes": notes,
+                "meaning_available": meaning_available, "meaning_used": bool(meaning), "total": total, "page": page, "limit": limit,
                 "total_pages": max(1, math.ceil(total / limit)), "resumes": items}

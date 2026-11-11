@@ -30,6 +30,7 @@ class AIConfigResponse(AIConfigBase):
 class AppConfigBase(BaseModel):
     enable_bulk_parsing: bool = True
     bulk_parsing_limit: int = 5
+    enable_meaning_search: bool = False
 
 class AppConfigCreate(AppConfigBase):
     pass

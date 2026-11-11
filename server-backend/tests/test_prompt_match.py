@@ -477,6 +477,11 @@ async def seed_payments(repo):
     await repo.create(upi)
 
 
+def meaning_switch(on=True):
+    """The admin switch in Settings > App Configuration."""
+    return mock.patch("app.services.prompt_match_service.PromptMatchService.meaning_enabled", mock.AsyncMock(return_value=on))
+
+
 PAY_PLAN = {"role_titles": ["Payments Engineer"], "must_have_skills": ["Payments"], "keywords": []}
 PAY_PROMPT = "Engineer who built payment gateway, UPI and card processing for a fintech app"
 
@@ -485,7 +490,7 @@ def test_meaning_finds_a_candidate_the_keywords_missed_and_reuses_vectors():
     async def t(repo, service):
         await seed_payments(repo)
         calls = []
-        with no_ai_settings(), fake_parser(PAY_PLAN, calls):
+        with no_ai_settings(), meaning_switch(), fake_parser(PAY_PLAN, calls):
             res = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
             again = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
         assert calls.count("/api/embed") == 3                  # first: request + 5 resumes; second: request only
@@ -501,7 +506,7 @@ def test_meaning_finds_a_candidate_the_keywords_missed_and_reuses_vectors():
 def test_changed_resume_gets_a_fresh_vector():
     async def t(repo, service):
         await seed_payments(repo)
-        with no_ai_settings(), fake_parser(PAY_PLAN, []):
+        with no_ai_settings(), meaning_switch(), fake_parser(PAY_PLAN, []):
             await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
         store = repo.db[MEANING_COLLECTION]
         await repo.update("hr", {"status": "PARSED"})                         # not the resume content
@@ -511,7 +516,7 @@ def test_changed_resume_gets_a_fresh_vector():
         await repo.update_resume_fields("best", {"parsed_data.current_role": "Lead Java Developer"})
         assert await store.count_documents({"_id": "best"}) == 0
         calls = []
-        with no_ai_settings(), fake_parser(PAY_PLAN, calls):
+        with no_ai_settings(), meaning_switch(), fake_parser(PAY_PLAN, calls):
             await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
         assert calls.count("/api/embed") == 2 and await store.count_documents({}) == 5   # request + the 2 changed
     with_service(t)
@@ -526,7 +531,7 @@ def test_meaning_failure_falls_back_to_keywords():
             if request.url.path.endswith("/api/embed"):
                 return httpx.Response(502, json={"detail": "model not loaded"})
             return httpx.Response(200, json={"plan": JAVA_PLAN})
-        with no_ai_settings(), mock.patch.object(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)):
+        with no_ai_settings(), meaning_switch(), mock.patch.object(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)):
             res = await service.search(None, JAVA_PLAN, "u1", True)
         assert res["resumes"][0]["id"] == "best"
         assert "meaning_score" not in res["resumes"][0]["match"]
@@ -541,7 +546,45 @@ def test_meaning_respects_who_can_see_which_resume():
         other["user_id"] = "u2"
         other["parsed_data"]["experience"] = [{"designation": "Engineer", "responsibilities": "UPI payment gateway card processing fintech"}]
         await repo.create(other)
-        with no_ai_settings(), fake_parser(PAY_PLAN, []):
+        with no_ai_settings(), meaning_switch(), fake_parser(PAY_PLAN, []):
             res = await service.search(PAY_PROMPT, PAY_PLAN, "u1", False)
         assert "other_upi" not in [r["id"] for r in res["resumes"]]
+    with_service(t)
+
+
+def test_meaning_is_off_until_an_admin_turns_it_on():
+    from app.models.settings import AppConfigModel
+    from app.schemas.settings import AppConfigCreate
+    assert AppConfigModel().enable_meaning_search is False and AppConfigCreate().enable_meaning_search is False
+
+    async def t(repo, service):
+        await seed_payments(repo)
+        calls = []
+        with no_ai_settings(), meaning_switch(False), fake_parser(PAY_PLAN, calls):
+            res = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        assert calls == [] and res["meaning_available"] is False and res["meaning_used"] is False
+        assert "upi" not in [r["id"] for r in res["resumes"]]                 # keyword search only
+        assert all("meaning_score" not in r["match"] for r in res["resumes"])
+        assert await repo.db[MEANING_COLLECTION].count_documents({}) == 0     # nothing embedded
+    with_service(t)
+
+
+def test_recruiter_can_leave_meaning_out_of_one_search():
+    async def t(repo, service):
+        await seed_payments(repo)
+        calls = []
+        with no_ai_settings(), meaning_switch(), fake_parser(PAY_PLAN, calls):
+            off = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True, meaning=False)
+            on = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        assert off["meaning_available"] is True and off["meaning_used"] is False
+        assert "upi" not in [r["id"] for r in off["resumes"]]
+        assert on["meaning_used"] is True and on["resumes"][0]["id"] == "upi"
+        assert calls.count("/api/embed") == 2                                  # only the search with meaning
+    with_service(t)
+
+
+def test_unreadable_settings_mean_off():
+    async def t(repo, service):
+        with mock.patch("app.repositories.settings_repository.SettingsRepository.__init__", side_effect=RuntimeError("no db")):
+            assert await service.meaning_enabled() is False
     with_service(t)

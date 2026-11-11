@@ -20,3 +20,4 @@ class AIConfigModel(BaseModel):
 class AppConfigModel(BaseModel):
     enable_bulk_parsing: bool = True
     bulk_parsing_limit: int = 5
+    enable_meaning_search: bool = False  # JD Match phase 3, off until an admin turns it on
