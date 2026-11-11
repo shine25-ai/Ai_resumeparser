@@ -400,12 +400,18 @@ export interface CandidateMatch {
   ai_fit_score?: number;
   why?: string;
   gaps?: string;
+  // Phase 3: how close the resume is to the request by meaning (0-100, relative to the other candidates).
+  meaning_score?: number;
+  found_by_meaning?: boolean;
 }
 
 export interface PromptMatchResponse {
   plan: SearchPlan;
   plan_cached: boolean;
   reranked?: boolean;
+  // Phase 3: the admin switch is on (meaning_available) and this search used it (meaning_used).
+  meaning_available?: boolean;
+  meaning_used?: boolean;
   notes: string[];
   total: number;
   page: number;
@@ -415,7 +421,7 @@ export interface PromptMatchResponse {
 }
 
 /** JD Match prompt mode: send a written request (the AI reads it once) or an edited plan (no AI call). */
-export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number; rerank?: boolean }): Promise<PromptMatchResponse> => {
+export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number; rerank?: boolean; meaning?: boolean }): Promise<PromptMatchResponse> => {
   const token = localStorage.getItem("access_token") || "";
   const response = await fetch(RESUME_PROMPT_MATCH, {
     method: "POST",

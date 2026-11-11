@@ -1,13 +1,15 @@
-"""JD Match prompt mode (phase 1).
+"""JD Match prompt mode (phases 1-3).
 
 A recruiter types a request or pastes a job description. The AI parser turns it into a search plan
 (skills, years, titles, locations) once; this service then finds a pool of candidates with the existing
 filter query and ranks them with a fixed match score, so results are fast, repeatable and explainable.
 """
 
+import array
 import hashlib
 import json
 import math
+import operator
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,13 +20,14 @@ from starlette import status
 
 from app.core.config import settings
 from app.core.exceptions import AppException, BadRequestError
-from app.repositories.resume_repository import SKILL_FIELDS, SKILL_GROUPS, ResumeRepository, skill_regex
+from app.repositories.resume_repository import MEANING_COLLECTION, SKILL_FIELDS, SKILL_GROUPS, ResumeRepository, skill_regex
 from app.schemas.resume import ResumeResponse
 
 PLAN_CACHE_COLLECTION = "search_plans"
 RERANK_CACHE_COLLECTION = "rerank_results"
 RERANK_TOP = 25            # candidates the AI re-ranks and explains (phase 2)
 RERANK_AI_WEIGHT = 0.3     # final score = 70% code score + 30% AI fit score, so one odd AI answer can't reorder the list
+MEANING_TEXT_CHARS = 2000  # phase 3: resume text the meaning model reads
 PLAN_CACHE_HOURS = 24
 POOL_LIMIT = 500          # most candidates scored for one search
 GOOD_MATCH = 60           # score that counts as a good match
@@ -34,7 +37,14 @@ MAX_PROMPT_CHARS = 15000
 # Points per part of the match score. Parts the plan says nothing about are left out and the rest
 # scaled to 100, so "HR generalist, 5 years" is not marked down for having no skills listed.
 WEIGHTS = {"must_have": 50, "nice_to_have": 15, "experience": 15, "role": 10,
-           "location": 5, "education": 5, "keywords": 5, "ai_score": 5}
+           "location": 5, "education": 5, "keywords": 5, "ai_score": 5, "meaning": 10}
+
+# Phase 3: meaning-based search. Each resume and the request become meaning vectors (a small open model
+# in the AI parser); how close they are adds up to 10 points and can bring in candidates the keyword
+# search missed ("payments" finding "UPI" or "card processing").
+MEANING_POOL = 20         # most candidates added to the pool by meaning alone
+MEANING_POOL_MIN = 0.5    # ...and only if at least halfway between the typical and the best resume
+MEANING_BATCH = 64        # resumes per embedding call
 
 # Too few years is a near-requirement, not just 15 points: a fresher with the right skills should not
 # rank above people who have the years. Each missing year takes 15% off the total, at most half.
@@ -197,8 +207,9 @@ def _years(parsed: Dict[str, Any]) -> Optional[float]:
     return None
 
 
-def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
-    """Score one candidate against the plan, 0-100, with the reasons behind it."""
+def match_score(resume: Dict[str, Any], plan: Dict[str, Any], meaning: Optional[float] = None) -> Dict[str, Any]:
+    """Score one candidate against the plan, 0-100, with the reasons behind it.
+    `meaning` (0-1) is how close the resume is to the request by meaning; None leaves that part out."""
     parsed = resume.get("parsed_data") or {}
     evaluation = resume.get("ai_evaluation") or {}
     text = resume.get("extracted_text") or ""
@@ -270,6 +281,10 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
         out["keywords_found"] = found
         earned["keywords"] = WEIGHTS["keywords"] * len(found) / len(plan["keywords"])
 
+    if meaning is not None:
+        earned["meaning"] = WEIGHTS["meaning"] * min(max(float(meaning), 0.0), 1.0)
+        out["meaning_score"] = round(100 * min(max(float(meaning), 0.0), 1.0))
+
     ai = evaluation.get("ai_technical_score")
     earned["ai_score"] = WEIGHTS["ai_score"] * min(max(float(ai), 0), 100) / 100 if isinstance(ai, (int, float)) else 0.0
 
@@ -283,9 +298,11 @@ def match_score(resume: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def rank_candidates(pool: List[Dict[str, Any]], plan: Dict[str, Any]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+def rank_candidates(pool: List[Dict[str, Any]], plan: Dict[str, Any],
+                    meaning: Optional[Dict[str, float]] = None) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     """Best match first; the general AI score, then the newest upload, break ties."""
-    scored = [(r, match_score(r, plan)) for r in pool]
+    meaning = meaning or {}
+    scored = [(r, match_score(r, plan, meaning.get(r["id"]))) for r in pool]
 
     def key(item):
         resume, match = item
@@ -294,11 +311,76 @@ def rank_candidates(pool: List[Dict[str, Any]], plan: Dict[str, Any]) -> List[Tu
     return sorted(scored, key=key, reverse=True)
 
 
+# ---------------------------------------------------------------- phase 3: meaning
+
+def pack_vector(vector: List[float]) -> bytes:
+    """Stored as 4-byte floats: about 1.5 KB per resume."""
+    return array.array("f", vector).tobytes()
+
+
+def unpack_vector(data: bytes) -> List[float]:
+    out = array.array("f")
+    out.frombytes(bytes(data))
+    return out.tolist()
+
+
+def similarity(a: List[float], b: List[float]) -> float:
+    """Vectors come normalised from the parser, so the dot product is the cosine similarity."""
+    return sum(map(operator.mul, a, b))
+
+
+def meaning_points(sims: Dict[str, float]) -> Dict[str, float]:
+    """Raw similarities bunch together and differ per request (0.4-0.8 is common), so score them against
+    this request: the typical (median) resume gets 0, the closest gets 1."""
+    if not sims:
+        return {}
+    values = sorted(sims.values())
+    median, best = values[len(values) // 2], values[-1]
+    if best - median < 1e-6:
+        return {rid: 0.0 for rid in sims}
+    return {rid: min(max((s - median) / (best - median), 0.0), 1.0) for rid, s in sims.items()}
+
+
+def query_text(prompt: Optional[str], plan: Dict[str, Any]) -> str:
+    """What the request means: the recruiter's own words if there are any, else the plan."""
+    if prompt and prompt.strip():
+        return " ".join(prompt.split())[:MEANING_TEXT_CHARS]
+    bits = plan["role_titles"] + plan["must_have_skills"] + plan["nice_to_have_skills"] + plan["keywords"]
+    if plan["role_family"]:
+        bits.append(plan["role_family"])
+    return ", ".join(bits)[:MEANING_TEXT_CHARS]
+
+
 # ---------------------------------------------------------------- phase 2: AI re-rank
 
 def _clip(text: Any, limit: int) -> str:
     text = " ".join(str(text or "").split())
     return text[:limit]
+
+
+def meaning_text(parsed: Dict[str, Any]) -> str:
+    """The resume text the meaning model reads (phase 3): the kind of work first, then skills, jobs and
+    projects. No name, email, phone or address. The model reads about 2,000 characters."""
+    parts = []
+    for label, field in (("Role", "current_role"), ("Specialization", "specialization"), ("Domain", "primary_domain")):
+        value = ", ".join(_strings(parsed.get(field)))
+        if value:
+            parts.append(f"{label}: {_clip(value, 120)}.")
+    skills: List[str] = []
+    for line in candidate_skill_text(parsed).split("\n"):
+        if line and line.lower() not in {x.lower() for x in skills}:
+            skills.append(line)
+    if skills:
+        parts.append("Skills: " + ", ".join(skills[:40]) + ".")
+    for job in (parsed.get("experience") or [])[:4]:
+        if isinstance(job, dict):
+            work = _clip(" ".join(_strings(job.get("responsibilities")) + _strings(job.get("achievements"))), 300)
+            parts.append(f"{_clip(job.get('designation'), 80)}: {work}")
+    for project in (parsed.get("projects") or [])[:3]:
+        if isinstance(project, dict):
+            parts.append(f"Project {_clip(project.get('name') or project.get('title'), 80)}: "
+                         f"{_clip(project.get('description'), 200)}")
+    return _clip(" ".join(parts), MEANING_TEXT_CHARS)
 
 
 def candidate_summary(resume: Dict[str, Any], match: Dict[str, Any]) -> Dict[str, Any]:
@@ -368,6 +450,7 @@ class PromptMatchService:
         self.resume_service = resume_service
         self.plan_cache = resume_repo.db[PLAN_CACHE_COLLECTION]
         self.rerank_cache = resume_repo.db[RERANK_CACHE_COLLECTION]
+        self.meaning_store = resume_repo.db[MEANING_COLLECTION]
 
     async def _ai_config(self) -> Dict[str, Any]:
         from app.repositories.settings_repository import SettingsRepository
@@ -378,6 +461,16 @@ class PromptMatchService:
         return {"provider": ai_config.provider, "model_name": ai_config.model_name,
                 "api_key": decrypt_password(ai_config.api_key) if ai_config.api_key else "",
                 "base_url": ai_config.base_url}
+
+    async def meaning_enabled(self) -> bool:
+        """Admin switch in Settings > App Configuration (off by default)."""
+        from app.repositories.settings_repository import SettingsRepository
+        try:
+            config = await SettingsRepository().get_app_config()
+        except Exception as e:
+            logger.error(f"[PROMPT_MATCH] could not read app settings: {e}")
+            return False
+        return bool(config and config.enable_meaning_search)
 
     async def get_plan(self, prompt: str) -> Tuple[Dict[str, Any], bool]:
         """The search plan for a prompt: from the 24-hour cache, else one call to the AI parser."""
@@ -460,6 +553,39 @@ class PromptMatchService:
                     {"_id": keys[rid]}, {"_id": keys[rid], "resume_id": rid, "result": result, "created_at": now}, upsert=True)
         return results
 
+    async def _embed(self, texts: List[str], kind: str) -> Tuple[str, List[List[float]]]:
+        url = settings.AI_PARSER_URL.replace("/api/upload", "") + "/api/embed"
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(url, json={"texts": texts, "kind": kind})
+        if response.status_code != 200:
+            raise RuntimeError(f"embed {response.status_code}: {response.text[:200]}")
+        body = response.json()
+        return body["model"], body["vectors"]
+
+    async def meaning_similarities(self, text: str, user_id: str, is_admin: bool) -> Dict[str, float]:
+        """How close every resume this user may search is to the request, by meaning.
+        Resumes without a vector for the current model (new or changed) are embedded first, in batches."""
+        model, (query_vector,) = await self._embed([text], "query")
+        ids = await self.resume_repo.accessible_ids(user_id, is_admin)
+        vectors: Dict[str, List[float]] = {}
+        async for doc in self.meaning_store.find({"_id": {"$in": ids}, "model": model}):
+            vectors[doc["_id"]] = unpack_vector(doc["vector"])
+        missing = [i for i in ids if i not in vectors]
+        if missing:
+            docs = await self.resume_repo.get_many_by_ids(missing)
+            texts = {d["id"]: meaning_text(d.get("parsed_data") or {}) for d in docs}
+            todo = list(texts)
+            now = datetime.now(timezone.utc)
+            for start in range(0, len(todo), MEANING_BATCH):
+                batch = todo[start:start + MEANING_BATCH]
+                _, batch_vectors = await self._embed([texts[i] for i in batch], "passage")
+                for rid, vector in zip(batch, batch_vectors):
+                    vectors[rid] = vector
+                    await self.meaning_store.replace_one(
+                        {"_id": rid}, {"_id": rid, "model": model, "vector": pack_vector(vector), "created_at": now}, upsert=True)
+            logger.info(f"[PROMPT_MATCH] embedded {len(todo)} resume(s) for meaning search")
+        return {rid: similarity(query_vector, v) for rid, v in vectors.items()}
+
     async def _pool(self, plan: Dict[str, Any], user_id: str, is_admin: bool) -> Tuple[List[Dict[str, Any]], List[str]]:
         """Candidates worth scoring. Loose on purpose: any listed skill, years widened by 1 on each side.
         Widened further, with a note, when that finds too few."""
@@ -492,7 +618,8 @@ class PromptMatchService:
         return list(pool.values()), notes
 
     async def search(self, prompt: Optional[str], plan: Optional[Dict[str, Any]], user_id: str, is_admin: bool,
-                     page: int = 1, limit: int = 25, rerank: bool = False) -> Dict[str, Any]:
+                     page: int = 1, limit: int = 25, rerank: bool = False, meaning: bool = True) -> Dict[str, Any]:
+        """`meaning` is the recruiter's per-search choice; it only applies when the admin switch is on."""
         cached = False
         if plan is None:
             if not prompt or not prompt.strip():
@@ -505,7 +632,29 @@ class PromptMatchService:
             raise BadRequestError("No skills, role, experience or location could be found in the request. Add more detail, or use Filters.")
 
         pool, notes = await self._pool(plan, user_id, is_admin)
-        ranked = rank_candidates(pool, plan)
+
+        meaning_available = await self.meaning_enabled()
+        use_meaning = meaning and meaning_available
+        meaning: Dict[str, float] = {}
+        extra: List[str] = []
+        if use_meaning:
+            try:
+                meaning = meaning_points(await self.meaning_similarities(query_text(prompt, plan), user_id, is_admin))
+            except (httpx.HTTPError, RuntimeError, KeyError, ValueError) as e:
+                logger.error(f"[PROMPT_MATCH] meaning search failed: {e}")
+                notes.append("Meaning-based matching is unavailable right now; results use keywords only.")
+        if meaning:
+            in_pool = {r["id"] for r in pool}
+            extra = [rid for rid, pts in sorted(meaning.items(), key=lambda kv: kv[1], reverse=True)
+                     if pts >= MEANING_POOL_MIN and rid not in in_pool][:MEANING_POOL]
+            if extra:
+                pool += await self.resume_repo.get_many_by_ids(extra)
+                notes.append(f"{len(extra)} candidate{'s were' if len(extra) > 1 else ' was'} added because "
+                             f"{'their resumes match' if len(extra) > 1 else 'the resume matches'} the request by meaning.")
+        ranked = rank_candidates(pool, plan, meaning)
+        for resume, match in ranked:
+            if resume["id"] in extra:
+                match["found_by_meaning"] = True
         good = sum(1 for _, m in ranked if m["match_score"] >= GOOD_MATCH)
         if ranked and good < MIN_GOOD_MATCHES:
             notes.append(f"No candidate scores {GOOD_MATCH} or more; the closest matches are shown." if good == 0 else
@@ -541,5 +690,6 @@ class PromptMatchService:
             item["match"] = match
             items.append(item)
         logger.info(f"[PROMPT_MATCH] pool={len(pool)} good={good} page={page} plan_cached={cached} reranked={reranked}")
-        return {"plan": plan, "plan_cached": cached, "reranked": reranked, "notes": notes, "total": total, "page": page, "limit": limit,
+        return {"plan": plan, "plan_cached": cached, "reranked": reranked, "notes": notes,
+                "meaning_available": meaning_available, "meaning_used": bool(meaning), "total": total, "page": page, "limit": limit,
                 "total_pages": max(1, math.ceil(total / limit)), "resumes": items}

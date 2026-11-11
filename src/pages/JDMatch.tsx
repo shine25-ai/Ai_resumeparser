@@ -71,6 +71,9 @@ export default function JDMatch() {
   const [explainOn, setExplainOn] = useState(false);
   const [reranked, setReranked] = useState(false);
   const [explainWaiting, setExplainWaiting] = useState(false);
+  // Phase 3: meaning-based search. Available when an admin turned it on in Settings; recruiters can leave it out of a search.
+  const [includeMeaning, setIncludeMeaning] = useState(true);
+  const [meaningAvailable, setMeaningAvailable] = useState(false);
 
   // Selection & Interview Modal States
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
@@ -411,11 +414,12 @@ export default function JDMatch() {
   };
 
   // Prompt mode search. With `plan` the edited plan is searched again and the AI is not called.
-  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan; explain?: boolean } = {}) => {
+  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan; explain?: boolean; meaning?: boolean } = {}) => {
     const targetPage = opts.page ?? 1;
     const targetLimit = opts.limit ?? pageSize;
     // A new request starts without explanations; paging and chip edits keep the current choice.
     const explain = opts.explain ?? (opts.plan ? explainOn : false);
+    const meaning = opts.meaning ?? includeMeaning;
     if (!opts.plan && !promptText.trim()) {
       setPromptError("Describe the role or paste a job description.");
       return;
@@ -426,11 +430,13 @@ export default function JDMatch() {
     try {
       const res = await promptMatch(
         opts.plan
-          ? { plan: opts.plan, prompt: promptText.trim() || undefined, page: targetPage, limit: targetLimit, rerank: explain }
-          : { prompt: promptText, page: targetPage, limit: targetLimit, rerank: explain }
+          ? { plan: opts.plan, prompt: promptText.trim() || undefined, page: targetPage, limit: targetLimit, rerank: explain, meaning }
+          : { prompt: promptText, page: targetPage, limit: targetLimit, rerank: explain, meaning }
       );
       setExplainOn(explain);
       setReranked(!!res.reranked);
+      setIncludeMeaning(meaning);
+      setMeaningAvailable(!!res.meaning_available);
       setPlan(res.plan);
       setMatchNotes(res.notes || []);
       setMatchedResumes(res.resumes || []);
@@ -879,6 +885,21 @@ export default function JDMatch() {
                     Explain top results
                   </button>
                 )}
+                {meaningAvailable && (
+                  <label
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer select-none"
+                    title="Also match resumes by meaning, not only by exact words, and add candidates the keyword search missed"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={includeMeaning}
+                      disabled={loading}
+                      onChange={(e) => runPromptSearch({ plan, meaning: e.target.checked })}
+                      className="accent-indigo-600 cursor-pointer"
+                    />
+                    Include meaning match
+                  </label>
+                )}
                 {explainWaiting && !reranked && (
                   <span className="text-[11px] text-slate-500">
                     The AI is reading the top 25 candidates. This can take up to about 40 seconds the first time; repeat searches are quick.
@@ -1173,7 +1194,21 @@ export default function JDMatch() {
                                   <span key={`nice-${sk}`} className="bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md" title="Nice-to-have skill">+{sk}</span>
                                 ))}
                               </div>
-                              {match.role_match && <div className="text-[10px] text-slate-500">Title fits: {match.role_match}</div>}
+                              {match.role_match === "different specialism" ? (
+                                <div className="text-[10px] text-amber-700">Different specialism from the role asked for</div>
+                              ) : match.role_match ? (
+                                <div className="text-[10px] text-slate-500">Title fits: {match.role_match}</div>
+                              ) : null}
+                              {match.meaning_score !== undefined && (
+                                <div className="text-[10px] text-slate-500" title="How close the resume is to the request by meaning, compared with the other candidates (adds up to 10 points)">
+                                  Meaning match: {match.meaning_score}%
+                                  {match.found_by_meaning && (
+                                    <span className="ml-1.5 bg-violet-50 border border-violet-200 text-violet-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md" title="Not found by the keyword search; added because the resume matches the request by meaning">
+                                      Found by meaning
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-[11px] text-slate-400">-</span>

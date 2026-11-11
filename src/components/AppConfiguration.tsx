@@ -5,7 +5,8 @@ import { SETTINGS_APP } from '../utils/Api';
 export default function AppConfiguration() {
   const [config, setConfig] = useState({
     enable_bulk_parsing: true,
-    bulk_parsing_limit: 5
+    bulk_parsing_limit: 5,
+    enable_meaning_search: false
   });
   
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,8 @@ export default function AppConfiguration() {
         const data = await response.json();
         setConfig({ 
           enable_bulk_parsing: data.enable_bulk_parsing ?? true,
-          bulk_parsing_limit: data.bulk_parsing_limit ?? 5
+          bulk_parsing_limit: data.bulk_parsing_limit ?? 5,
+          enable_meaning_search: data.enable_meaning_search ?? false
         });
       }
     } catch (error) {
@@ -42,6 +44,7 @@ export default function AppConfiguration() {
       const payload = {
         enable_bulk_parsing: config.enable_bulk_parsing,
         bulk_parsing_limit: config.bulk_parsing_limit,
+        enable_meaning_search: config.enable_meaning_search,
       };
       const response = await fetch(SETTINGS_APP, {
         method: 'PUT',
@@ -115,6 +118,25 @@ export default function AppConfiguration() {
               />
             </div>
             <p className="text-xs text-slate-500 mt-1">The maximum number of resumes that can be selected in a single batch.</p>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+            <div className="pr-4">
+              <h3 className="text-sm font-medium text-slate-900">Meaning-based search in JD Match</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                When on, "Describe the role" also matches resumes by meaning, not only by exact words (for example "payments" finds "UPI" or "card processing"), and can add candidates the keyword search missed. Recruiters can still leave it out of a single search. The first search after turning it on takes a few extra seconds while every resume is prepared once.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                aria-label="Meaning-based search in JD Match"
+                checked={config.enable_meaning_search}
+                onChange={(e) => setConfig({...config, enable_meaning_search: e.target.checked})}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
           </div>
         </div>
 

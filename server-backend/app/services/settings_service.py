@@ -85,22 +85,25 @@ class SettingsService:
     async def get_app_config(self) -> Optional[AppConfigResponse]:
         config = await self.repository.get_app_config()
         if not config:
-            return AppConfigResponse(enable_bulk_parsing=True, bulk_parsing_limit=5)
+            return AppConfigResponse(enable_bulk_parsing=True, bulk_parsing_limit=5, enable_meaning_search=False)
             
         return AppConfigResponse(
             enable_bulk_parsing=config.enable_bulk_parsing,
-            bulk_parsing_limit=config.bulk_parsing_limit
+            bulk_parsing_limit=config.bulk_parsing_limit,
+            enable_meaning_search=config.enable_meaning_search
         )
 
     async def save_app_config(self, config_data: AppConfigCreate) -> AppConfigResponse:
         model = AppConfigModel(
             enable_bulk_parsing=config_data.enable_bulk_parsing,
-            bulk_parsing_limit=config_data.bulk_parsing_limit
+            bulk_parsing_limit=config_data.bulk_parsing_limit,
+            enable_meaning_search=config_data.enable_meaning_search
         )
         
         saved_config = await self.repository.save_app_config(model)
         
         return AppConfigResponse(
             enable_bulk_parsing=saved_config.enable_bulk_parsing,
-            bulk_parsing_limit=saved_config.bulk_parsing_limit
+            bulk_parsing_limit=saved_config.bulk_parsing_limit,
+            enable_meaning_search=saved_config.enable_meaning_search
         )

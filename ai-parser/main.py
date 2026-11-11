@@ -16,7 +16,7 @@ load_dotenv()
 from graph import app_graph
 from database import get_db, CandidateDB
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 class GenerateQuestionsRequest(BaseModel):
     parsed_data: Dict[str, Any]
@@ -32,6 +32,10 @@ class RerankRequest(BaseModel):
     plan: Dict[str, Any]
     candidates: list
     ai_config: Optional[Dict[str, Any]] = None
+
+class EmbedRequest(BaseModel):
+    texts: List[str]
+    kind: str = "passage"
 
 class EvaluateAnswerRequest(BaseModel):
     transcript: str
@@ -274,6 +278,32 @@ def rerank_endpoint(request: RerankRequest):
         status = 429 if "rate limit" in str(e).lower() else 502
         raise HTTPException(status_code=status, detail=f"Could not rank candidates: {str(e)[:300]}")
     return {"status": "success", "results": results, "token_usage": usage}
+
+@app.on_event("startup")
+def warm_up_embedding_model():
+    """Load the meaning model in the background so the first search after a restart is not slow."""
+    import threading
+    def load():
+        try:
+            from embeddings import embed
+            embed(["warm up"], "query")
+            logger.info("Embedding model loaded.")
+        except Exception as e:
+            logger.error(f"Embedding model could not be loaded: {str(e)[:300]}")
+    threading.Thread(target=load, daemon=True, name="embedding-warm-up").start()
+
+@app.post("/api/embed")
+def embed_endpoint(request: EmbedRequest):
+    """JD Match prompt mode, phase 3: meaning vectors for resumes ("passage") or a search request ("query")."""
+    from embeddings import embed, MODEL_NAME
+    try:
+        vectors = embed(request.texts, request.kind)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Embedding failed: {str(e)[:300]}")
+        raise HTTPException(status_code=502, detail=f"Could not embed the text: {str(e)[:300]}")
+    return {"status": "success", "model": MODEL_NAME, "dim": len(vectors[0]) if vectors else 0, "vectors": vectors}
 
 @app.post("/api/evaluate-answer")
 async def evaluate_answer(request: EvaluateAnswerRequest):

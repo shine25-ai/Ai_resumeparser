@@ -139,6 +139,7 @@ class PromptMatchRequest(BaseModel):
     page: int = 1
     limit: int = 25
     rerank: bool = False
+    meaning: bool = True    # phase 3, per search; only used when the admin switch is on
 
 
 @router.post(
@@ -167,6 +168,7 @@ async def prompt_match(
     data = await service.search(
         prompt=body.prompt, plan=body.plan, user_id=current_user["id"], is_admin=is_admin_or_staff(current_user),
         page=max(1, body.page), limit=min(max(1, body.limit), 100), rerank=body.rerank,
+        meaning=body.meaning,
     )
     return success_response(data=data, message="Matched candidates retrieved successfully.")
 
