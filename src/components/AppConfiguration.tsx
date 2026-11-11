@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Settings as SettingsIcon, AlertCircle, CheckCircle2, Box } from 'lucide-react';
-import { SETTINGS_APP } from '../utils/Api';
+import { SETTINGS_APP, apiFetch } from "../utils/Api";
 
 export default function AppConfiguration() {
   const [config, setConfig] = useState({
@@ -20,7 +20,7 @@ export default function AppConfiguration() {
   const fetchConfig = async () => {
     setLoading(true);
     try {
-      const response = await fetch(SETTINGS_APP);
+      const response = await apiFetch(SETTINGS_APP);
       if (response.ok) {
         const data = await response.json();
         setConfig({ 
@@ -46,7 +46,7 @@ export default function AppConfiguration() {
         bulk_parsing_limit: config.bulk_parsing_limit,
         enable_meaning_search: config.enable_meaning_search,
       };
-      const response = await fetch(SETTINGS_APP, {
+      const response = await apiFetch(SETTINGS_APP, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

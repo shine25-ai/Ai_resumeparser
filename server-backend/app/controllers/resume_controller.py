@@ -83,6 +83,7 @@ class ResumeController:
         is_admin: bool = False,
         skill_mode: Optional[str] = "any",
         sort_by: Optional[str] = None,
+        stage: Optional[str] = None,
     ) -> JSONResponse:
         """Process request to filter resumes based on criteria."""
         filtered_response = await self.resume_service.filter_resumes(
@@ -106,6 +107,7 @@ class ResumeController:
             is_admin=is_admin,
             skill_mode=skill_mode,
             sort_by=sort_by,
+            stage=stage,
         )
         return success_response(
             data=filtered_response.model_dump(),

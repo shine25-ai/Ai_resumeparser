@@ -88,6 +88,8 @@ class InterviewController:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         recommendation: Optional[str] = None,
+        verdict: Optional[str] = None,
+        stage: Optional[str] = None,
         page: int = 1,
         limit: int = 10,
         skip: Optional[int] = None,
@@ -108,6 +110,8 @@ class InterviewController:
             date_from=date_from,
             date_to=date_to,
             recommendation=recommendation,
+            verdict=verdict,
+            stage=stage,
             page=page,
             limit=limit,
             skip=skip,
@@ -151,28 +155,36 @@ class InterviewController:
         user_info: Optional[Dict[str, Any]] = None,
     ) -> JSONResponse:
         """Submit feedback, rating, dynamic skills, and category scores with evaluator user metadata."""
-        if user_info and isinstance(user_info, dict):
-            if not payload.evaluator_user_id:
-                payload.evaluator_user_id = user_info.get("id") or user_id
-            if not payload.evaluator_name:
-                payload.evaluator_name = user_info.get("full_name") or user_info.get("name")
-            if not payload.evaluator_email:
-                payload.evaluator_email = user_info.get("email")
-            if not payload.evaluator_role:
-                payload.evaluator_role = user_info.get("role")
-
+        self._fill_evaluator(payload, user_id, user_info)
         res = await self.interview_service.submit_feedback(interview_id, payload, updated_by=user_id)
         return success_response(
             data=res.model_dump(),
             message="Interview feedback submitted successfully.",
         )
 
+    @staticmethod
+    def _fill_evaluator(payload: InterviewFeedbackRequest, user_id: str, user_info: Optional[Dict[str, Any]]) -> None:
+        """Record who gave the feedback, unless the request already says."""
+        if not user_info or not isinstance(user_info, dict):
+            return
+        if not payload.evaluator_user_id:
+            payload.evaluator_user_id = user_info.get("id") or user_id
+        if not payload.evaluator_name:
+            payload.evaluator_name = user_info.get("full_name") or user_info.get("name")
+        if not payload.evaluator_email:
+            payload.evaluator_email = user_info.get("email")
+        if not payload.evaluator_role:
+            payload.evaluator_role = user_info.get("role")
+
     async def bulk_submit_feedback(
         self,
         payload: BulkInterviewFeedbackRequest,
         user_id: str,
+        user_info: Optional[Dict[str, Any]] = None,
     ) -> JSONResponse:
-        """Submit bulk candidate interview feedback."""
+        """Submit bulk candidate interview feedback, recording the evaluator like single feedback does."""
+        for item in payload.items:
+            self._fill_evaluator(item, user_id, user_info)
         res = await self.interview_service.bulk_submit_feedback(payload, updated_by=user_id)
         return success_response(
             data=[r.model_dump() for r in res],

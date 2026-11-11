@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import { UploadCloud, FileText, CheckCircle2, Loader2, X, User, Briefcase, GraduationCap, Award, Code, FolderGit2, ExternalLink, Paperclip, Clock, Sparkles, Cpu, Send, Brain, AlertCircle } from "lucide-react";
-import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS, SETTINGS_APP } from "../utils/Api";
+import { RESUME_UPLOAD, RESUME_LIST, RESUME_DOCUMENTS, SETTINGS_APP, apiFetch } from "../utils/Api";
 import { notifySessionExpired } from "../utils/session";
 import { formatScore } from "../utils/candidateFields";
+import { useFeedback } from "../components/ui/Feedback";
 
 export default function Upload() {
+  const { toast } = useFeedback();
+
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -29,7 +32,7 @@ export default function Upload() {
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
 
   useEffect(() => {
-    fetch(SETTINGS_APP)
+    apiFetch(SETTINGS_APP)
       .then(res => res.json())
       .then(data => {
         if (data && typeof data.enable_bulk_parsing !== 'undefined') {
@@ -211,7 +214,7 @@ export default function Upload() {
         if (resumeSourceInformerName.trim()) {
           uploadUrl += `&resume_source_informer_name=${encodeURIComponent(resumeSourceInformerName.trim())}`;
         }
-        const response = await fetch(uploadUrl, {
+        const response = await apiFetch(uploadUrl, {
           method: 'POST',
           headers,
           body: formData,
@@ -242,7 +245,7 @@ export default function Upload() {
           attempts++;
           
           try {
-            const statusRes = await fetch(`${RESUME_LIST}/${resumeId}`, {
+            const statusRes = await apiFetch(`${RESUME_LIST}/${resumeId}`, {
               method: 'GET',
               headers
             });
@@ -353,7 +356,7 @@ export default function Upload() {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${RESUME_DOCUMENTS(parsedResponse.id)}?doc_type=${encodeURIComponent(otherDocType)}&doc_title=${encodeURIComponent(otherDocTitle)}`, {
+      const res = await apiFetch(`${RESUME_DOCUMENTS(parsedResponse.id)}?doc_type=${encodeURIComponent(otherDocType)}&doc_title=${encodeURIComponent(otherDocTitle)}`, {
         method: 'POST',
         headers,
         body: formData,
@@ -363,12 +366,12 @@ export default function Upload() {
         setParsedResponse(data.data || data);
         setOtherDocFile(null);
         setOtherDocTitle("");
-        alert("Document uploaded successfully!");
+        toast("Document uploaded successfully!", "success");
       } else {
-        alert(data.message || "Failed to upload document");
+        toast(data.message || "Failed to upload document", "error");
       }
     } catch (e) {
-      alert("Failed to upload document");
+      toast("Failed to upload document", "error");
     } finally {
       setIsUploadingDoc(false);
     }
@@ -1060,7 +1063,7 @@ export default function Upload() {
                               </div>
                               <div className="overflow-hidden">
                                 <p className="text-xs font-bold text-slate-900 truncate">{doc.title || doc.filename}</p>
-                                <p className="text-[10px] text-slate-500">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                                <p className="text-[11px] text-slate-500">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
                               </div>
                             </div>
                             <a

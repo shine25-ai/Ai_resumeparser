@@ -9,6 +9,7 @@ from app.repositories.base_repository import BaseRepository
 from app.utils.constants import INTERVIEWS_COLLECTION
 from app.utils.enums import InterviewStatus
 from app.utils.helpers import utc_now
+from app.utils.hiring_stage import recommendation_filter_for_stage, recommendation_filter_for_verdict
 
 
 class InterviewRepository(BaseRepository):
@@ -68,6 +69,8 @@ class InterviewRepository(BaseRepository):
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         recommendation: Optional[str] = None,
+        verdict: Optional[str] = None,
+        stage: Optional[str] = None,
     ) -> Dict[str, Any]:
         import re
 
@@ -106,6 +109,12 @@ class InterviewRepository(BaseRepository):
             val = status.value if hasattr(status, "value") else str(status)
             if val and val.upper() != "ALL":
                 and_conditions.append({"status": val})
+
+        # Verdict and Stage are worked out from "recommendation" (see app/utils/hiring_stage.py)
+        if verdict and verdict.strip() and verdict.strip().upper() != "ALL":
+            and_conditions.append({"recommendation": recommendation_filter_for_verdict(verdict.strip())})
+        if stage and stage.strip() and stage.strip().upper() != "ALL":
+            and_conditions.append({"recommendation": recommendation_filter_for_stage(stage.strip())})
 
         if recommendation and recommendation.strip() and recommendation.strip().upper() != "ALL":
             rec_val = recommendation.strip()
@@ -183,6 +192,8 @@ class InterviewRepository(BaseRepository):
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         recommendation: Optional[str] = None,
+        verdict: Optional[str] = None,
+        stage: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
@@ -202,6 +213,8 @@ class InterviewRepository(BaseRepository):
             date_from=date_from,
             date_to=date_to,
             recommendation=recommendation,
+            verdict=verdict,
+            stage=stage,
         )
 
         return await self.find_many(
@@ -228,6 +241,8 @@ class InterviewRepository(BaseRepository):
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         recommendation: Optional[str] = None,
+        verdict: Optional[str] = None,
+        stage: Optional[str] = None,
     ) -> int:
         """Count total interviews matching criteria."""
         query = self._build_filter_query(
@@ -245,6 +260,8 @@ class InterviewRepository(BaseRepository):
             date_from=date_from,
             date_to=date_to,
             recommendation=recommendation,
+            verdict=verdict,
+            stage=stage,
         )
         return await self.count(query=query)
 

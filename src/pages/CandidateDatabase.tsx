@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react";
 import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { getResumes, exportResumesApi, type CandidateQueryParams, type SortOption, SORT_OPTION_LABELS } from "../utils/Api";
 import { getCandidateRole, formatExperience } from "../utils/candidateFields";
+import { CANDIDATE_STAGES } from "../utils/interviewState";
 import { CandidateEditModal } from "../components/CandidateEditModal";
+import { useFeedback } from "../components/ui/Feedback";
 
 export default function CandidateDatabase() {
+  const { toast } = useFeedback();
+
   const navigate = useNavigate();
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,8 +24,11 @@ export default function CandidateDatabase() {
   const [limit, setLimit] = useState<number>(10);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
-  const [searchTerm, setSearchTerm] = useState<string>("");
+  // The Dashboard search box opens this page with ?search=<text>
+  const [searchParams] = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") || "");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
+  const [stageFilter, setStageFilter] = useState<string>("All");
 
   // Advanced Specific Field Filters State
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
@@ -44,7 +51,7 @@ export default function CandidateDatabase() {
       });
     } catch (err: any) {
       console.error("ZIP export failed:", err);
-      alert(err.message || "Failed to download candidate ZIP archive from S3.");
+      toast(err.message || "Failed to download candidate ZIP archive from S3.", "error");
     } finally {
       setExportLoading(false);
     }
@@ -52,7 +59,7 @@ export default function CandidateDatabase() {
 
   useEffect(() => {
     fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-  }, [page, limit, sortBy]);
+  }, [page, limit, sortBy, stageFilter]);
 
   // Debounced search on typing
   useEffect(() => {
@@ -83,6 +90,7 @@ export default function CandidateDatabase() {
         role: rVal,
         experience: expVal ? Number(expVal) : undefined,
         sort_by: sortBy,
+        stage: stageFilter,
       };
 
       const resData = await getResumes(params);
@@ -103,6 +111,7 @@ export default function CandidateDatabase() {
           ? `${item.ai_evaluation.ai_technical_score}%`
           : "Not scored",
         status: item.status ? String(item.status).toUpperCase() : "PARSED",
+        stage: item.stage || "Screening",
         statusBg: "bg-emerald-50 border-emerald-200 text-emerald-700",
         s3Url: item.s3_url,
         lastUpdated: item.upload_date
@@ -178,6 +187,25 @@ export default function CandidateDatabase() {
 
       {/* Main Table Card Wrapper */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+        {/* Hiring stage filter */}
+        <div role="radiogroup" aria-label="Filter by hiring stage" className="flex flex-wrap gap-2">
+          {["All", ...CANDIDATE_STAGES].map((st) => (
+            <button
+              key={st}
+              role="radio"
+              aria-checked={stageFilter === st}
+              onClick={() => {
+                setStageFilter(st);
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-full text-sm font-semibold border cursor-pointer ${
+                stageFilter === st ? "bg-indigo-50 border-indigo-400 text-indigo-700" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
         {/* Search Input Bar & Action Buttons */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="relative w-full sm:w-80">
@@ -225,6 +253,15 @@ export default function CandidateDatabase() {
               {(nameFilter || emailFilter || roleFilter || expFilter) && (
                 <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
               )}
+            </button>
+
+            {/* Resume templates moved here from the sidebar */}
+            <button
+              onClick={() => navigate("/resume-templates")}
+              className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              <FileText size={14} />
+              <span>Resume templates</span>
             </button>
 
             <button
@@ -341,7 +378,7 @@ export default function CandidateDatabase() {
                 <th className="py-3 px-3">Role</th>
                 <th className="py-3 px-3">Exp & AI Score</th>
                 <th className="py-3 px-3">Interview Status</th>
-                <th className="py-3 px-3">Status</th>
+                <th className="py-3 px-3">Stage</th>
                 <th className="py-3 px-3">Last Updated</th>
                 <th className="py-3 px-3 text-right">Actions</th>
               </tr>
@@ -383,10 +420,10 @@ export default function CandidateDatabase() {
                       <div className="flex flex-col gap-1">
                         <span className="text-slate-800 font-bold">{row.role}</span>
                         <div className="flex flex-wrap gap-1 items-center">
-                          <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
                             Source: {row.source}
                           </span>
-                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 w-fit font-medium">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 w-fit font-medium">
                             Uploaded By: {row.uploadedBy}
                           </span>
                         </div>
@@ -414,7 +451,7 @@ export default function CandidateDatabase() {
                             </span>
                           )}
                           {row.latestInterview?.job_title && (
-                            <span className="text-[10px] text-slate-500 font-medium truncate max-w-[150px]" title={row.latestInterview.job_title}>
+                            <span className="text-[11px] text-slate-500 font-medium truncate max-w-[150px]" title={row.latestInterview.job_title}>
                               Role: {row.latestInterview.job_title}
                             </span>
                           )}
@@ -426,9 +463,13 @@ export default function CandidateDatabase() {
                       )}
                     </td>
                     <td className="py-3.5 px-3">
-                      <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${row.statusBg}`}>
-                        {row.status}
+                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold border bg-indigo-50 border-indigo-200 text-indigo-700">
+                        {row.stage}
                       </span>
+                      {/* Parse status only matters when parsing did not finish */}
+                      {row.status !== "PARSED" && (
+                        <span className="block mt-1 text-xs font-semibold text-amber-700">Parse: {row.status.toLowerCase()}</span>
+                      )}
                     </td>
                     {/* Last Updated Column containing Upload Date */}
                     <td className="py-3.5 px-3 text-slate-500 font-medium">
@@ -436,7 +477,7 @@ export default function CandidateDatabase() {
                         <span className="text-slate-700 font-medium text-xs">
                           {row.lastUpdated}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-medium">
+                        <span className="text-[11px] text-slate-400 font-medium">
                           (Upload Date)
                         </span>
                       </div>
@@ -459,7 +500,7 @@ export default function CandidateDatabase() {
                           }}
                           className="p-1.5 hover:bg-indigo-50 rounded-md transition-colors border border-slate-200 text-indigo-600 hover:text-indigo-800 cursor-pointer"
                           title="Assign / Schedule New Interview Session"
-                        >
+                         aria-label="Schedule interview">
                           <Calendar size={14} />
                         </button>
                         <button
@@ -469,14 +510,14 @@ export default function CandidateDatabase() {
                           }}
                           className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
                           title="Edit Candidate Resume & Evaluation Details"
-                        >
+                         aria-label="Edit">
                           <Edit3 size={14} />
                         </button>
                         <button
-                          onClick={() => navigate(`/evaluation/${row.realId}`)}
+                          onClick={() => navigate(`/candidates/${row.realId}`)}
                           className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
                           title="View Candidate Full Evaluation Page"
-                        >
+                         aria-label="View profile">
                           <User size={14} />
                         </button>
                         <button
@@ -503,7 +544,7 @@ export default function CandidateDatabase() {
                                 window.location.href = row.s3Url;
                               }
                             } else {
-                              alert("S3 Resume link is not available for this candidate.");
+                              toast("S3 Resume link is not available for this candidate.", "warning");
                             }
                           }}
                           className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-500 hover:text-slate-800 cursor-pointer"
@@ -559,7 +600,7 @@ export default function CandidateDatabase() {
               onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
               className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer"
               title="Previous Page"
-            >
+             aria-label="Previous">
               <ChevronLeft size={16} />
             </button>
 
@@ -591,7 +632,7 @@ export default function CandidateDatabase() {
               onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
               className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer"
               title="Next Page"
-            >
+             aria-label="Next">
               <ChevronRight size={16} />
             </button>
           </div>

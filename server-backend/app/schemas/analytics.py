@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 class StatItem(BaseModel):
@@ -14,10 +14,11 @@ class ResumeSourceData(BaseModel):
     color: str
 
 class PipelineTrendData(BaseModel):
+    """Counts for one week, starting on the Monday shown in `date`."""
     date: str
     Resumes: int
-    Shortlisted: int
-    Interviewed: int
+    Interviews: int
+    Selected: int
     Offers: int
 
 class SkillData(BaseModel):
@@ -38,3 +39,4 @@ class AnalyticsResponse(BaseModel):
     topSkills: List[SkillData]
     expDistribution: List[ExpDistributionData]
     successRate: int
+    rangeDays: Optional[int] = None

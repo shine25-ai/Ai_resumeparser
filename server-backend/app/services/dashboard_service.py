@@ -1,5 +1,6 @@
 import re
 from typing import Dict, Any, List, Optional
+from app.utils.hiring_stage import STAGES, stage_of, verdict_of
 from datetime import datetime, timezone, timedelta
 from app.core.database import get_database
 from app.utils.constants import RESUMES_COLLECTION, INTERVIEWS_COLLECTION, RESUME_LOGS_COLLECTION
@@ -161,8 +162,27 @@ class DashboardService:
         
         jd_matches = await logs_coll.count_documents({"action": "evaluation_generated"})
         total_interviews = await interviews_coll.count_documents({})
-        total_offers = await resumes_coll.count_documents({"status": "OFFERED", "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
-        
+        # Candidate stages come from each candidate's latest interview (app/utils/hiring_stage.py);
+        # the old resume statuses (SHORTLISTED, OFFERED, ...) are never set, so they always counted 0
+        by_candidate: Dict[str, List[Dict[str, Any]]] = {}
+        async for inv in interviews_coll.find(
+            {}, {"_id": 0, "candidate_id": 1, "resume_id": 1, "recommendation": 1, "status": 1, "scheduled_date": 1, "scheduled_time": 1, "created_at": 1}
+        ):
+            key = str(inv.get("resume_id") or inv.get("candidate_id") or "")
+            if key:
+                by_candidate.setdefault(key, []).append(inv)
+        latest_by_candidate = []
+        for invs in by_candidate.values():
+            active = [i for i in invs if str(i.get("status", "")).upper() != "CANCELLED"] or invs
+            latest = max(active, key=lambda i: (str(i.get("scheduled_date") or ""), str(i.get("scheduled_time") or ""), str(i.get("created_at") or "")))
+            latest_by_candidate.append(
+                (stage_of(latest.get("recommendation"), latest.get("status")), verdict_of(latest.get("recommendation"), latest.get("status")))
+            )
+        stage_counts = {st: sum(1 for c in latest_by_candidate if c[0] == st) for st in STAGES}
+        stage_counts["Screening"] = max(total_resumes - len(latest_by_candidate), 0)
+        selected_candidates = sum(1 for st, v in latest_by_candidate if v == "Selected" or st in ("Offer", "Hired"))
+        total_offers = stage_counts["Offer"] + stage_counts["Hired"]
+
         stats = [
             {"label": "Total Resumes", "value": str(total_resumes), "change": "", "changeColor": "text-slate-400"},
             {"label": "AI Parsed Today", "value": str(ai_parsed_today), "change": "", "changeColor": "text-slate-400"},
@@ -171,32 +191,23 @@ class DashboardService:
             {"label": "Offers", "value": str(total_offers), "change": "", "changeColor": "text-slate-400"},
         ]
 
-        # 2. Pipeline and Status Counts
-        new_count = await resumes_coll.count_documents({"status": "NEW", "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
-        shortlisted_count = await resumes_coll.count_documents({"status": "SHORTLISTED", "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
-        interview_count = await resumes_coll.count_documents({"status": "INTERVIEW", "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
-        client_interview_count = await resumes_coll.count_documents({"status": "CLIENT_INTERVIEW", "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
-        offered_count = total_offers
+        # 2. Pipeline (each step is a subset of the one before) and Stage split (adds up to all candidates)
+        def share(count: int) -> str:
+            return f"{round((count / total_resumes) * 100) if total_resumes > 0 else 0}%"
 
-        total_status_count = new_count + shortlisted_count + interview_count + client_interview_count + offered_count
-        
-        def calc_pct(count):
-            return f"{round((count / total_status_count) * 100) if total_status_count > 0 else 0}%"
-
+        interviewed_candidates = len(latest_by_candidate)
         pipelineData = [
             {"stage": "Resumes Uploaded", "count": str(total_resumes), "width": "100%", "bg": "bg-blue-600"},
-            {"stage": "Shortlisted", "count": str(shortlisted_count), "width": calc_pct(shortlisted_count), "bg": "bg-sky-500"},
-            {"stage": "Interviews", "count": str(interview_count), "width": calc_pct(interview_count), "bg": "bg-emerald-400"},
-            {"stage": "Client Interviews", "count": str(client_interview_count), "width": calc_pct(client_interview_count), "bg": "bg-emerald-600"},
-            {"stage": "Offers", "count": str(offered_count), "width": calc_pct(offered_count), "bg": "bg-emerald-200"},
+            {"stage": "Interviewed", "count": str(interviewed_candidates), "width": share(interviewed_candidates), "bg": "bg-sky-500"},
+            {"stage": "Selected", "count": str(selected_candidates), "width": share(selected_candidates), "bg": "bg-emerald-400"},
+            {"stage": "Offer", "count": str(total_offers), "width": share(total_offers), "bg": "bg-emerald-600"},
+            {"stage": "Hired", "count": str(stage_counts["Hired"]), "width": share(stage_counts["Hired"]), "bg": "bg-emerald-200"},
         ]
 
+        stage_colors = {"Screening": "#2563eb", "Interviewing": "#06b6d4", "Offer": "#34d399", "Hired": "#f59e0b", "Closed": "#64748b"}
         statusData = [
-            {"name": "New", "percentage": calc_pct(new_count), "count": new_count, "color": "#2563eb"},
-            {"name": "Shortlisted", "percentage": calc_pct(shortlisted_count), "count": shortlisted_count, "color": "#06b6d4"},
-            {"name": "Interview", "percentage": calc_pct(interview_count), "count": interview_count, "color": "#34d399"},
-            {"name": "Client Interview", "percentage": calc_pct(client_interview_count), "count": client_interview_count, "color": "#f59e0b"},
-            {"name": "Offered", "percentage": calc_pct(offered_count), "count": offered_count, "color": "#64748b"},
+            {"name": st, "percentage": share(stage_counts[st]), "count": stage_counts[st], "color": stage_colors[st]}
+            for st in STAGES
         ]
 
         # 3. Recent Activities

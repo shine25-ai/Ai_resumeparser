@@ -1,18 +1,17 @@
-import { useEffect, useState, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Save, Eye,
-  Briefcase, Clock, MapPin, ShieldCheck, DollarSign, TrendingUp, Mail, Layers, AlignLeft, Sparkles, Video, Hash, Upload, Building2, HelpCircle, Loader2, CheckCircle, CheckCircle2, Search, ChevronLeft, ChevronRight, MoreVertical, XCircle
+  Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Eye, MapPin, Mail, Layers, Sparkles, Building2, Loader2, CheckCircle, Search, ChevronLeft, ChevronRight, MoreVertical, XCircle
 } from "lucide-react";
 import {
-  getInterviews, createInterview, updateInterview, rescheduleInterview, submitInterviewFeedback, deleteInterview, cancelInterview, getResumes, getUsers,
-  sendInterviewEmail, getNextRoundNumber, checkCandidateActiveInterviewStatus, uploadInterviewDocument, checkInterviewConflict, getInterviewTypes, MAIL_TEMPLATES_URL, RECOMMENDATION_OPTIONS,
-  type InterviewItem, type InterviewTypeEnum, type InterviewStatusEnum, type InterviewerItem, type ClientFeedbackItem, type UserProfile, type InterviewTypeItem
-} from "../utils/Api";
-import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
+  getInterviews, deleteInterview, cancelInterview,
+  sendInterviewEmail, getInterviewTypes, MAIL_TEMPLATES_URL,
+  type InterviewItem, type UserProfile, type InterviewTypeItem, apiFetch } from "../utils/Api";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
-import { SkillRatingsEvaluation } from "../components/SkillRatingsEvaluation";
-import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
+import { InterviewForm, type InterviewFormMode, type CandidatePrefill } from "../components/interview/InterviewForm";
+import { getInterviewPhase, hasFeedback, VERDICTS, INTERVIEW_STAGES, getVerdictBadge } from "../utils/interviewState";
+import { TodayView } from "../components/interview/TodayView";
+import { useFeedback } from "../components/ui/Feedback";
 
 const formatTimeTo12Hour = (timeStr?: string) => {
   if (!timeStr) return "";
@@ -26,27 +25,9 @@ const formatTimeTo12Hour = (timeStr?: string) => {
   return `${hours12}:${minutesStr} ${period}`;
 };
 
-const getMatchedUserId = (
-  userId?: string,
-  name?: string,
-  email?: string,
-  usersList: UserProfile[] = []
-): string => {
-  if (!usersList || usersList.length === 0) return userId || (name || email ? "custom" : "");
-  const matched = usersList.find(
-    (u) =>
-      (userId && (u.id === userId || (u as any)._id === userId)) ||
-      (email && u.email && u.email.trim().toLowerCase() === email.trim().toLowerCase()) ||
-      (name && u.full_name && u.full_name.trim().toLowerCase() === name.trim().toLowerCase())
-  );
-  if (matched) return matched.id || (matched as any)._id;
-  return name || email ? "custom" : "";
-};
-
 export default function InterviewManagement() {
+  const { toast } = useFeedback();
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
-  const [candidatesList, setCandidatesList] = useState<any[]>([]);
-  const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
   const [interviewTypes, setInterviewTypes] = useState<InterviewTypeItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,18 +38,33 @@ export default function InterviewManagement() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  // The search box only hits the server 300 ms after typing stops
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Specific Filters State
-  const [nameFilter, setNameFilter] = useState<string>("");
-  const [emailFilter, setEmailFilter] = useState<string>("");
   const [scheduledDateFilter, setScheduledDateFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  // Verdict (how the interview went) and Stage (where the candidate is), worked out by the server
   const [recommendationFilter, setRecommendationFilter] = useState<string>("All");
+  const [stageFilter, setStageFilter] = useState<string>("All");
+  const activeFilterCount = [
+    searchTerm.trim() !== "",
+    scheduledDateFilter !== "",
+    typeFilter !== "All",
+    statusFilter !== "All",
+    recommendationFilter !== "All",
+    stageFilter !== "All",
+  ].filter(Boolean).length;
 
   // Bulk Selection & Modal State
   const [selectedInterviewIds, setSelectedInterviewIds] = useState<string[]>([]);
-  const [isBulkFeedbackOpen, setIsBulkFeedbackOpen] = useState<boolean>(false);
+  // Interviews open in the feedback panel (null = closed)
+  const [feedbackTargets, setFeedbackTargets] = useState<InterviewItem[] | null>(null);
 
   // Actions 3-Dots Menu State
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
@@ -87,22 +83,19 @@ export default function InterviewManagement() {
   }, [openActionMenuId]);
 
   // Modals state
-  const [isScheduleOpen, setIsScheduleOpen] = useState<boolean>(false);
-  const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
-  const [isRescheduleOpen, setIsRescheduleOpen] = useState<boolean>(false);
-  const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
+  // "Today and Upcoming" is the default view; "All" is the full table. Kept in the URL (?view=all).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: "today" | "all" = searchParams.get("view") === "all" ? "all" : "today";
+  const setView = (next: "today" | "all") => setSearchParams(next === "all" ? { view: "all" } : {}, { replace: true });
+  // Bumped after any change so the Today view reloads too
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Which mode the shared interview form is open in (null = closed)
+  const [interviewForm, setInterviewForm] = useState<{ mode: InterviewFormMode; interview?: InterviewItem | null; candidate?: CandidatePrefill | null } | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState<boolean>(false);
-  const [isNextRoundOpen, setIsNextRoundOpen] = useState<boolean>(false);
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-  const [selectedCandidateName, setSelectedCandidateName] = useState<string>("");
 
   const [selectedInterview, setSelectedInterview] = useState<InterviewItem | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
-  const [candidateActiveCheckResult, setCandidateActiveCheckResult] = useState<any | null>(null);
-
-  // Dynamic Feedback Question Options loaded from backend JSON API
-  const [feedbackQuestionOptions, setFeedbackQuestionOptions] = useState<string[]>([]);
 
   // User Authentication & Role Detection
   const userStr = localStorage.getItem("user");
@@ -192,12 +185,12 @@ export default function InterviewManagement() {
         send_email: cancelSendEmail,
         reason: cancelReason,
       });
-      showToast(`Successfully cancelled interview session for ${cancelTargetInterview.candidate_name}!`, "success");
+      toast(`Successfully cancelled interview session for ${cancelTargetInterview.candidate_name}!`, "success");
       setCancelTargetInterview(null);
       fetchAllData();
     } catch (err: any) {
       console.error("Cancel interview error:", err);
-      alert(err.message || "Failed to cancel interview.");
+      toast(err.message || "Failed to cancel interview.", "error");
     } finally {
       setIsCancelling(false);
     }
@@ -212,70 +205,6 @@ export default function InterviewManagement() {
   >([]);
 
   // Floating Toast Notification State
-  const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info" | "warning"; text: string } | null>(null);
-  const toastTimerRef = useRef<any>(null);
-
-  const showToast = (text: string, type: "success" | "error" | "info" | "warning" = "success", durationMs: number = 4000) => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-    setToastMessage({ type, text });
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, durationMs);
-  };
-
-  // Real-time Schedule Conflict Check state
-  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
-
-  const checkScheduleTimeConflict = async (params: {
-    scheduled_date: string;
-    scheduled_time: string;
-    interviewer_id?: string;
-    interviewer_name?: string;
-    client_id?: string;
-    client_name?: string;
-    interviewers?: InterviewerItem[];
-    clients?: ClientFeedbackItem[];
-    exclude_interview_id?: string;
-  }) => {
-    const { scheduled_date, scheduled_time, interviewer_id, interviewer_name, client_id, client_name, interviewers, clients, exclude_interview_id } = params;
-
-    const filteredInterviewers = interviewers ? interviewers.filter((i) => i.interviewer_name && i.interviewer_name.trim()) : [];
-    const filteredClients = clients ? clients.filter((c) => c.client_name && c.client_name.trim()) : [];
-
-    const hasInterviewer = interviewer_id || (interviewer_name && interviewer_name.trim()) || filteredInterviewers.length > 0;
-    const hasClient = client_id || (client_name && client_name.trim()) || filteredClients.length > 0;
-
-    if (!scheduled_date || !scheduled_time || (!hasInterviewer && !hasClient)) {
-      setConflictWarning(null);
-      return;
-    }
-
-    try {
-      const res = await checkInterviewConflict({
-        scheduled_date,
-        scheduled_time,
-        interviewer_id,
-        interviewer_name,
-        client_id,
-        client_name,
-        interviewers: filteredInterviewers.length > 0 ? filteredInterviewers : undefined,
-        clients: filteredClients.length > 0 ? filteredClients : undefined,
-        exclude_interview_id,
-      });
-
-      if (res.has_conflict && res.conflict_message) {
-        setConflictWarning(res.conflict_message);
-        showToast(res.conflict_message, "warning");
-      } else {
-        setConflictWarning(null);
-        showToast(`Time slot ${scheduled_time} on ${scheduled_date} is available`, "info");
-      }
-    } catch (err: any) {
-      console.error("Conflict check error:", err);
-    }
-  };
 
   const handleAddInterviewerMailRecipient = () => {
     setInterviewerMailRecipients((prev) => [
@@ -319,569 +248,26 @@ export default function InterviewManagement() {
     });
   };
 
+  // "View candidate" opens the one candidate profile page
+  const navigate = useNavigate();
   const handleOpenDetails = (item: InterviewItem) => {
-    setSelectedInterview(item);
-    setSelectedCandidateId(item.candidate_id || null);
-    setSelectedCandidateName(item.candidate_name || "");
-    setIsDetailsModalOpen(true);
-  };
-
-  // Next Round form state
-  const [nextRoundForm, setNextRoundForm] = useState({
-    candidate_id: "",
-    candidate_name: "",
-    candidate_email: "",
-    resume_id: "",
-    job_id: "",
-    job_title: "",
-    job_location: "",
-    job_type: "Full Time",
-    interview_type: "TECHNICAL" as InterviewTypeEnum,
-    interview_type_id: "",
-    round_number: 2,
-    scheduled_date: new Date().toISOString().split("T")[0],
-    scheduled_time: "10:00",
-    timezone: "Asia/Kolkata",
-    duration_minutes: 60,
-    interviewer_name: "",
-    interviewer_email: "",
-    meeting_platform: "Google Meet",
-    meeting_link: "",
-    location: "",
-    interview_location: "",
-    hr_call_verification: "Pending",
-    candidate_requested_date: "",
-    candidate_requested_time: "",
-    candidate_requested_role: "",
-    salary_requested: "",
-    final_fit_salary: "",
-    joining_date: "",
-    interview_document_files: "",
-    client_name: "",
-    client_rating: 0,
-    client_feedback: "",
-    client_strengths: "",
-    client_weaknesses: "",
-    client_recommendation: "",
-    client_notes: "",
-    client_feedback_date: "",
-    notes: "",
-  });
-
-  // Form states
-  const [scheduleForm, setScheduleForm] = useState({
-    candidate_id: "",
-    candidate_name: "",
-    candidate_email: "",
-    resume_id: "",
-    job_title: "",
-    job_location: "",
-    job_type: "Full Time",
-    interview_type: "TECHNICAL" as InterviewTypeEnum,
-    interview_type_id: "",
-    round_number: 1,
-    scheduled_date: new Date().toISOString().split("T")[0],
-    scheduled_time: "10:00",
-    duration_minutes: 60,
-    interviewer_id: "",
-    interviewer_name: "",
-    interviewer_email: "",
-    client_id: "",
-    client_name: "",
-    client_email: "",
-    meeting_platform: "Google Meet",
-    meeting_link: "",
-    location: "",
-    interview_location: "",
-    hr_call_verification: "Pending",
-    candidate_requested_date_time: "",
-    candidate_requested_date: "",
-    candidate_requested_time: "",
-    candidate_requested_role: "",
-    salary_requested: "",
-    final_fit_salary: "",
-    joining_date: "",
-    interview_document_files: "",
-    recommendation: "Pending",
-    notes: "",
-  });
-
-  // Multi Interviewer Panel State for Schedule Modal
-  const [scheduleInterviewersList, setScheduleInterviewersList] = useState<InterviewerItem[]>([
-    { interviewer_name: "", interviewer_email: "" },
-  ]);
-
-  // Multi Client Panel State for Schedule Modal
-  const [scheduleClientsList, setScheduleClientsList] = useState<ClientFeedbackItem[]>([
-    { client_name: "", client_email: "" },
-  ]);
-
-  const handleAddScheduleInterviewer = () => {
-    setScheduleInterviewersList((prev) => [...prev, { interviewer_name: "", interviewer_email: "" }]);
-  };
-
-  const handleRemoveScheduleInterviewer = (index: number) => {
-    if (scheduleInterviewersList.length <= 1) return;
-    setScheduleInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleScheduleInterviewerChange = (index: number, field: keyof InterviewerItem, val: any) => {
-    setScheduleInterviewersList((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], [field]: val };
-      }
-      setTimeout(() => {
-        checkScheduleTimeConflict({
-          scheduled_date: scheduleForm.scheduled_date,
-          scheduled_time: scheduleForm.scheduled_time,
-          interviewers: updated,
-          clients: scheduleClientsList,
-        });
-      }, 50);
-      return updated;
-    });
-  };
-
-  const handleAddScheduleClient = () => {
-    setScheduleClientsList((prev) => [...prev, { client_name: "", client_email: "" }]);
-  };
-
-  const handleRemoveScheduleClient = (index: number) => {
-    if (scheduleClientsList.length <= 1) return;
-    setScheduleClientsList((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleScheduleClientChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
-    setScheduleClientsList((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], [field]: val };
-      }
-      setTimeout(() => {
-        checkScheduleTimeConflict({
-          scheduled_date: scheduleForm.scheduled_date,
-          scheduled_time: scheduleForm.scheduled_time,
-          interviewers: scheduleInterviewersList,
-          clients: updated,
-        });
-      }, 50);
-      return updated;
-    });
-  };
-
-  // Multi Interviewer Panel State for Next Round Modal
-  const [nextRoundInterviewersList, setNextRoundInterviewersList] = useState<InterviewerItem[]>([
-    { interviewer_name: "", interviewer_email: "" },
-  ]);
-
-  // Multi Client Panel State for Next Round Modal
-  const [nextRoundClientsList, setNextRoundClientsList] = useState<ClientFeedbackItem[]>([
-    { client_name: "", client_email: "" },
-  ]);
-
-  const handleAddNextRoundInterviewer = () => {
-    setNextRoundInterviewersList((prev) => [...prev, { interviewer_name: "", interviewer_email: "" }]);
-  };
-
-  const handleRemoveNextRoundInterviewer = (index: number) => {
-    if (nextRoundInterviewersList.length <= 1) return;
-    setNextRoundInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleNextRoundInterviewerChange = (index: number, field: keyof InterviewerItem, val: any) => {
-    setNextRoundInterviewersList((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], [field]: val };
-      }
-      setTimeout(() => {
-        checkScheduleTimeConflict({
-          scheduled_date: nextRoundForm.scheduled_date,
-          scheduled_time: nextRoundForm.scheduled_time,
-          interviewers: updated,
-          clients: nextRoundClientsList,
-        });
-      }, 50);
-      return updated;
-    });
-  };
-
-  const handleAddNextRoundClient = () => {
-    setNextRoundClientsList((prev) => [...prev, { client_name: "", client_email: "" }]);
-  };
-
-  const handleRemoveNextRoundClient = (index: number) => {
-    if (nextRoundClientsList.length <= 1) return;
-    setNextRoundClientsList((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleNextRoundClientChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
-    setNextRoundClientsList((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], [field]: val };
-      }
-      setTimeout(() => {
-        checkScheduleTimeConflict({
-          scheduled_date: nextRoundForm.scheduled_date,
-          scheduled_time: nextRoundForm.scheduled_time,
-          interviewers: nextRoundInterviewersList,
-          clients: updated,
-        });
-      }, 50);
-      return updated;
-    });
-  };
-
-  const [editForm, setEditForm] = useState({
-    candidate_name: "",
-    candidate_email: "",
-    job_title: "",
-    job_location: "",
-    job_type: "Full Time",
-    interview_type: "TECHNICAL" as InterviewTypeEnum,
-    interview_type_id: "",
-    round_number: 1,
-    scheduled_date: "",
-    scheduled_time: "",
-    interviewer_name: "",
-    interviewer_email: "",
-    meeting_platform: "Google Meet",
-    meeting_link: "",
-    location: "",
-    interview_location: "",
-    hr_call_verification: "Pending",
-    candidate_requested_date_time: "",
-    candidate_requested_date: "",
-    candidate_requested_time: "",
-    candidate_requested_role: "",
-    salary_requested: "",
-    final_fit_salary: "",
-    joining_date: "",
-    interview_document_files: "",
-    recommendation: "Pending",
-    rating: 4,
-    feedback: "",
-    strengths: "",
-    weaknesses: "",
-    // Client Feedback fields
-    client_name: "",
-    client_rating: 4,
-    client_feedback: "",
-    client_strengths: "",
-    client_weaknesses: "",
-    client_recommendation: "Selected",
-    client_notes: "",
-    client_feedback_date: "",
-    status: "SCHEDULED" as InterviewStatusEnum,
-    notes: "",
-  });
-
-  const [rescheduleForm, setRescheduleForm] = useState({
-    scheduled_date: "",
-    scheduled_time: "",
-    reason: "",
-    send_email_notification: true,
-    candidate_name: "",
-    candidate_email: "",
-  });
-
-  const [reschedulePanelRecipients, setReschedulePanelRecipients] = useState<
-    Array<{ send: boolean; name: string; email: string; type: "Interviewer" | "Client" }>
-  >([]);
-
-  const [feedbackTab, setFeedbackTab] = useState<"INTERVIEWER" | "CLIENT">("INTERVIEWER");
-
-  const [feedbackForm, setFeedbackForm] = useState({
-    // Interviewer Round Feedback
-    rating: 1,
-    feedback: "",
-    strengths: "",
-    weaknesses: "",
-    recommendation: "Selected",
-    // Client Feedback
-    client_name: "",
-    client_rating: 1,
-    client_feedback: "",
-    client_strengths: "",
-    client_weaknesses: "",
-    client_recommendation: "Selected",
-    client_notes: "",
-    client_feedback_date: new Date().toISOString().split("T")[0],
-    // Shared Candidate Info & Outcomes
-    candidate_requested_date: "",
-    candidate_requested_time: "",
-    candidate_requested_role: "",
-    salary_requested: "",
-    final_fit_salary: "",
-    joining_date: "",
-    interview_document_files: "",
-    interview_feedback_files: "",
-    notes: "",
-  });
-
-  const [feedbackInterviewersList, setFeedbackInterviewersList] = useState<InterviewerItem[]>([]);
-  const [feedbackClientsList, setFeedbackClientsList] = useState<ClientFeedbackItem[]>([]);
-  const [feedbackSkillRatings, setFeedbackSkillRatings] = useState<any[]>([]);
-  const [feedbackCategoryScores, setFeedbackCategoryScores] = useState<any[]>([]);
-  const [feedbackAiScore, setFeedbackAiScore] = useState<number>(20);
-  const [feedbackAiRecommendation, setFeedbackAiRecommendation] = useState<string>("Hold");
-
-  const handleAddFeedbackInterviewer = () => {
-    setFeedbackInterviewersList((prev) => [
-      ...prev,
-      {
-        interviewer_name: `Interviewer ${prev.length + 1}`,
-        rating: 1,
-        feedback: "",
-        recommendation: "Selected",
-      },
-    ]);
-  };
-
-  const handleRemoveFeedbackInterviewer = (index: number) => {
-    if (feedbackInterviewersList.length <= 1) return;
-    setFeedbackInterviewersList((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleFeedbackInterviewerItemChange = (index: number, field: keyof InterviewerItem, val: any) => {
-    setFeedbackInterviewersList((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        const item = { ...updated[index], [field]: val };
-        if (field === "rating") {
-          const outcome = getAutoRatingOutcome(Number(val));
-          item.recommendation = outcome.recommendation;
-        }
-        updated[index] = item;
-
-        if (index === 0) {
-          setFeedbackForm((f) => ({
-            ...f,
-            rating: Number(item.rating || 1),
-            recommendation: item.recommendation || "Selected",
-            feedback: item.feedback || f.feedback,
-          }));
-        }
-      }
-      return updated;
-    });
-  };
-
-  const handleAddFeedbackClient = () => {
-    setFeedbackClientsList((prev) => [
-      ...prev,
-      {
-        client_name: `Client ${prev.length + 1}`,
-        client_rating: 1,
-        client_feedback: "",
-        client_recommendation: "Selected",
-      },
-    ]);
-  };
-
-  const handleRemoveFeedbackClient = (index: number) => {
-    if (feedbackClientsList.length <= 1) return;
-    setFeedbackClientsList((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleFeedbackClientItemChange = (index: number, field: keyof ClientFeedbackItem, val: any) => {
-    setFeedbackClientsList((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        const item = { ...updated[index], [field]: val };
-        if (field === "client_rating") {
-          const outcome = getAutoRatingOutcome(Number(val));
-          item.client_recommendation = outcome.clientDecision;
-        }
-        updated[index] = item;
-
-        if (index === 0) {
-          setFeedbackForm((f) => ({
-            ...f,
-            client_rating: Number(item.client_rating || 1),
-            client_name: item.client_name || f.client_name,
-            client_recommendation: item.client_recommendation || "Selected",
-            client_feedback: item.client_feedback || f.client_feedback,
-          }));
-        }
-      }
-      return updated;
-    });
+    const id = item.resume_id || item.candidate_id;
+    if (id) navigate(`/candidates/${id}`);
   };
 
 
-
-  // File Upload State & Handlers for Modals (Uploads directly to S3)
-  const [isUploadingScheduleFile, setIsUploadingScheduleFile] = useState(false);
-  const [isUploadingEditFile, setIsUploadingEditFile] = useState(false);
-  const [isUploadingFeedbackFile, setIsUploadingFeedbackFile] = useState(false);
-  const [isUploadingNextRoundFile, setIsUploadingNextRoundFile] = useState(false);
-
-  const handleNextRoundFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      setIsUploadingNextRoundFile(true);
-      try {
-        const uploadedUrls: string[] = [];
-        for (const file of files) {
-          const res = await uploadInterviewDocument(file);
-          if (res?.s3_url) {
-            uploadedUrls.push(res.s3_url);
-          }
-        }
-        if (uploadedUrls.length > 0) {
-          const existing = nextRoundForm.interview_document_files
-            ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-          setNextRoundForm((prev) => ({ ...prev, interview_document_files: combined }));
-        }
-      } catch (err: any) {
-        console.error("Failed to upload document to S3:", err);
-        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
-      } finally {
-        setIsUploadingNextRoundFile(false);
-        e.target.value = "";
-      }
-    }
-  };
-
-  const handleScheduleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      setIsUploadingScheduleFile(true);
-      try {
-        const uploadedUrls: string[] = [];
-        for (const file of files) {
-          const res = await uploadInterviewDocument(file);
-          if (res?.s3_url) {
-            uploadedUrls.push(res.s3_url);
-          }
-        }
-        if (uploadedUrls.length > 0) {
-          const existing = scheduleForm.interview_document_files
-            ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-          setScheduleForm((prev) => ({ ...prev, interview_document_files: combined }));
-        }
-      } catch (err: any) {
-        console.error("Failed to upload document to S3:", err);
-        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
-      } finally {
-        setIsUploadingScheduleFile(false);
-        e.target.value = "";
-      }
-    }
-  };
-
-  const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      setIsUploadingEditFile(true);
-      try {
-        const uploadedUrls: string[] = [];
-        for (const file of files) {
-          const res = await uploadInterviewDocument(file);
-          if (res?.s3_url) {
-            uploadedUrls.push(res.s3_url);
-          }
-        }
-        if (uploadedUrls.length > 0) {
-          const existing = editForm.interview_document_files
-            ? editForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-          setEditForm((prev) => ({ ...prev, interview_document_files: combined }));
-        }
-      } catch (err: any) {
-        console.error("Failed to upload document to S3:", err);
-        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
-      } finally {
-        setIsUploadingEditFile(false);
-        e.target.value = "";
-      }
-    }
-  };
-
-  const handleFeedbackFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      setIsUploadingFeedbackFile(true);
-      try {
-        const uploadedUrls: string[] = [];
-        for (const file of files) {
-          const res = await uploadInterviewDocument(file);
-          if (res?.s3_url) {
-            uploadedUrls.push(res.s3_url);
-          }
-        }
-        if (uploadedUrls.length > 0) {
-          setFeedbackForm((prev) => {
-            const existing = prev.interview_document_files
-              ? prev.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-              : [];
-            const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-            return { ...prev, interview_document_files: combined };
-          });
-        }
-      } catch (err: any) {
-        console.error("Failed to upload document to S3:", err);
-        alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
-      } finally {
-        setIsUploadingFeedbackFile(false);
-        e.target.value = "";
-      }
-    }
-  };
-
-  const [isUploadingFeedbackReportFile, setIsUploadingFeedbackReportFile] = useState(false);
-
-  const handleFeedbackReportFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      setIsUploadingFeedbackReportFile(true);
-      try {
-        const uploadedUrls: string[] = [];
-        for (const file of files) {
-          const res = await uploadInterviewDocument(file);
-          if (res?.s3_url) {
-            uploadedUrls.push(res.s3_url);
-          }
-        }
-        if (uploadedUrls.length > 0) {
-          setFeedbackForm((prev) => {
-            const existing = prev.interview_feedback_files
-              ? prev.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)
-              : [];
-            const combined = Array.from(new Set([...existing, ...uploadedUrls])).join("\n");
-            return { ...prev, interview_feedback_files: combined };
-          });
-        }
-      } catch (err: any) {
-        console.error("Failed to upload feedback report to S3:", err);
-        alert(`Failed to upload feedback document to S3: ${err.message || "Upload error"}`);
-      } finally {
-        setIsUploadingFeedbackReportFile(false);
-        e.target.value = "";
-      }
-    }
-  };
 
   // Fetch interviews & candidates list from backend with search, filters & pagination
   const fetchAllData = async (
     targetPage = page,
     targetLimit = limit,
-    targetSearch = searchTerm,
-    targetName = nameFilter,
-    targetEmail = emailFilter,
+    targetSearch = debouncedSearch,
     targetDate = scheduledDateFilter,
     targetType = typeFilter,
     targetStatus = statusFilter,
     targetRecommendation = recommendationFilter
   ) => {
+    setRefreshKey((k) => k + 1);
     setLoading(true);
     setError(null);
     try {
@@ -893,12 +279,11 @@ export default function InterviewManagement() {
         page: targetPage,
         limit: targetLimit,
         search: targetSearch.trim() || undefined,
-        name: targetName.trim() || undefined,
-        email: targetEmail.trim() || undefined,
         scheduled_date: targetDate.trim() || undefined,
         interview_type: activeType,
         status: activeStatus,
-        recommendation: activeRecommendation,
+        verdict: activeRecommendation,
+        stage: stageFilter !== "All" ? stageFilter : undefined,
       };
 
       if (isClientUser && currentUser) {
@@ -907,13 +292,7 @@ export default function InterviewManagement() {
         filterParams.interviewer_id = currentUser.id || currentUser.email || currentUser.full_name;
       }
 
-      const [interviewData, usersData, typesData] = await Promise.all([
-        getInterviews(filterParams),
-        getUsers().catch(() => []),
-        getInterviewTypes().catch(() => []),
-      ]);
-
-      setInterviewTypes(Array.isArray(typesData) ? typesData : []);
+      const interviewData = await getInterviews(filterParams);
 
       let items: InterviewItem[] = Array.isArray(interviewData) ? interviewData : interviewData?.interviews || interviewData?.data?.interviews || [];
       if (isClientUser || isInterviewerUser) {
@@ -926,9 +305,6 @@ export default function InterviewManagement() {
       setInterviews(items);
       setTotalCount(items.length < total && (isClientUser || isInterviewerUser) ? items.length : total);
       setTotalPages(computedTotalPages);
-
-      const userList = Array.isArray(usersData) ? usersData : (usersData as any)?.users || [];
-      setSystemUsers(userList);
     } catch (err: any) {
       console.error("Failed to load interview management data:", err);
       setError(err.message || "Failed to load interviews.");
@@ -940,54 +316,32 @@ export default function InterviewManagement() {
   const location = useLocation();
 
   useEffect(() => {
-    fetchAllData(page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter);
+    fetchAllData(page, limit, debouncedSearch, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter);
+  }, [page, limit, debouncedSearch, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, stageFilter]);
 
-    if (location.state && location.state.scheduleCandidate) {
-      const cand = location.state.scheduleCandidate;
-      setScheduleForm((prev) => ({
-        ...prev,
-        candidate_id: cand.candidate_id || "",
-        candidate_name: cand.candidate_name || "",
-        candidate_email: cand.candidate_email || "",
-        resume_id: cand.resume_id || "",
-        job_title: cand.job_title || "",
-      }));
-      setIsScheduleOpen(true);
-    }
-  }, [page, limit, searchTerm, nameFilter, emailFilter, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, location.state]);
-
-  // Keep the schedule form's interview type in sync with the dropdown: the select only lists configured
-  // types, so a value outside that list (e.g. the "TECHNICAL" default) shows the first type but saves the old value
+  // Other pages (Candidates, Interview Dashboard) open the form here with a candidate already chosen
   useEffect(() => {
-    const activeTypes = interviewTypes.filter((t) => t.is_active !== false);
-    if (activeTypes.length === 0) return;
-    const current = activeTypes.find((t) => t.code === scheduleForm.interview_type);
-    if (!current) {
-      setScheduleForm((prev) => ({
-        ...prev,
-        interview_type: activeTypes[0].code as InterviewTypeEnum,
-        interview_type_id: activeTypes[0].id,
-      }));
-    } else if (scheduleForm.interview_type_id !== current.id) {
-      setScheduleForm((prev) => ({ ...prev, interview_type_id: current.id }));
+    const cand = location.state?.scheduleCandidate;
+    if (cand) {
+      setInterviewForm({
+        mode: "schedule",
+        candidate: {
+          candidate_id: cand.candidate_id || "",
+          candidate_name: cand.candidate_name || "",
+          candidate_email: cand.candidate_email || "",
+          resume_id: cand.resume_id || "",
+          job_title: cand.job_title || "",
+        },
+      });
     }
-  }, [interviewTypes, scheduleForm.interview_type, scheduleForm.interview_type_id]);
+  }, [location.state]);
 
-  // Fetch candidate resumes list ONLY when Schedule Interview modal is opened
+  // Interview types rarely change: load them once per visit, not on every search
   useEffect(() => {
-    if (isScheduleOpen && candidatesList.length === 0) {
-      getResumes({ page: 1, limit: 100 })
-        .then((resumesData) => {
-          const resumes = Array.isArray(resumesData)
-            ? resumesData
-            : resumesData?.resumes || (resumesData as any)?.data?.resumes || [];
-          setCandidatesList(resumes);
-        })
-        .catch((err) => {
-          console.error("Failed to load candidate resumes for schedule modal:", err);
-        });
-    }
-  }, [isScheduleOpen, candidatesList.length]);
+    getInterviewTypes()
+      .then((typesData) => setInterviewTypes(Array.isArray(typesData) ? typesData : []))
+      .catch(() => setInterviewTypes([]));
+  }, []);
 
   // Group and extract only the latest/current round for each candidate
   const getLatestInterviewsPerCandidate = (items: InterviewItem[]) => {
@@ -1060,542 +414,8 @@ export default function InterviewManagement() {
     }
   };
 
-  const getRecommendationBadge = (rec?: string) => {
-    if (!rec) return "bg-slate-50 border-slate-200 text-slate-500 font-medium";
-    const r = rec.trim();
-    if (["Selected", "Hire", "Strong Hire", "Recommended", "Offer Accepted", "Offer to Be Released", "Shortlisted"].includes(r)) {
-      return "bg-emerald-50 border-emerald-200 text-emerald-700 font-bold";
-    }
-    if (["Hold", "On Hold", "Pending", "Need Further Evaluation", "Reschedule Required"].includes(r)) {
-      return "bg-amber-50 border-amber-200 text-amber-800 font-bold";
-    }
-    if (["Rejected", "Not Recommended", "Withdrawn", "No Show", "Offer Rejected"].includes(r)) {
-      return "bg-rose-50 border-rose-200 text-rose-700 font-bold";
-    }
-    return "bg-slate-100 border-slate-200 text-slate-700 font-medium";
-  };
-
-  // Schedule Submit
-  const handleScheduleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scheduleForm.candidate_name || !scheduleForm.job_title) {
-      alert("Please provide candidate name and job title.");
-      return;
-    }
-
-    // Validation: Query backend API to check if candidate already has an assigned interview in database
-    try {
-      if (scheduleForm.candidate_id || scheduleForm.candidate_name) {
-        const statusRes = await checkCandidateActiveInterviewStatus(
-          scheduleForm.candidate_id || "temp",
-          scheduleForm.candidate_name
-        );
-        if (statusRes && statusRes.has_active_interview) {
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to check active interview status from backend:", err);
-    }
-
-    try {
-      setActionLoading(true);
-      const docFilesArray = scheduleForm.interview_document_files
-        ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-
-      const combinedReqDateTime = scheduleForm.candidate_requested_date
-        ? `${scheduleForm.candidate_requested_date} ${scheduleForm.candidate_requested_time || ""}`.trim()
-        : scheduleForm.candidate_requested_date_time;
-
-      const primaryInt: Partial<InterviewerItem> = scheduleInterviewersList[0] || {};
-      const primaryClient: Partial<ClientFeedbackItem> = scheduleClientsList[0] || {};
-
-      const filteredInterviewers = scheduleInterviewersList.filter((i) => i.interviewer_name && i.interviewer_name.trim());
-      const filteredClients = scheduleClientsList.filter((c) => c.client_name && c.client_name.trim());
-
-      await createInterview({
-        candidate_id: scheduleForm.candidate_id || `cand_${Date.now()}`,
-        candidate_name: scheduleForm.candidate_name,
-        candidate_email: scheduleForm.candidate_email || undefined,
-        resume_id: scheduleForm.resume_id || undefined,
-        job_title: scheduleForm.job_title,
-        job_location: scheduleForm.job_location || undefined,
-        job_type: scheduleForm.job_type || undefined,
-        interview_type: scheduleForm.interview_type,
-        interview_type_id: scheduleForm.interview_type_id || undefined,
-        round_number: Number(scheduleForm.round_number),
-        scheduled_date: scheduleForm.scheduled_date,
-        scheduled_time: scheduleForm.scheduled_time,
-        duration_minutes: Number(scheduleForm.duration_minutes),
-        interviewer_id: primaryInt.interviewer_id || scheduleForm.interviewer_id || undefined,
-        interviewer_name: primaryInt.interviewer_name || scheduleForm.interviewer_name || "Hiring Manager",
-        interviewer_email: primaryInt.interviewer_email || scheduleForm.interviewer_email || undefined,
-        client_id: primaryClient.client_id || scheduleForm.client_id || undefined,
-        client_name: primaryClient.client_name || scheduleForm.client_name || undefined,
-        client_email: primaryClient.client_email || scheduleForm.client_email || undefined,
-        interviewers: filteredInterviewers.length > 0 ? filteredInterviewers : undefined,
-        clients: filteredClients.length > 0 ? filteredClients : undefined,
-        meeting_platform: scheduleForm.meeting_platform,
-        meeting_link: scheduleForm.meeting_link || undefined,
-        location: scheduleForm.interview_location || scheduleForm.location || undefined,
-        interview_location: scheduleForm.interview_location || scheduleForm.location || undefined,
-        hr_call_verification: scheduleForm.hr_call_verification || undefined,
-        candidate_requested_date_time: combinedReqDateTime || undefined,
-        candidate_requested_date: scheduleForm.candidate_requested_date || undefined,
-        candidate_requested_time: scheduleForm.candidate_requested_time || undefined,
-        candidate_requested_role: scheduleForm.candidate_requested_role || undefined,
-        salary_requested: scheduleForm.salary_requested || undefined,
-        final_fit_salary: scheduleForm.final_fit_salary || undefined,
-        joining_date: scheduleForm.joining_date || undefined,
-        interview_document_files: docFilesArray,
-        recommendation: scheduleForm.recommendation || "Pending",
-        notes: scheduleForm.notes || undefined,
-      });
-
-      setIsScheduleOpen(false);
-      fetchAllData();
-    } catch (err: any) {
-      console.error("Failed to schedule interview:", err);
-      alert(err.message || "Failed to schedule interview.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Open Edit Modal
-  const handleOpenEdit = (item: InterviewItem) => {
-    setSelectedInterview(item);
-    setEditForm({
-      candidate_name: item.candidate_name || "",
-      candidate_email: item.candidate_email || "",
-      job_title: item.job_title || "",
-      job_location: item.job_location || "",
-      job_type: item.job_type || "Full Time",
-      interview_type: item.interview_type || "TECHNICAL",
-      interview_type_id: item.interview_type_id || "",
-      round_number: item.round_number || 1,
-      scheduled_date: item.scheduled_date || "",
-      scheduled_time: item.scheduled_time || "",
-      interviewer_name: item.interviewer_name || "",
-      interviewer_email: item.interviewer_email || "",
-      meeting_platform: item.meeting_platform || "Google Meet",
-      meeting_link: item.meeting_link || "",
-      location: item.interview_location || item.location || "",
-      interview_location: item.interview_location || item.location || "",
-      hr_call_verification: item.hr_call_verification || "Pending",
-      candidate_requested_date_time: item.candidate_requested_date_time || "",
-      candidate_requested_date: item.candidate_requested_date || "",
-      candidate_requested_time: item.candidate_requested_time || "",
-      candidate_requested_role: item.candidate_requested_role || "",
-      salary_requested: item.salary_requested || "",
-      final_fit_salary: item.final_fit_salary || "",
-      joining_date: item.joining_date || "",
-      interview_document_files: item.interview_document_files ? item.interview_document_files.join("\n") : "",
-      recommendation: item.recommendation || "Pending",
-      rating: item.rating !== undefined && item.rating !== null ? item.rating : 1,
-      feedback: item.feedback || "",
-      strengths: item.strengths ? item.strengths.join(", ") : "",
-      weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
-      client_name: item.client_name || "",
-      client_rating: item.client_rating !== undefined && item.client_rating !== null ? item.client_rating : 1,
-      client_feedback: item.client_feedback || "",
-      client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
-      client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
-      client_recommendation: item.client_recommendation || "Selected",
-      client_notes: item.client_notes || "",
-      client_feedback_date: item.client_feedback_date || "",
-      status: item.status || "SCHEDULED",
-      notes: item.notes || "",
-    });
-    setIsEditOpen(true);
-  };
-
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedInterview) return;
-    try {
-      setActionLoading(true);
-      const docFilesArray = editForm.interview_document_files
-        ? editForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-
-      const combinedReqDateTime = editForm.candidate_requested_date
-        ? `${editForm.candidate_requested_date} ${editForm.candidate_requested_time || ""}`.trim()
-        : editForm.candidate_requested_date_time;
-
-      await updateInterview(selectedInterview.id, {
-        candidate_name: editForm.candidate_name,
-        job_title: editForm.job_title,
-        job_location: editForm.job_location || undefined,
-        job_type: editForm.job_type || undefined,
-        interview_type: editForm.interview_type,
-        interview_type_id: editForm.interview_type_id || undefined,
-        round_number: Number(editForm.round_number),
-        scheduled_date: editForm.scheduled_date,
-        scheduled_time: editForm.scheduled_time,
-        interviewer_name: editForm.interviewer_name,
-        interviewer_email: editForm.interviewer_email || undefined,
-        meeting_platform: editForm.meeting_platform,
-        meeting_link: editForm.meeting_link || undefined,
-        location: editForm.interview_location || editForm.location || undefined,
-        interview_location: editForm.interview_location || editForm.location || undefined,
-        hr_call_verification: editForm.hr_call_verification || undefined,
-        candidate_requested_date_time: combinedReqDateTime || undefined,
-        candidate_requested_date: editForm.candidate_requested_date || undefined,
-        candidate_requested_time: editForm.candidate_requested_time || undefined,
-        candidate_requested_role: editForm.candidate_requested_role || undefined,
-        salary_requested: editForm.salary_requested || undefined,
-        final_fit_salary: editForm.final_fit_salary || undefined,
-        joining_date: editForm.joining_date || undefined,
-        interview_document_files: docFilesArray,
-        recommendation: editForm.recommendation || undefined,
-        rating: editForm.rating ? Number(editForm.rating) : undefined,
-        feedback: editForm.feedback || undefined,
-        strengths: editForm.strengths ? editForm.strengths.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
-        weaknesses: editForm.weaknesses ? editForm.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
-        client_name: editForm.client_name || undefined,
-        client_rating: editForm.client_rating ? Number(editForm.client_rating) : undefined,
-        client_feedback: editForm.client_feedback || undefined,
-        client_strengths: editForm.client_strengths ? editForm.client_strengths.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
-        client_weaknesses: editForm.client_weaknesses ? editForm.client_weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
-        client_recommendation: editForm.client_recommendation || undefined,
-        client_notes: editForm.client_notes || undefined,
-        client_feedback_date: editForm.client_feedback_date || undefined,
-        status: editForm.status,
-        notes: editForm.notes || undefined,
-      });
-
-      setIsEditOpen(false);
-      fetchAllData();
-    } catch (err: any) {
-      console.error("Failed to update interview:", err);
-      alert(err.message || "Failed to update interview.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Open Reschedule Modal
-  const handleOpenReschedule = (item: InterviewItem) => {
-    setSelectedInterview(item);
-
-    let candEmail = item.candidate_email || "";
-    if (!candEmail && candidatesList && candidatesList.length > 0) {
-      const matched = candidatesList.find(
-        (c: any) =>
-          (item.candidate_id && (c.id === item.candidate_id || c._id === item.candidate_id)) ||
-          (c.candidate_name && c.candidate_name === item.candidate_name) ||
-          (c.name && c.name === item.candidate_name)
-      );
-      if (matched) {
-        candEmail = matched.email || matched.parsed_data?.email || "";
-      }
-    }
-
-    const intList = item.interviewers && item.interviewers.length > 0
-      ? item.interviewers.map((i) => ({
-        send: true,
-        name: i.interviewer_name || "Interviewer",
-        email: i.interviewer_email || "",
-        type: "Interviewer" as const,
-      }))
-      : item.interviewer_email
-        ? [{ send: true, name: item.interviewer_name || "Interviewer", email: item.interviewer_email, type: "Interviewer" as const }]
-        : [];
-
-    const cliList = item.clients && item.clients.length > 0
-      ? item.clients.map((c) => ({
-        send: true,
-        name: c.client_name || "Client Evaluator",
-        email: c.client_email || "",
-        type: "Client" as const,
-      }))
-      : item.client_email
-        ? [{ send: true, name: item.client_name || "Client Evaluator", email: item.client_email, type: "Client" as const }]
-        : [];
-
-    const combinedRecipients = [...intList, ...cliList];
-    if (combinedRecipients.length === 0) {
-      combinedRecipients.push({ send: true, name: "Interviewer 1", email: "", type: "Interviewer" });
-    }
-
-    setReschedulePanelRecipients(combinedRecipients);
-
-    setRescheduleForm({
-      scheduled_date: item.scheduled_date || new Date().toISOString().split("T")[0],
-      scheduled_time: item.scheduled_time || "10:00",
-      reason: "",
-      send_email_notification: true,
-      candidate_name: item.candidate_name || "",
-      candidate_email: candEmail,
-    });
-    setIsRescheduleOpen(true);
-  };
-
-  const handleRescheduleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedInterview) return;
-    try {
-      setActionLoading(true);
-
-      // 1. Reschedule interview via backend endpoint
-      await rescheduleInterview(selectedInterview.id, {
-        scheduled_date: rescheduleForm.scheduled_date,
-        scheduled_time: rescheduleForm.scheduled_time,
-        reason: rescheduleForm.reason || undefined,
-      });
-
-      // 2. Dispatch rescheduled meeting invitation email if notification enabled
-      if (rescheduleForm.send_email_notification) {
-        const formattedNewTime = formatTimeTo12Hour(rescheduleForm.scheduled_time);
-        const rescheduleNotes = `INTERVIEW RESCHEDULED: New Session Date: ${rescheduleForm.scheduled_date} at ${formattedNewTime}.\nReason / Details: ${rescheduleForm.reason || "Schedule adjustment"}\nMeeting Link / Location: ${selectedInterview.meeting_link || selectedInterview.meeting_platform || "Google Meet"}`;
-
-        const activePanelEmails = reschedulePanelRecipients
-          .filter((r) => r.send && r.email.trim())
-          .map((r) => r.email.trim())
-          .join(", ");
-
-        await sendInterviewEmail(selectedInterview.id, {
-          send_to_candidate: true,
-          candidate_email: rescheduleForm.candidate_email.trim() || undefined,
-          send_to_interviewer: activePanelEmails ? true : false,
-          interviewer_email: activePanelEmails || undefined,
-          custom_notes: rescheduleNotes,
-        }).catch((err) => {
-          console.error("Failed to send rescheduled email notification:", err);
-        });
-      }
-
-      setIsRescheduleOpen(false);
-      fetchAllData();
-    } catch (err: any) {
-      console.error("Failed to reschedule interview:", err);
-      alert(err.message || "Failed to reschedule interview.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   // Open Feedback Modal
-  const handleOpenFeedback = (item: InterviewItem) => {
-    setSelectedInterview(item);
-    setFeedbackTab(isClientUser ? "CLIENT" : "INTERVIEWER");
-
-    const uId = currentUser?.id || (currentUser as any)?._id || "";
-    const uEmail = (currentUser?.email || "").trim().toLowerCase();
-    const uName = (currentUser?.full_name || "").trim().toLowerCase();
-
-    let initInts: InterviewerItem[] = [];
-    if (isInterviewerUser && currentUser) {
-      const matched = (item.interviewers || []).filter((i) => {
-        return (
-          (i.interviewer_id && i.interviewer_id === uId) ||
-          (i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail) ||
-          (i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName)
-        );
-      });
-      if (matched.length > 0) {
-        initInts = matched;
-      } else {
-        initInts = [{
-          interviewer_id: uId,
-          interviewer_name: currentUser.full_name || item.interviewer_name || "Interviewer 1",
-          interviewer_email: currentUser.email || item.interviewer_email || "",
-          rating: item.rating || 1,
-          feedback: item.feedback || "",
-          recommendation: item.recommendation || "Selected",
-          strengths: item.strengths || [],
-          weaknesses: item.weaknesses || [],
-        }];
-      }
-    } else {
-      initInts = item.interviewers && item.interviewers.length > 0
-        ? item.interviewers
-        : [{
-          interviewer_name: item.interviewer_name || "Interviewer 1",
-          interviewer_email: item.interviewer_email || "",
-          rating: item.rating || 1,
-          feedback: item.feedback || "",
-          recommendation: item.recommendation || "Selected",
-          strengths: item.strengths || [],
-          weaknesses: item.weaknesses || [],
-        }];
-    }
-
-    let initClients: ClientFeedbackItem[] = [];
-    if (isClientUser && currentUser) {
-      const matched = (item.clients || []).filter((c) => {
-        return (
-          (c.client_id && c.client_id === uId) ||
-          (c.client_email && c.client_email.trim().toLowerCase() === uEmail) ||
-          (c.client_name && c.client_name.trim().toLowerCase() === uName)
-        );
-      });
-      if (matched.length > 0) {
-        initClients = matched;
-      } else {
-        initClients = [{
-          client_id: uId,
-          client_name: currentUser.full_name || item.client_name || "Client Evaluator 1",
-          client_email: currentUser.email || item.client_email || "",
-          client_rating: item.client_rating || 1,
-          client_feedback: item.client_feedback || "",
-          client_recommendation: item.client_recommendation || "Selected",
-          client_notes: item.client_notes || "",
-        }];
-      }
-    } else {
-      initClients = item.clients && item.clients.length > 0
-        ? item.clients
-        : [{
-          client_name: item.client_name || "Client Evaluator 1",
-          client_rating: item.client_rating || 1,
-          client_feedback: item.client_feedback || "",
-          client_recommendation: item.client_recommendation || "Selected",
-          client_notes: item.client_notes || "",
-        }];
-    }
-
-    setFeedbackInterviewersList(initInts);
-    setFeedbackClientsList(initClients);
-    setFeedbackSkillRatings(
-      item.skill_ratings && item.skill_ratings.length > 0
-        ? item.skill_ratings
-        : []
-    );
-    setFeedbackCategoryScores(item.category_scores || []);
-    setFeedbackAiScore(item.ai_score || 20);
-    setFeedbackAiRecommendation(item.ai_recommendation || "Hold");
-
-    setFeedbackForm({
-      rating: item.rating || 1,
-      feedback: item.feedback || "",
-      strengths: item.strengths ? item.strengths.join(", ") : "",
-      weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
-      recommendation: item.recommendation || "Selected",
-      client_name: item.client_name || "",
-      client_rating: item.client_rating || 1,
-      client_feedback: item.client_feedback || "",
-      client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
-      client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
-      client_recommendation: item.client_recommendation || "Selected",
-      client_notes: item.client_notes || "",
-      client_feedback_date: item.client_feedback_date || new Date().toISOString().split("T")[0],
-      candidate_requested_date: item.candidate_requested_date || "",
-      candidate_requested_time: item.candidate_requested_time || "",
-      candidate_requested_role: item.candidate_requested_role || "",
-      salary_requested: item.salary_requested || "",
-      final_fit_salary: item.final_fit_salary || "",
-      joining_date: item.joining_date || "",
-      interview_document_files: item.interview_document_files ? Array.from(new Set(item.interview_document_files)).join("\n") : "",
-      interview_feedback_files: item.interview_feedback_files ? Array.from(new Set(item.interview_feedback_files)).join("\n") : "",
-      notes: item.notes || "",
-    });
-    setIsFeedbackOpen(true);
-  };
-
-  useEffect(() => {
-    if (isEditOpen && editForm.interview_type) {
-      getFeedbackQuestionsAsync(editForm.interview_type).then((opts) => setFeedbackQuestionOptions(opts));
-    } else if (isFeedbackOpen && selectedInterview?.interview_type) {
-      getFeedbackQuestionsAsync(selectedInterview.interview_type).then((opts) => setFeedbackQuestionOptions(opts));
-    }
-  }, [isEditOpen, isFeedbackOpen, editForm.interview_type, selectedInterview?.interview_type]);
-
-  const handleFeedbackSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedInterview) return;
-    try {
-      setActionLoading(true);
-      const docFilesArray = feedbackForm.interview_document_files
-        ? Array.from(new Set(feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
-        : [];
-      const feedbackReportFilesArray = feedbackForm.interview_feedback_files
-        ? Array.from(new Set(feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
-        : [];
-
-      const uId = currentUser?.id || (currentUser as any)?._id || "";
-      const uEmail = (currentUser?.email || "").trim().toLowerCase();
-      const uName = (currentUser?.full_name || "").trim().toLowerCase();
-
-      let finalClientsList = feedbackClientsList;
-      if (isClientUser && currentUser && selectedInterview.clients && selectedInterview.clients.length > 0) {
-        const otherClients = selectedInterview.clients.filter((c) => {
-          const matchId = c.client_id && c.client_id === uId;
-          const matchEmail = c.client_email && c.client_email.trim().toLowerCase() === uEmail;
-          const matchName = c.client_name && c.client_name.trim().toLowerCase() === uName;
-          return !matchId && !matchEmail && !matchName;
-        });
-        finalClientsList = [...otherClients, ...feedbackClientsList];
-      }
-
-      let finalInterviewersList = feedbackInterviewersList;
-      if (isInterviewerUser && currentUser && selectedInterview.interviewers && selectedInterview.interviewers.length > 0) {
-        const otherInterviewers = selectedInterview.interviewers.filter((i) => {
-          const matchId = i.interviewer_id && i.interviewer_id === uId;
-          const matchEmail = i.interviewer_email && i.interviewer_email.trim().toLowerCase() === uEmail;
-          const matchName = i.interviewer_name && i.interviewer_name.trim().toLowerCase() === uName;
-          return !matchId && !matchEmail && !matchName;
-        });
-        finalInterviewersList = [...otherInterviewers, ...feedbackInterviewersList];
-      }
-
-      const rawUserStr = localStorage.getItem("user");
-      let storedUserObj: any = null;
-      if (rawUserStr) {
-        try { storedUserObj = JSON.parse(rawUserStr); } catch (e) { /* ignore */ }
-      }
-
-      const activeUserId = uId || storedUserObj?.id || storedUserObj?._id || "";
-      const activeUserName = currentUser?.full_name || (currentUser as any)?.name || storedUserObj?.full_name || storedUserObj?.name || "";
-      const activeUserEmail = currentUser?.email || storedUserObj?.email || "";
-      const activeUserRole = currentUser?.role || storedUserObj?.role || "";
-
-      await submitInterviewFeedback(selectedInterview.id, {
-        rating: Number(feedbackForm.rating),
-        feedback: feedbackForm.feedback || undefined,
-        strengths: feedbackForm.strengths ? feedbackForm.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        weaknesses: feedbackForm.weaknesses ? feedbackForm.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        recommendation: feedbackForm.recommendation || undefined,
-        evaluator_user_id: activeUserId || undefined,
-        evaluator_name: activeUserName || undefined,
-        evaluator_email: activeUserEmail || undefined,
-        evaluator_role: activeUserRole || undefined,
-        interviewers: finalInterviewersList,
-        skill_ratings: feedbackSkillRatings,
-        category_scores: feedbackCategoryScores,
-        ai_score: feedbackAiScore,
-        ai_recommendation: feedbackAiRecommendation,
-        client_name: feedbackForm.client_name || undefined,
-        client_rating: feedbackForm.client_rating ? Number(feedbackForm.client_rating) : undefined,
-        client_feedback: feedbackForm.client_feedback || undefined,
-        client_strengths: feedbackForm.client_strengths ? feedbackForm.client_strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        client_weaknesses: feedbackForm.client_weaknesses ? feedbackForm.client_weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        client_recommendation: feedbackForm.client_recommendation || undefined,
-        client_notes: feedbackForm.client_notes || undefined,
-        client_feedback_date: feedbackForm.client_feedback_date || undefined,
-        clients: finalClientsList,
-        candidate_requested_date: feedbackForm.candidate_requested_date || undefined,
-        candidate_requested_time: feedbackForm.candidate_requested_time || undefined,
-        candidate_requested_role: feedbackForm.candidate_requested_role || undefined,
-        salary_requested: feedbackForm.salary_requested || undefined,
-        final_fit_salary: feedbackForm.final_fit_salary || undefined,
-        joining_date: feedbackForm.joining_date || undefined,
-        interview_document_files: docFilesArray,
-        interview_feedback_files: feedbackReportFilesArray,
-        notes: feedbackForm.notes || undefined,
-      });
-
-      setIsFeedbackOpen(false);
-      fetchAllData();
-    } catch (err: any) {
-      console.error("Failed to submit feedback:", err);
-      alert(err.message || "Failed to submit feedback.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const handleOpenFeedback = (item: InterviewItem) => setFeedbackTargets([item]);
 
   // Delete Interview
   const handleOpenDelete = (item: InterviewItem) => {
@@ -1612,7 +432,7 @@ export default function InterviewManagement() {
       fetchAllData();
     } catch (err: any) {
       console.error("Failed to delete interview:", err);
-      alert(err.message || "Failed to delete interview.");
+      toast(err.message || "Failed to delete interview.", "error");
     } finally {
       setActionLoading(false);
     }
@@ -1623,18 +443,7 @@ export default function InterviewManagement() {
     setSelectedInterview(item);
     setSendMailStatus(null);
 
-    let candEmail = item.candidate_email || "";
-    if (!candEmail && candidatesList && candidatesList.length > 0) {
-      const matched = candidatesList.find(
-        (c: any) =>
-          (item.candidate_id && (c.id === item.candidate_id || c._id === item.candidate_id)) ||
-          (c.candidate_name && c.candidate_name === item.candidate_name) ||
-          (c.name && c.name === item.candidate_name)
-      );
-      if (matched) {
-        candEmail = matched.email || matched.parsed_data?.email || "";
-      }
-    }
+    const candEmail = item.candidate_email || "";
 
     setSendMailForm({
       send_to_candidate: true,
@@ -1689,7 +498,7 @@ export default function InterviewManagement() {
 
   const fetchMailTemplates = async () => {
     try {
-      const res = await fetch(MAIL_TEMPLATES_URL);
+      const res = await apiFetch(MAIL_TEMPLATES_URL);
       if (res.ok) {
         const data = await res.json();
         setAvailableTemplates(data);
@@ -1743,7 +552,7 @@ export default function InterviewManagement() {
 
       const successMsg = res.message || `Interview notification email successfully sent to ${selectedInterview.candidate_name}!`;
       setSendMailStatus({ type: "success", text: successMsg });
-      showToast(successMsg, "success");
+      toast(successMsg, "success");
       fetchAllData();
       setTimeout(() => {
         setIsSendMailOpen(false);
@@ -1757,202 +566,61 @@ export default function InterviewManagement() {
     }
   };
 
-  // Schedule Next Round Handlers
-  const handleOpenNextRound = async (item: InterviewItem) => {
-    setSelectedInterview(item);
+  const isAdmin = userRole === "admin" || userRole === "superadmin";
 
-    // Validation: Query backend API to check if candidate already has a DIFFERENT assigned active interview in database
-    try {
-      const statusRes = await checkCandidateActiveInterviewStatus(item.candidate_id, item.candidate_name);
-      if (statusRes && statusRes.has_active_interview && statusRes.interview_id !== item.id) {
-        alert(statusRes.message || "Candidate already has an active pending interview session.");
-        return;
-      }
-    } catch (err) {
-      console.warn("Failed to check active interview status from backend:", err);
-    }
-
-    const firstActiveType = interviewTypes.find((t) => t.is_active !== false);
-    const defaultType = (firstActiveType?.code || "TECHNICAL") as InterviewTypeEnum;
-    const defaultTypeId = firstActiveType?.id || item.interview_type_id || "";
-    let nextRoundNum = (item.round_number || 1) + 1;
-    try {
-      const res = await getNextRoundNumber(item.candidate_id, defaultType, defaultTypeId);
-      if (res && res.next_round_number) {
-        nextRoundNum = res.next_round_number;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch next round number:", e);
-    }
-
-    const initInts =
-      item.interviewers && item.interviewers.length > 0
-        ? item.interviewers.map((i) => ({ interviewer_id: i.interviewer_id, interviewer_name: i.interviewer_name || "", interviewer_email: i.interviewer_email || "" }))
-        : [{ interviewer_id: item.interviewer_id, interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "" }];
-    setNextRoundInterviewersList(initInts);
-
-    const initClients =
-      item.clients && item.clients.length > 0
-        ? item.clients.map((c) => ({ client_id: c.client_id, client_name: c.client_name || "", client_email: c.client_email || "" }))
-        : [{ client_id: item.client_id, client_name: item.client_name || "", client_email: item.client_email || "" }];
-    setNextRoundClientsList(initClients);
-
-    const matchedDefaultType = interviewTypes.find((t) => t.code === defaultType || t.id === defaultType || t.name === defaultType);
-
-    setNextRoundForm({
-      candidate_id: item.candidate_id || "",
-      candidate_name: item.candidate_name || "",
-      candidate_email: item.candidate_email || "",
-      resume_id: item.resume_id || "",
-      job_id: item.job_id || "",
-      job_title: item.job_title || "",
-      job_location: item.job_location || "",
-      job_type: item.job_type || "Full Time",
-      interview_type: defaultType,
-      interview_type_id: matchedDefaultType?.id || defaultTypeId,
-      round_number: nextRoundNum,
-      scheduled_date: new Date().toISOString().split("T")[0],
-      scheduled_time: "10:00",
-      timezone: item.timezone || "Asia/Kolkata",
-      duration_minutes: item.duration_minutes || 60,
-      interviewer_name: initInts[0]?.interviewer_name || "",
-      interviewer_email: initInts[0]?.interviewer_email || "",
-      meeting_platform: "Google Meet",
-      meeting_link: "",
-      location: item.location || "",
-      interview_location: item.interview_location || "",
-      hr_call_verification: item.hr_call_verification || "Pending",
-      candidate_requested_date: item.candidate_requested_date || "",
-      candidate_requested_time: item.candidate_requested_time || "",
-      candidate_requested_role: item.candidate_requested_role || "",
-      salary_requested: item.salary_requested || "",
-      final_fit_salary: item.final_fit_salary || "",
-      joining_date: item.joining_date || "",
-      interview_document_files: "",
-      client_name: initClients[0]?.client_name || "",
-      client_rating: item.client_rating || 0,
-      client_feedback: item.client_feedback || "",
-      client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
-      client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
-      client_recommendation: item.client_recommendation || "",
-      client_notes: item.client_notes || "",
-      client_feedback_date: item.client_feedback_date || "",
-      notes: `Next Round (R${nextRoundNum}) follow-up for ${item.candidate_name}`,
-    });
-    setIsNextRoundOpen(true);
-  };
-
-  const handleNextRoundTypeChange = async (newType: string) => {
-    const matchedType = interviewTypes.find((t) => t.code === newType || t.id === newType || t.name === newType);
-    const selectedCode = matchedType ? matchedType.code : newType;
-    const selectedId = matchedType ? matchedType.id : "";
-
-    setNextRoundForm((prev) => ({ ...prev, interview_type: selectedCode as InterviewTypeEnum, interview_type_id: selectedId }));
-    if (selectedInterview?.candidate_id) {
-      try {
-        const res = await getNextRoundNumber(selectedInterview.candidate_id, selectedCode, selectedId);
-        if (res && res.next_round_number) {
-          setNextRoundForm((prev) => ({ ...prev, round_number: res.next_round_number, notes: `Next Round (${selectedCode} R${res.next_round_number}) follow-up for ${prev.candidate_name}` }));
-        }
-      } catch (e) {
-        console.warn("Failed to fetch next round number:", e);
-      }
-    }
-  };
-
-  const handleNextRoundSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const primaryInterviewer: InterviewerItem = nextRoundInterviewersList[0] || { interviewer_name: "Interviewer", interviewer_email: "" };
-    const primaryClient: ClientFeedbackItem = nextRoundClientsList[0] || { client_name: "Client Evaluator", client_email: "" };
-
-    if (!nextRoundForm.candidate_name || !nextRoundForm.job_title || !primaryInterviewer.interviewer_name) {
-      alert("Please fill candidate name, job title, and interviewer name for the next round.");
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      const docFilesArray = nextRoundForm.interview_document_files
-        ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-        : [];
-
-      await createInterview({
-        candidate_id: nextRoundForm.candidate_id,
-        candidate_name: nextRoundForm.candidate_name,
-        candidate_email: nextRoundForm.candidate_email || undefined,
-        resume_id: nextRoundForm.resume_id || undefined,
-        job_id: nextRoundForm.job_id || undefined,
-        job_title: nextRoundForm.job_title,
-        job_location: nextRoundForm.job_location || undefined,
-        job_type: nextRoundForm.job_type || undefined,
-        interview_type: nextRoundForm.interview_type,
-        interview_type_id: nextRoundForm.interview_type_id || undefined,
-        round_number: Number(nextRoundForm.round_number),
-        scheduled_date: nextRoundForm.scheduled_date,
-        scheduled_time: nextRoundForm.scheduled_time,
-        timezone: nextRoundForm.timezone,
-        duration_minutes: Number(nextRoundForm.duration_minutes),
-        interviewer_id: primaryInterviewer.interviewer_id || undefined,
-        interviewer_name: primaryInterviewer.interviewer_name || "Interviewer",
-        interviewer_email: primaryInterviewer.interviewer_email || undefined,
-        meeting_platform: nextRoundForm.meeting_platform,
-        meeting_link: nextRoundForm.meeting_link || undefined,
-        location: nextRoundForm.interview_location || nextRoundForm.location || undefined,
-        interview_location: nextRoundForm.interview_location || nextRoundForm.location || undefined,
-        hr_call_verification: nextRoundForm.hr_call_verification || undefined,
-        candidate_requested_date: nextRoundForm.candidate_requested_date || undefined,
-        candidate_requested_time: nextRoundForm.candidate_requested_time || undefined,
-        candidate_requested_role: nextRoundForm.candidate_requested_role || undefined,
-        salary_requested: nextRoundForm.salary_requested || undefined,
-        final_fit_salary: nextRoundForm.final_fit_salary || undefined,
-        joining_date: nextRoundForm.joining_date || undefined,
-        interview_document_files: docFilesArray,
-        client_id: primaryClient.client_id || undefined,
-        client_name: primaryClient.client_name || undefined,
-        client_email: primaryClient.client_email || undefined,
-        interviewers: nextRoundInterviewersList,
-        clients: nextRoundClientsList,
-        client_rating: nextRoundForm.client_rating ? Number(nextRoundForm.client_rating) : undefined,
-        client_feedback: nextRoundForm.client_feedback || undefined,
-        client_strengths: nextRoundForm.client_strengths ? nextRoundForm.client_strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        client_weaknesses: nextRoundForm.client_weaknesses ? nextRoundForm.client_weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        client_recommendation: nextRoundForm.client_recommendation || undefined,
-        client_notes: nextRoundForm.client_notes || undefined,
-        client_feedback_date: nextRoundForm.client_feedback_date || undefined,
-        notes: nextRoundForm.notes || undefined,
-      });
-
-      setIsNextRoundOpen(false);
-      fetchAllData();
-    } catch (err: any) {
-      console.error("Failed to schedule next round:", err);
-      alert(err.message || "Failed to schedule next round.");
-    } finally {
-      setActionLoading(false);
-    }
+  // The row menu lists only the actions that make sense for where the interview stands
+  const rowActions = (row: InterviewItem) => {
+    const phase = getInterviewPhase(row);
+    const view = { label: "View candidate", icon: <Eye size={14} />, run: () => handleOpenDetails(row) };
+    const email = { label: "Send email", icon: <Mail size={14} />, run: () => handleOpenSendMail(row) };
+    const feedback = { label: hasFeedback(row) ? "Update feedback" : "Give feedback", icon: <Star size={14} />, run: () => handleOpenFeedback(row) };
+    const nextRound = { label: "Schedule next round", icon: <Layers size={14} />, run: () => setInterviewForm({ mode: "next-round", interview: row }) };
+    const reschedule = { label: "Reschedule and notify", icon: <Calendar size={14} />, run: () => setInterviewForm({ mode: "reschedule", interview: row }) };
+    const edit = { label: "Edit details", icon: <Edit2 size={14} />, run: () => setInterviewForm({ mode: "edit", interview: row }) };
+    const cancel = { label: "Cancel interview", icon: <XCircle size={14} />, run: () => handleOpenCancelModal(row), danger: true };
+    const remove = { label: "Delete", icon: <Trash2 size={14} />, run: () => handleOpenDelete(row), danger: true };
+    const again = {
+      label: "Schedule again",
+      icon: <Plus size={14} />,
+      primary: true,
+      run: () =>
+        setInterviewForm({
+          mode: "schedule",
+          candidate: { candidate_id: row.candidate_id, candidate_name: row.candidate_name, candidate_email: row.candidate_email, resume_id: row.resume_id, job_title: row.job_title },
+        }),
+    };
+    const list: { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean }[] =
+      phase === "upcoming" ? [view, edit, reschedule, email, cancel]
+      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, reschedule, view, email, cancel]
+      : phase === "done" ? [{ ...nextRound, primary: true }, feedback, view, email]
+      : [again, view];
+    return isAdmin ? [...list, remove as (typeof list)[number]] : list;
   };
 
   return (
     <div className="bg-white text-slate-800 min-h-screen px-2 py-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-900">Interview Management</h1>
+        <div className="flex flex-wrap items-center gap-4">
+          <h1 className="text-xl font-bold text-slate-900">Interviews</h1>
+          <div role="tablist" aria-label="Interview views" className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 text-sm">
+            {([["today", "Today and Upcoming"], ["all", "All"]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={view === key}
+                onClick={() => setView(key)}
+                className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${view === key ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {selectedInterviewIds.length > 0 && (
-            <button
-              onClick={() => setIsBulkFeedbackOpen(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer animate-pulse"
-            >
-              <Sparkles size={16} />
-              Bulk Feedback Update ({selectedInterviewIds.length})
-            </button>
-          )}
-
           <button
-            onClick={() => setIsScheduleOpen(true)}
+            onClick={() => setInterviewForm({ mode: "schedule" })}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer"
           >
             <Plus size={16} />
@@ -1961,7 +629,17 @@ export default function InterviewManagement() {
         </div>
       </div>
 
-      {/* Main Table Card Wrapper */}
+      {view === "today" && (
+        <TodayView
+          refreshKey={refreshKey}
+          onFeedback={handleOpenFeedback}
+          onReschedule={(item) => setInterviewForm({ mode: "reschedule", interview: item })}
+          onView={handleOpenDetails}
+        />
+      )}
+
+      {/* Main Table Card Wrapper ("All" view) */}
+      {view === "all" && (
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-6">
         {/* SERVER SEARCH & FILTERS BAR */}
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
@@ -1971,7 +649,7 @@ export default function InterviewManagement() {
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search candidate, email, title, interviewer..."
+                placeholder="Search name, email, job title, interviewer..."
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -1994,57 +672,27 @@ export default function InterviewManagement() {
 
             {/* Clear Filters Button */}
             <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-              {(searchTerm || nameFilter || emailFilter || scheduledDateFilter || typeFilter !== "All" || statusFilter !== "All") && (
+              {activeFilterCount > 0 && (
                 <button
                   onClick={() => {
                     setSearchTerm("");
-                    setNameFilter("");
-                    setEmailFilter("");
                     setScheduledDateFilter("");
                     setTypeFilter("All");
                     setStatusFilter("All");
+                    setRecommendationFilter("All");
+                    setStageFilter("All");
                     setPage(1);
                   }}
                   className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 font-semibold px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-50 transition-colors cursor-pointer"
                 >
-                  <X size={12} /> Clear Filters
+                  <X size={12} /> Clear Filters ({activeFilterCount})
                 </button>
               )}
             </div>
           </div>
 
-          {/* Specific Field Filters Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-slate-200/80 text-xs">
-            {/* Candidate Name Filter */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Name</label>
-              <input
-                type="text"
-                placeholder="Filter by name..."
-                value={nameFilter}
-                onChange={(e) => {
-                  setNameFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
-              />
-            </div>
-
-            {/* Candidate Email Filter */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Candidate Email</label>
-              <input
-                type="text"
-                placeholder="candidate@gmail.com"
-                value={emailFilter}
-                onChange={(e) => {
-                  setEmailFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
-              />
-            </div>
-
+          {/* Specific Field Filters Grid (name and email are covered by the search box) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-200/80 text-xs">
             {/* Scheduled Date Filter */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">Scheduled Date</label>
@@ -2098,10 +746,11 @@ export default function InterviewManagement() {
               </select>
             </div>
 
-            {/* Recommendation Filter */}
+            {/* Verdict Filter */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Recommendation</label>
+              <label htmlFor="filter-verdict" className="block text-[11px] font-semibold text-slate-600 mb-1">Verdict</label>
               <select
+                id="filter-verdict"
                 value={recommendationFilter}
                 onChange={(e) => {
                   setRecommendationFilter(e.target.value);
@@ -2109,11 +758,28 @@ export default function InterviewManagement() {
                 }}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
               >
-                <option value="All">All Recommendations</option>
-                {RECOMMENDATION_OPTIONS.map((rec) => (
-                  <option key={rec} value={rec}>
-                    {rec}
-                  </option>
+                <option value="All">All verdicts</option>
+                {VERDICTS.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Stage Filter */}
+            <div>
+              <label htmlFor="filter-stage" className="block text-[11px] font-semibold text-slate-600 mb-1">Stage</label>
+              <select
+                id="filter-stage"
+                value={stageFilter}
+                onChange={(e) => {
+                  setStageFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              >
+                <option value="All">All stages</option>
+                {INTERVIEW_STAGES.map((st) => (
+                  <option key={st} value={st}>{st}</option>
                 ))}
               </select>
             </div>
@@ -2123,7 +789,7 @@ export default function InterviewManagement() {
         {selectedInterviewIds.length > 0 && (
           <div className="flex justify-end pt-2 pb-1">
             <button
-              onClick={() => setIsBulkFeedbackOpen(true)}
+              onClick={() => setFeedbackTargets(filteredInterviews.filter((i) => selectedInterviewIds.includes(i.id)))}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap"
             >
               <Sparkles size={16} />
@@ -2146,7 +812,7 @@ export default function InterviewManagement() {
           <div className="text-center py-12 text-slate-500 text-xs space-y-2">
             <p>No interviews found matching criteria.</p>
             <button
-              onClick={() => setIsScheduleOpen(true)}
+              onClick={() => setInterviewForm({ mode: "schedule" })}
               className="text-indigo-600 hover:underline font-semibold cursor-pointer"
             >
               Schedule a new interview
@@ -2170,7 +836,7 @@ export default function InterviewManagement() {
                   <th className="py-3.5 px-4 min-w-[160px]">Role & Round</th>
                   <th className="py-3.5 px-4 min-w-[170px]">Schedule & HR Call</th>
                   <th className="py-3.5 px-4 min-w-[180px]">Feedback & Ratings</th>
-                  <th className="py-3.5 px-4 min-w-[210px]">Recommendation Status</th>
+                  <th className="py-3.5 px-4 min-w-[170px]">Verdict &amp; Stage</th>
                   <th className="py-3.5 px-2 min-w-[140px] text-left">Actions</th>
                 </tr>
               </thead>
@@ -2195,11 +861,11 @@ export default function InterviewManagement() {
                         <div className="min-w-0">
                           <div className="font-bold text-slate-900 truncate text-xs">{row.candidate_name}</div>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold border ${getStatusBadge(row.status)}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-extrabold border ${getStatusBadge(row.status)}`}>
                               {row.status}
                             </span>
                             {row.location && (
-                              <span className="text-[10px] text-indigo-600 font-medium flex items-center gap-0.5 truncate">
+                              <span className="text-[11px] text-indigo-600 font-medium flex items-center gap-0.5 truncate">
                                 <MapPin size={10} />
                                 {row.location}
                               </span>
@@ -2213,10 +879,10 @@ export default function InterviewManagement() {
                     <td className="py-4 px-4">
                       <div className="font-bold text-slate-800 text-xs truncate max-w-[160px]">{row.job_title}</div>
                       <div className="flex items-center gap-1.5 mt-1">
-                        <span className="bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-semibold">
+                        <span className="bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold">
                           {row.interview_type.replace("_", " ")}
                         </span>
-                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded text-[11px] font-bold">
                           R{row.round_number}
                         </span>
                       </div>
@@ -2225,20 +891,20 @@ export default function InterviewManagement() {
                     {/* Schedule & HR Call */}
                     <td className="py-4 px-4">
                       <div className="font-semibold text-slate-800 text-xs">{row.scheduled_date}</div>
-                      <div className="text-[10px] text-slate-500 font-medium">{row.scheduled_time} ({row.timezone || "IST"})</div>
+                      <div className="text-[11px] text-slate-500 font-medium">{row.scheduled_time} ({row.timezone || "IST"})</div>
                       <div className="mt-1 flex items-center gap-1 flex-wrap">
-                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${row.hr_call_verification === "Verified"
+                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold border ${row.hr_call_verification === "Verified"
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                           : "bg-slate-100 text-slate-700 border-slate-200"
                           }`}>
                           HR: {row.hr_call_verification || "Pending"}
                         </span>
                         {row.email_sent_count && row.email_sent_count > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border bg-cyan-50 text-cyan-700 border-cyan-200" title={`Last email sent at: ${row.last_email_sent_at || 'N/A'}`}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border bg-cyan-50 text-cyan-700 border-cyan-200" title={`Last email sent at: ${row.last_email_sent_at || 'N/A'}`}>
                             <Mail size={10} /> Mail Sent ({row.email_sent_count})
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border bg-slate-50 text-slate-400 border-slate-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-slate-50 text-slate-400 border-slate-200">
                             <Mail size={10} /> Not Sent
                           </span>
                         )}
@@ -2249,7 +915,7 @@ export default function InterviewManagement() {
                     <td className="py-4 px-4">
                       <div className="space-y-1.5">
                         {/* Interviewer Rating */}
-                        <div className="flex items-center gap-2 text-[10px]">
+                        <div className="flex items-center gap-2 text-[11px]">
                           <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-1.5 py-0.5 rounded shrink-0">
                             Interviewer
                           </span>
@@ -2259,7 +925,7 @@ export default function InterviewManagement() {
                         </div>
 
                         {/* Client Rating */}
-                        <div className="flex items-center gap-2 text-[10px]">
+                        <div className="flex items-center gap-2 text-[11px]">
                           <span className="bg-teal-50 text-teal-700 border border-teal-200 font-bold px-1.5 py-0.5 rounded shrink-0">
                             Client
                           </span>
@@ -2274,36 +940,18 @@ export default function InterviewManagement() {
                       </div>
                     </td>
 
-                    {/* Recommendation Status (Interviewer & Client) */}
+                    {/* Verdict (how it went) and Stage (where the candidate is) */}
                     <td className="py-4 px-4">
                       <div className="space-y-1.5">
-                        {/* Interviewer Recommendation */}
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-1.5 py-0.5 rounded shrink-0">
-                            Interviewer
-                          </span>
-                          {row.recommendation ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border truncate max-w-[130px] ${getRecommendationBadge(row.recommendation)}`}>
-                              {row.recommendation}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 italic">Pending</span>
-                          )}
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold border ${getVerdictBadge(row.verdict || "Pending")}`}>
+                          {row.verdict || "Pending"}
+                        </span>
+                        <div className="text-xs text-slate-500">
+                          Stage: <span className="font-semibold text-slate-700">{row.stage || "Interviewing"}</span>
                         </div>
-
-                        {/* Client Recommendation */}
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span className="bg-teal-50 text-teal-700 border border-teal-200 font-bold px-1.5 py-0.5 rounded shrink-0">
-                            Client
-                          </span>
-                          {row.client_recommendation ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border truncate max-w-[130px] ${getRecommendationBadge(row.client_recommendation)}`}>
-                              {row.client_recommendation}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 italic">Pending</span>
-                          )}
-                        </div>
+                        {row.client_recommendation && row.client_recommendation !== "Pending" && (
+                          <div className="text-xs text-slate-500">Client: {row.client_recommendation}</div>
+                        )}
                       </div>
                     </td>
 
@@ -2315,101 +963,29 @@ export default function InterviewManagement() {
                           onClick={() => setOpenActionMenuId(openActionMenuId === row.id ? null : row.id)}
                           className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs"
                           title="Actions Menu"
-                        >
+                         aria-label="More actions">
                           <MoreVertical size={16} />
                         </button>
 
                         {/* Action Dropdown Popup */}
                         {openActionMenuId === row.id && (
-                          <div className="absolute right-0 top-8 z-50 w-52 bg-white border border-slate-200 rounded-2xl shadow-2xl py-1.5 text-left text-xs animate-in fade-in duration-150 space-y-0.5">
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenSendMail(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Mail size={14} className="text-indigo-600" />
-                              <span>Send Email</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenDetails(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-sky-50 hover:text-sky-600 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Eye size={14} className="text-sky-600" />
-                              <span>View Candidate Details</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenFeedback(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-600 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Star size={14} className="text-amber-600" />
-                              <span>Submit Feedback</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenEdit(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Edit2 size={14} className="text-slate-600" />
-                              <span>Edit Interview</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenReschedule(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-700 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Calendar size={14} className="text-amber-600" />
-                              <span>Reschedule Interview</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenNextRound(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-purple-50 hover:text-purple-700 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Layers size={14} className="text-purple-600" />
-                              <span>Schedule Next Round</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenCancelModal(row);
-                              }}
-                              disabled={row.status === "CANCELLED"}
-                              className="w-full px-3.5 py-2 text-rose-700 hover:bg-rose-50 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer disabled:opacity-50"
-                            >
-                              <XCircle size={14} className="text-rose-600" />
-                              <span>Cancel Interview</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOpenActionMenuId(null);
-                                handleOpenDelete(row);
-                              }}
-                              className="w-full px-3.5 py-2 text-slate-700 hover:bg-rose-50 hover:text-rose-600 font-bold flex items-center gap-2.5 transition-colors cursor-pointer"
-                            >
-                              <Trash2 size={14} className="text-rose-600" />
-                              <span>Delete Interview</span>
-                            </button>
+                          <div className="absolute right-0 top-8 z-50 w-56 bg-white border border-slate-200 rounded-2xl shadow-2xl py-1.5 text-left text-sm">
+                            {/* Only the actions that fit this interview's state */}
+                            {rowActions(row).map((action) => (
+                              <button
+                                key={action.label}
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  action.run();
+                                }}
+                                className={`w-full px-3.5 py-2 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer ${
+                                  action.danger ? "text-rose-700 hover:bg-rose-50" : action.primary ? "text-indigo-700 hover:bg-indigo-50" : "text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                {action.icon}
+                                <span>{action.label}</span>
+                              </button>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -2460,7 +1036,7 @@ export default function InterviewManagement() {
               onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
               className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer text-slate-700"
               title="Previous Page"
-            >
+             aria-label="Previous">
               <ChevronLeft size={16} />
             </button>
 
@@ -2492,12 +1068,13 @@ export default function InterviewManagement() {
               onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
               className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer text-slate-700"
               title="Next Page"
-            >
+             aria-label="Next">
               <ChevronRight size={16} />
             </button>
           </div>
         </div>
       </div>
+      )}
 
       {/* CANCEL INTERVIEW CONFIRMATION POPUP MODAL */}
       {cancelTargetInterview && (
@@ -2526,27 +1103,27 @@ export default function InterviewManagement() {
             <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-2 text-xs">
               <div className="flex justify-between items-center pb-2 border-b border-slate-200">
                 <span className="font-extrabold text-slate-900 text-sm">{cancelTargetInterview.candidate_name}</span>
-                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold text-[11px]">
                   Round {cancelTargetInterview.round_number} ({cancelTargetInterview.interview_type || "Technical"})
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-slate-700 pt-1">
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Email</span>
+                  <span className="text-slate-400 block text-[11px] uppercase font-bold">Email</span>
                   <span className="font-semibold text-slate-900 truncate block">{cancelTargetInterview.candidate_email || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Job Role</span>
+                  <span className="text-slate-400 block text-[11px] uppercase font-bold">Job Role</span>
                   <span className="font-semibold text-slate-900 truncate block">{cancelTargetInterview.job_title}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Scheduled Date & Time</span>
+                  <span className="text-slate-400 block text-[11px] uppercase font-bold">Scheduled Date & Time</span>
                   <span className="font-semibold text-indigo-600">
                     {cancelTargetInterview.scheduled_date} at {formatTimeTo12Hour(cancelTargetInterview.scheduled_time)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Interviewer</span>
+                  <span className="text-slate-400 block text-[11px] uppercase font-bold">Interviewer</span>
                   <span className="font-semibold text-slate-900 truncate block">{cancelTargetInterview.interviewer_name || "Assigned Manager"}</span>
                 </div>
               </div>
@@ -2617,2884 +1194,18 @@ export default function InterviewManagement() {
         </div>
       )}
 
-      {/* SCHEDULE INTERVIEW MODAL (EXACT 2x2 COLORFUL CARD UI) */}
-      {isScheduleOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
+      {/* One form for schedule, edit, reschedule and next round */}
+      <InterviewForm
+        mode={interviewForm?.mode || "schedule"}
+        isOpen={interviewForm !== null}
+        interview={interviewForm?.interview}
+        candidate={interviewForm?.candidate}
+        onClose={() => setInterviewForm(null)}
+        onSaved={() => fetchAllData()}
+      />
 
-            {/* Modal Header */}
-            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl shadow-md text-white">
-                  <Calendar size={22} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900 tracking-wide">
-                      Schedule New Interview Session
-                    </h2>
-                    {scheduleForm.candidate_name && (
-                      <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full">
-                        {scheduleForm.candidate_name}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Configure interview setup, dates, interviewer, candidate requests, salary, outcome, and attached documents
-                  </p>
-                </div>
-              </div>
 
-              <button
-                onClick={() => setIsScheduleOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            <form onSubmit={handleScheduleSubmit} className="space-y-6 text-xs">
-              {/* 2-COLUMN / 2x2 COLORFUL CARD GRID */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                {/* CARD 1 (TOP LEFT): CANDIDATE & JOB ROLE SETUP */}
-                <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-2xl p-5 space-y-4 shadow-xs">
-                  <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs border-b border-indigo-200/70 pb-2.5">
-                    <Briefcase size={16} className="text-indigo-600" />
-                    <span>Candidate & Job Role Setup</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Select Candidate from Parsed Resumes</label>
-                    <select
-                      value={scheduleForm.candidate_id}
-                      onChange={async (e) => {
-                        const selId = e.target.value;
-                        setCandidateActiveCheckResult(null);
-                        if (!selId) {
-                          setScheduleForm({
-                            ...scheduleForm,
-                            candidate_id: "",
-                            candidate_name: "",
-                            candidate_email: "",
-                            resume_id: "",
-                          });
-                          return;
-                        }
-                        const found = candidatesList.find((c) => c.id === selId || c._id === selId);
-                        const parsed = found?.parsed_data || {};
-                        const nameStr = parsed.full_name || parsed.name || found?.original_filename || "";
-                        const emailStr = parsed.email || found?.email || "";
-                        setScheduleForm({
-                          ...scheduleForm,
-                          candidate_id: selId,
-                          candidate_name: nameStr,
-                          candidate_email: emailStr,
-                          resume_id: selId,
-                        });
-
-                        // Query backend API to check active incomplete interview session from MongoDB
-                        try {
-                          const statusRes = await checkCandidateActiveInterviewStatus(selId, nameStr);
-                          setCandidateActiveCheckResult(statusRes);
-                        } catch (err) {
-                          console.warn("Failed to check candidate active status from backend:", err);
-                        }
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer font-medium shadow-2xs"
-                    >
-                      <option value="">-- Choose Candidate from Parsed Resumes --</option>
-                      {candidatesList.map((cand) => {
-                        const parsed = cand.parsed_data || {};
-                        const candName = parsed.full_name || parsed.name || cand.original_filename;
-                        return (
-                          <option key={cand.id || cand._id} value={cand.id || cand._id}>
-                            {candName} {parsed.email ? `(${parsed.email})` : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-
-                  {/* Warning Banner if selected candidate has an active incomplete interview loaded from DB */}
-                  {(() => {
-                    const activeIncomplete = candidateActiveCheckResult?.has_active_interview ? candidateActiveCheckResult : interviews.find(
-                      (inv) =>
-                        ((scheduleForm.candidate_id && inv.candidate_id === scheduleForm.candidate_id) ||
-                          (scheduleForm.candidate_name && inv.candidate_name.toLowerCase().trim() === scheduleForm.candidate_name.toLowerCase().trim())) &&
-                        inv.status !== "COMPLETED" &&
-                        inv.status !== "CANCELLED"
-                    );
-                    if (!activeIncomplete) return null;
-                    const stVal = activeIncomplete.status || "SCHEDULED";
-                    const candName = activeIncomplete.candidate_name || scheduleForm.candidate_name;
-                    return (
-                      <div className="bg-amber-50 border border-amber-300 text-amber-900 p-3.5 rounded-xl flex items-start gap-2.5 text-xs font-semibold shadow-xs">
-                        <AlertCircle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <span className="font-extrabold text-amber-950 block text-xs">Active Interview Session Pending Feedback (Database Verified)</span>
-                          Candidate <span className="font-extrabold text-indigo-700">'{candName}'</span> already has an assigned interview session (Status: <span className="font-black text-amber-800 uppercase">{stVal}</span>) that is not yet completed. Complete feedback for the previous round first before assigning a new session.
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">
-                        Candidate Name <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Candidate Name"
-                        value={scheduleForm.candidate_name}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_name: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">
-                        Candidate Email
-                      </label>
-                      <input
-                        type="email"
-                        placeholder="candidate@email.com"
-                        value={scheduleForm.candidate_email}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_email: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">
-                        Job Title / Role <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Full Stack Developer / Team Lead"
-                        value={scheduleForm.job_title}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, job_title: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <MapPin size={13} className="text-indigo-600" /> Job Location
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Coimbatore / Remote"
-                        value={scheduleForm.job_location}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, job_location: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Briefcase size={13} className="text-indigo-600" /> Job Type
-                      </label>
-                      <select
-                        value={scheduleForm.job_type}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, job_type: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-2xs"
-                      >
-                        <option value="Full Time">💼 Full Time</option>
-                        <option value="Part Time">⏱️ Part Time</option>
-                        <option value="Contract">📄 Contract</option>
-                        <option value="Hybrid">🏢 Hybrid</option>
-                        <option value="Remote">🌐 Remote</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Layers size={13} className="text-indigo-600" /> Interview Type
-                      </label>
-                      <select
-                        value={scheduleForm.interview_type}
-                        onChange={(e) => {
-                          const selectedVal = e.target.value;
-                          const matched = interviewTypes.find((t) => t.code === selectedVal || t.id === selectedVal || t.name === selectedVal);
-                          setScheduleForm({
-                            ...scheduleForm,
-                            interview_type: (matched ? matched.code : selectedVal) as InterviewTypeEnum,
-                            interview_type_id: matched ? matched.id : "",
-                          });
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-2xs"
-                      >
-                        {interviewTypes && interviewTypes.length > 0 ? (
-                          interviewTypes.filter((t) => t.is_active !== false).map((t) => (
-                            <option key={t.id} value={t.code}>
-                              {t.name} ({t.code})
-                            </option>
-                          ))
-                        ) : (
-                          <option value="TECHNICAL">Technical Round</option>
-                        )}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Hash size={13} className="text-indigo-600" /> Round Number
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={scheduleForm.round_number}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, round_number: Number(e.target.value) })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* CARD 2 (TOP RIGHT): CANDIDATE REQUESTS, COMPENSATION & SELECTION OUTCOME */}
-                <div className="bg-amber-50/40 border border-amber-300/70 rounded-2xl p-5 space-y-4 shadow-xs">
-                  <div className="flex items-center gap-2 text-amber-800 font-bold text-xs border-b border-amber-200 pb-2.5">
-                    <DollarSign size={16} className="text-amber-600" />
-                    <span>Candidate Requests, Compensation & Selection Outcome</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Calendar size={13} className="text-amber-600" /> Requested Date
-                      </label>
-                      <input
-                        type="date"
-                        value={scheduleForm.candidate_requested_date}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_date: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Clock size={13} className="text-amber-600" /> Requested Time
-                      </label>
-                      <input
-                        type="time"
-                        value={scheduleForm.candidate_requested_time}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_time: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Briefcase size={13} className="text-amber-600" /> Requested Role
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Team Lead"
-                        value={scheduleForm.candidate_requested_role}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, candidate_requested_role: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <DollarSign size={13} className="text-amber-600" /> Salary Requested
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="50000"
-                        value={scheduleForm.salary_requested}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, salary_requested: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <TrendingUp size={13} className="text-emerald-600" /> Final Fit Salary
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="30000"
-                        value={scheduleForm.final_fit_salary}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, final_fit_salary: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-emerald-600 font-extrabold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Calendar size={13} className="text-amber-600" /> Joining Date
-                      </label>
-                      <input
-                        type="date"
-                        value={scheduleForm.joining_date}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, joining_date: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-amber-900 mb-1 font-bold flex items-center gap-1">
-                      🏆 Selection Outcome Status
-                    </label>
-                    <select
-                      value={scheduleForm.recommendation}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, recommendation: e.target.value })}
-                      className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2.5 text-amber-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer shadow-2xs"
-                    >
-                      {RECOMMENDATION_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* CARD 3 (BOTTOM LEFT): DATE, TIME & VIDEO MEETING */}
-                <div className="bg-sky-50/40 border border-sky-200/90 rounded-2xl p-5 space-y-4 shadow-xs">
-                  <div className="flex items-center gap-2 text-sky-800 font-bold text-xs border-b border-sky-200 pb-2.5">
-                    <Clock size={16} className="text-sky-600" />
-                    <span>Date, Time & Video Meeting</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Calendar size={13} className="text-sky-600" /> Scheduled Date <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={scheduleForm.scheduled_date}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_date: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Clock size={13} className="text-sky-600" /> Scheduled Time <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="time"
-                        value={scheduleForm.scheduled_time}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_time: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {/* Multi-Interviewer Panel Section */}
-                  <div className="bg-white border border-sky-200 rounded-xl p-3.5 space-y-3">
-                    <div className="flex items-center justify-between border-b border-sky-100 pb-2">
-                      <div className="flex items-center gap-2 text-sky-800 font-bold text-xs">
-                        <UserCheck size={14} />
-                        <span>Interviewer Panel Selection ({scheduleInterviewersList.length})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAddScheduleInterviewer}
-                        className="flex items-center gap-1 bg-sky-100 hover:bg-sky-200 text-sky-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                      >
-                        <Plus size={13} /> Add Interviewer
-                      </button>
-                    </div>
-
-                    {scheduleInterviewersList.map((interviewer, idx) => (
-                      <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="text-[11px] font-bold text-sky-900 uppercase">
-                            Interviewer #{idx + 1}
-                          </label>
-                          {scheduleInterviewersList.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveScheduleInterviewer(idx)}
-                              className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                            >
-                              <Trash2 size={12} /> Remove
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <div>
-                            <select
-                              value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "custom" || !val) {
-                                  handleScheduleInterviewerChange(idx, "interviewer_id", undefined);
-                                } else {
-                                  const u = systemUsers.find((user) => user.id === val);
-                                  if (u) {
-                                    handleScheduleInterviewerChange(idx, "interviewer_id", u.id);
-                                    handleScheduleInterviewerChange(idx, "interviewer_name", u.full_name);
-                                    handleScheduleInterviewerChange(idx, "interviewer_email", u.email);
-                                  }
-                                }
-                              }}
-                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-sky-500 cursor-pointer"
-                            >
-                              <option value="">-- Choose User --</option>
-                              {systemUsers.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.full_name} ({u.role || u.email})
-                                </option>
-                              ))}
-                              <option value="custom">+ External / Custom</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <input
-                              type="text"
-                              placeholder="Interviewer Name *"
-                              value={interviewer.interviewer_name}
-                              onChange={(e) => handleScheduleInterviewerChange(idx, "interviewer_name", e.target.value)}
-                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-sky-500 font-medium"
-                              required={idx === 0}
-                            />
-                          </div>
-
-                          <div>
-                            <input
-                              type="email"
-                              placeholder="interviewer@company.com"
-                              value={interviewer.interviewer_email || ""}
-                              onChange={(e) => handleScheduleInterviewerChange(idx, "interviewer_email", e.target.value)}
-                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-sky-500 font-medium"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Multi-Client Panel Section */}
-                  <div className="bg-white border border-teal-200 rounded-xl p-3.5 space-y-3">
-                    <div className="flex items-center justify-between border-b border-teal-100 pb-2">
-                      <div className="flex items-center gap-2 text-teal-800 font-bold text-xs">
-                        <Building2 size={14} />
-                        <span>Client Evaluator Panel Selection ({scheduleClientsList.length})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAddScheduleClient}
-                        className="flex items-center gap-1 bg-teal-100 hover:bg-teal-200 text-teal-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                      >
-                        <Plus size={13} /> Add Client
-                      </button>
-                    </div>
-
-                    {scheduleClientsList.map((client, idx) => (
-                      <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="text-[11px] font-bold text-teal-900 uppercase">
-                            Client Evaluator #{idx + 1}
-                          </label>
-                          {scheduleClientsList.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveScheduleClient(idx)}
-                              className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                            >
-                              <Trash2 size={12} /> Remove
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <div>
-                            <select
-                              value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "custom" || !val) {
-                                  handleScheduleClientChange(idx, "client_id", undefined);
-                                } else {
-                                  const u = systemUsers.find((user) => user.id === val);
-                                  if (u) {
-                                    handleScheduleClientChange(idx, "client_id", u.id);
-                                    handleScheduleClientChange(idx, "client_name", u.full_name);
-                                    handleScheduleClientChange(idx, "client_email", u.email);
-                                  }
-                                }
-                              }}
-                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
-                            >
-                              <option value="">-- Choose User --</option>
-                              {systemUsers.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.full_name} ({u.role || u.email})
-                                </option>
-                              ))}
-                              <option value="custom">+ External / Custom</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <input
-                              type="text"
-                              placeholder="Client Name / Company"
-                              value={client.client_name}
-                              onChange={(e) => handleScheduleClientChange(idx, "client_name", e.target.value)}
-                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
-                            />
-                          </div>
-
-                          <div>
-                            <input
-                              type="email"
-                              placeholder="client@company.com"
-                              value={client.client_email || ""}
-                              onChange={(e) => handleScheduleClientChange(idx, "client_email", e.target.value)}
-                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <Video size={13} className="text-sky-600" /> Meeting Platform
-                      </label>
-                      <select
-                        value={scheduleForm.meeting_platform}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, meeting_platform: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 cursor-pointer shadow-2xs"
-                      >
-                        <option value="Google Meet">📹 Google Meet</option>
-                        <option value="Zoom">🎥 Zoom</option>
-                        <option value="Microsoft Teams">💻 Microsoft Teams</option>
-                        <option value="In Person">🏢 In Person / Office</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
-                      <input
-                        type="text"
-                        placeholder="https://meet.google.com/..."
-                        value={scheduleForm.meeting_link}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, meeting_link: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* CARD 4 (BOTTOM RIGHT): LOCATION, DOCUMENTS & FOCUS NOTES */}
-                <div className="bg-emerald-50/40 border border-emerald-200/90 rounded-2xl p-5 space-y-4 shadow-xs">
-                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs border-b border-emerald-200 pb-2.5">
-                    <Building2 size={16} className="text-emerald-700" />
-                    <span>Interview Location, Documents & Focus Notes</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">Interview Location</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Conference Room A / Coimbatore"
-                        value={scheduleForm.interview_location || scheduleForm.location}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, interview_location: e.target.value, location: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">HR Call Verification</label>
-                      <select
-                        value={scheduleForm.hr_call_verification}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, hr_call_verification: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer shadow-2xs"
-                      >
-                        <option value="Verified">Verified</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Needs Followup">Needs Followup</option>
-                        <option value="Not Eligible">Not Eligible</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-bold text-slate-700">Interview Document Files (URLs/filenames)</label>
-                      <label className={`bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[11px] px-2.5 py-0.5 rounded-lg cursor-pointer font-bold transition-all inline-flex items-center gap-1 ${isUploadingScheduleFile ? "opacity-60 pointer-events-none" : ""}`}>
-                        {isUploadingScheduleFile ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin text-emerald-700" />
-                            <span>Uploading to S3...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload size={12} />
-                            <span>Attach Files</span>
-                          </>
-                        )}
-                        <input type="file" multiple onChange={handleScheduleFileUpload} disabled={isUploadingScheduleFile} className="hidden" />
-                      </label>
-                    </div>
-                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
-                    {(() => {
-                      const attachedList = scheduleForm.interview_document_files
-                        ? scheduleForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-                        : [];
-                      if (attachedList.length === 0) return null;
-                      return (
-                        <div className="space-y-1.5 mb-2.5 mt-1">
-                          {attachedList.map((fileStr, idx) => {
-                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
-                            const rawName = fileStr.split("/").pop() || fileStr;
-                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
-                            return (
-                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-emerald-200 rounded-xl px-3 py-1.5 shadow-2xs">
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  <FileText size={14} className="text-emerald-600 shrink-0" />
-                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
-                                    {displayName}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {isUrl && (
-                                    <a
-                                      href={fileStr}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
-                                    >
-                                      <Eye size={12} />
-                                      <span>View</span>
-                                    </a>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
-                                      setScheduleForm((prev) => ({ ...prev, interview_document_files: updated }));
-                                    }}
-                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
-                                    title="Remove attachment"
-                                  >
-                                    <X size={13} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Attached files chips are displayed above, no raw link textarea */}
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Agenda / Focus Notes</label>
-                    <textarea
-                      rows={2}
-                      value={scheduleForm.notes}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, notes: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium shadow-2xs"
-                      placeholder="Focus areas or instructions..."
-                    />
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Bottom Actions Bar */}
-              {(() => {
-                const hasActiveIncomplete = !!(
-                  candidateActiveCheckResult?.has_active_interview ||
-                  interviews.find(
-                    (inv) =>
-                      ((scheduleForm.candidate_id && inv.candidate_id === scheduleForm.candidate_id) ||
-                        (scheduleForm.candidate_name && inv.candidate_name.toLowerCase().trim() === scheduleForm.candidate_name.toLowerCase().trim())) &&
-                      inv.status !== "COMPLETED" &&
-                      inv.status !== "CANCELLED"
-                  )
-                );
-                return (
-                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setIsScheduleOpen(false)}
-                      className="px-5 py-2.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 font-bold transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={hasActiveIncomplete || actionLoading}
-                      title={
-                        hasActiveIncomplete
-                          ? `Cannot schedule interview: Candidate '${scheduleForm.candidate_name}' already has an active interview session pending feedback.`
-                          : "Schedule Interview"
-                      }
-                      className={`px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${hasActiveIncomplete
-                        ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none opacity-60"
-                        : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 cursor-pointer"
-                        }`}
-                    >
-                      <Plus size={16} /> Schedule Interview
-                    </button>
-                  </div>
-                );
-              })()}
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT INTERVIEW MODAL (WIDE 2-COLUMN FULL-FEATURED UI) */}
-      {isEditOpen && selectedInterview && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
-
-            {/* Modal Header */}
-            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-indigo-600 rounded-2xl shadow-sm text-white">
-                  <Edit2 size={22} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900 tracking-wide">
-                      Edit Interview Details
-                    </h2>
-                    <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                      {editForm.candidate_name}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Update scheduled interview details, candidate requests, salary, outcome, and attached documents
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsEditOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditSubmit} className="space-y-6 text-xs">
-
-              {/* 2-COLUMN GRID WRAPPER FOR WIDE SCREEN EXPANSION */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                {/* LEFT COLUMN: SETUP, SCHEDULE & INTERVIEWER DETAILS */}
-                <div className="space-y-5">
-                  {/* SECTION 1: CANDIDATE & JOB SETUP */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                      <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
-                        <Briefcase size={15} />
-                        <span>Candidate & Job Role Setup</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">
-                          Candidate Name <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={editForm.candidate_name}
-                          onChange={(e) => setEditForm({ ...editForm, candidate_name: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">
-                          Job Title / Role <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={editForm.job_title}
-                          onChange={(e) => setEditForm({ ...editForm, job_title: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Building2 size={13} className="text-indigo-600" /> Job Location
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Bangalore / Remote"
-                          value={editForm.job_location}
-                          onChange={(e) => setEditForm({ ...editForm, job_location: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Briefcase size={13} className="text-indigo-600" /> Job Type
-                        </label>
-                        <select
-                          value={editForm.job_type}
-                          onChange={(e) => setEditForm({ ...editForm, job_type: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                        >
-                          <option value="Full Time">💼 Full Time</option>
-                          <option value="Part Time">⏱️ Part Time</option>
-                          <option value="Contract">📄 Contract</option>
-                          <option value="Hybrid">🏢 Hybrid</option>
-                          <option value="Remote">🌐 Remote</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Layers size={13} className="text-indigo-600" /> Interview Type
-                        </label>
-                        <select
-                          value={editForm.interview_type}
-                          onChange={(e) => {
-                            const selectedVal = e.target.value;
-                            const matched = interviewTypes.find((t) => t.code === selectedVal || t.id === selectedVal || t.name === selectedVal);
-                            setEditForm({
-                              ...editForm,
-                              interview_type: (matched ? matched.code : selectedVal) as InterviewTypeEnum,
-                              interview_type_id: matched ? matched.id : "",
-                            });
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-indigo-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                        >
-                          {interviewTypes && interviewTypes.length > 0 ? (
-                            interviewTypes.filter((t) => t.is_active !== false).map((t) => (
-                              <option key={t.id} value={t.code}>
-                                {t.name} ({t.code})
-                              </option>
-                            ))
-                          ) : (
-                            <option value="TECHNICAL">Technical Round</option>
-                          )}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Hash size={13} className="text-indigo-600" /> Round Number
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={editForm.round_number}
-                          onChange={(e) => setEditForm({ ...editForm, round_number: Number(e.target.value) })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* SECTION 2: SCHEDULE & MEETING LINK */}
-                  <div className="bg-sky-50/50 border border-sky-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center gap-2 text-sky-700 font-bold text-xs border-b border-sky-200 pb-2">
-                      <Clock size={15} />
-                      <span>Date, Time & Video Meeting</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Calendar size={13} className="text-sky-600" /> Scheduled Date
-                        </label>
-                        <input
-                          type="date"
-                          value={editForm.scheduled_date}
-                          onChange={(e) => setEditForm({ ...editForm, scheduled_date: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Clock size={13} className="text-sky-600" /> Scheduled Time
-                        </label>
-                        <input
-                          type="time"
-                          value={editForm.scheduled_time}
-                          onChange={(e) => setEditForm({ ...editForm, scheduled_time: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Interview Status</label>
-                        <select
-                          value={editForm.status}
-                          onChange={(e) => setEditForm({ ...editForm, status: e.target.value as InterviewStatusEnum })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sky-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                        >
-                          <option value="SCHEDULED">🗓️ SCHEDULED</option>
-                          <option value="COMPLETED">✅ COMPLETED</option>
-                          <option value="RESCHEDULED">🔄 RESCHEDULED</option>
-                          <option value="CANCELLED">❌ CANCELLED</option>
-                          <option value="NO_SHOW">⚠️ NO SHOW</option>
-                          <option value="PENDING">⏳ PENDING</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Video size={13} className="text-sky-600" /> Meeting Platform
-                        </label>
-                        <select
-                          value={editForm.meeting_platform}
-                          onChange={(e) => setEditForm({ ...editForm, meeting_platform: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                        >
-                          <option value="Google Meet">🎥 Google Meet</option>
-                          <option value="Zoom">📹 Zoom</option>
-                          <option value="Microsoft Teams">💻 Microsoft Teams</option>
-                          <option value="In Person">🏢 In Person / Office</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
-                        <input
-                          type="text"
-                          placeholder="https://meet.google.com/..."
-                          value={editForm.meeting_link}
-                          onChange={(e) => setEditForm({ ...editForm, meeting_link: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* SECTION 3: INTERVIEWER & LOCATION */}
-                  <div className="space-y-4">
-                    {/* Interviewer Box */}
-                    <div className="bg-purple-50/40 border border-purple-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                      <div className="flex items-center gap-2 text-purple-700 font-bold text-xs border-b border-purple-200 pb-2">
-                        <UserCheck size={15} />
-                        <span>Interviewer Info & Round Feedback</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Interviewer Name</label>
-                          <input
-                            type="text"
-                            value={editForm.interviewer_name}
-                            onChange={(e) => setEditForm({ ...editForm, interviewer_name: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                            <Mail size={12} className="text-purple-600" /> Email Address
-                          </label>
-                          <input
-                            type="email"
-                            value={editForm.interviewer_email}
-                            onChange={(e) => setEditForm({ ...editForm, interviewer_email: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Interviewer Rating (1-5)</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="1"
-                            max="5"
-                            value={editForm.rating}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              const outcome = getAutoRatingOutcome(val);
-                              setEditForm({
-                                ...editForm,
-                                rating: val,
-                                recommendation: outcome.recommendation,
-                                status: outcome.status as InterviewStatusEnum,
-                              });
-                            }}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Selection Recommendation</label>
-                          <select
-                            value={editForm.recommendation}
-                            onChange={(e) => setEditForm({ ...editForm, recommendation: e.target.value })}
-                            className="w-full bg-white border border-amber-200 rounded-xl px-3.5 py-2 text-amber-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                          >
-                            {RECOMMENDATION_OPTIONS.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Conditional Reason Selection for Edit Interviewer Rating (1 to 4.5 Stars) */}
-                      {editForm.rating <= 4.5 && (
-                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
-                          <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                            <HelpCircle size={14} className="text-amber-600" />
-                            Select Reason / Observation (Interview Type: {editForm.interview_type || "Technical"})
-                          </label>
-                          <select
-                            onChange={(e) => {
-                              const reason = e.target.value;
-                              if (reason && !reason.startsWith("--")) {
-                                const newFb = editForm.feedback ? `${editForm.feedback}\nNote: ${reason}` : reason;
-                                setEditForm((prev) => ({ ...prev, feedback: newFb }));
-                              }
-                            }}
-                            className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
-                          >
-                            {feedbackQuestionOptions.map((opt, i) => (
-                              <option key={i} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Interviewer Feedback Comments</label>
-                        <textarea
-                          rows={2}
-                          value={editForm.feedback}
-                          onChange={(e) => setEditForm({ ...editForm, feedback: e.target.value })}
-                          placeholder="Provide round assessment, strengths, technical comments..."
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Interviewer Strengths</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. React, Problem Solving"
-                            value={editForm.strengths}
-                            onChange={(e) => setEditForm({ ...editForm, strengths: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 mb-1 font-semibold">Interviewer Weaknesses</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. System Design edge cases"
-                            value={editForm.weaknesses}
-                            onChange={(e) => setEditForm({ ...editForm, weaknesses: e.target.value })}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Location & Verification Box */}
-                    <div className="bg-emerald-50/40 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                      <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs border-b border-emerald-200 pb-2">
-                        <MapPin size={15} />
-                        <span>Location & HR Verification</span>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <MapPin size={12} className="text-emerald-600" /> Interview Location
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Bangalore Office"
-                          value={editForm.interview_location || editForm.location}
-                          onChange={(e) => setEditForm({ ...editForm, interview_location: e.target.value, location: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <ShieldCheck size={12} className="text-emerald-600" /> HR Verification
-                        </label>
-                        <select
-                          value={editForm.hr_call_verification}
-                          onChange={(e) => setEditForm({ ...editForm, hr_call_verification: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                        >
-                          <option value="Verified">✅ Verified</option>
-                          <option value="Pending">⏳ Pending</option>
-                          <option value="Needs Followup">📞 Followup</option>
-                          <option value="Not Eligible">❌ Not Eligible</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* RIGHT COLUMN: CANDIDATE REQUESTS, CLIENT FEEDBACK & DOCUMENTS/NOTES */}
-                <div className="space-y-5">
-                  {/* SECTION 4: CANDIDATE REQUESTED SCHEDULE, WORK ROLE, COMPENSATION & OUTCOME */}
-                  <div className="bg-amber-50/40 border border-amber-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center gap-2 text-amber-800 font-bold text-xs border-b border-amber-200 pb-2">
-                      <DollarSign size={15} />
-                      <span>Candidate Requests, Compensation & Selection Outcome</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Calendar size={12} className="text-amber-700" /> Requested Date
-                        </label>
-                        <input
-                          type="date"
-                          value={editForm.candidate_requested_date}
-                          onChange={(e) => setEditForm({ ...editForm, candidate_requested_date: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Clock size={12} className="text-amber-700" /> Requested Time
-                        </label>
-                        <input
-                          type="time"
-                          value={editForm.candidate_requested_time}
-                          onChange={(e) => setEditForm({ ...editForm, candidate_requested_time: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Briefcase size={12} className="text-amber-700" /> Requested Role
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Lead Backend"
-                          value={editForm.candidate_requested_role}
-                          onChange={(e) => setEditForm({ ...editForm, candidate_requested_role: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <DollarSign size={12} className="text-amber-700" /> Salary Requested
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 15 LPA"
-                          value={editForm.salary_requested}
-                          onChange={(e) => setEditForm({ ...editForm, salary_requested: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <TrendingUp size={12} className="text-emerald-600" /> Final Fit Salary
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 14 LPA"
-                          value={editForm.final_fit_salary}
-                          onChange={(e) => setEditForm({ ...editForm, final_fit_salary: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-emerald-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                          <Calendar size={12} className="text-amber-700" /> Joining Date
-                        </label>
-                        <input
-                          type="date"
-                          value={editForm.joining_date}
-                          onChange={(e) => setEditForm({ ...editForm, joining_date: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Candidate Selection Decision Status */}
-                    <div className="pt-1">
-                      <label className="block text-amber-800 mb-1 font-bold flex items-center gap-1 text-xs">
-                        🏆 Selection Outcome Status
-                      </label>
-                      <select
-                        value={editForm.recommendation}
-                        onChange={(e) => setEditForm({ ...editForm, recommendation: e.target.value })}
-                        className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2 text-amber-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-xs cursor-pointer"
-                      >
-                        <option value="Selected">🟢 Selected (Approved for Hiring)</option>
-                        <option value="Rejected">🔴 Rejected (Not Suitable)</option>
-                        <option value="Pending">🟡 Pending Decision</option>
-                        <option value="Hold">🟣 On Hold</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* CLIENT FEEDBACK CARD IN EDIT MODAL */}
-                  <div className="bg-teal-50/40 border border-teal-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center gap-2 text-teal-800 font-bold text-xs border-b border-teal-200 pb-2">
-                      <Building2 size={15} />
-                      <span>Client Feedback Option Details</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Name / Evaluator</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Acme Corp / John Client"
-                          value={editForm.client_name}
-                          onChange={(e) => setEditForm({ ...editForm, client_name: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Feedback Date</label>
-                        <input
-                          type="date"
-                          value={editForm.client_feedback_date}
-                          onChange={(e) => setEditForm({ ...editForm, client_feedback_date: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Rating (1-5)</label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="1"
-                          max="5"
-                          value={editForm.client_rating}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            const outcome = getAutoRatingOutcome(val);
-                            setEditForm({
-                              ...editForm,
-                              client_rating: val,
-                              client_recommendation: outcome.clientRecommendation,
-                            });
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Outcome</label>
-                        <select
-                          value={editForm.client_recommendation}
-                          onChange={(e) => setEditForm({ ...editForm, client_recommendation: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-teal-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-[11px] cursor-pointer"
-                        >
-                          {RECOMMENDATION_OPTIONS.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Conditional Reason Selection for Edit Client Rating (1 to 4.5 Stars) */}
-                    {editForm.client_rating <= 4.5 && (
-                      <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 my-2 animate-fadeIn">
-                        <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                          <HelpCircle size={14} className="text-amber-600" />
-                          Select Client Observation Reason (Interview Type: {editForm.interview_type || "Technical"})
-                        </label>
-                        <select
-                          onChange={(e) => {
-                            const reason = e.target.value;
-                            if (reason && !reason.startsWith("--")) {
-                              const newFb = editForm.client_feedback ? `${editForm.client_feedback}\nNote: ${reason}` : reason;
-                              setEditForm((prev) => ({ ...prev, client_feedback: newFb }));
-                            }
-                          }}
-                          className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-800 cursor-pointer"
-                        >
-                          {feedbackQuestionOptions.map((opt, i) => (
-                            <option key={i} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">Client Detailed Feedback</label>
-                      <textarea
-                        rows={2}
-                        value={editForm.client_feedback}
-                        onChange={(e) => setEditForm({ ...editForm, client_feedback: e.target.value })}
-                        placeholder="Enter client detailed feedback notes..."
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Strengths</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Domain knowledge, Team fit"
-                          value={editForm.client_strengths}
-                          onChange={(e) => setEditForm({ ...editForm, client_strengths: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 mb-1 font-semibold">Client Weaknesses</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Notice period too long"
-                          value={editForm.client_weaknesses}
-                          onChange={(e) => setEditForm({ ...editForm, client_weaknesses: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold">Client Specific Notes</label>
-                      <textarea
-                        rows={2}
-                        value={editForm.client_notes}
-                        onChange={(e) => setEditForm({ ...editForm, client_notes: e.target.value })}
-                        placeholder="Special client notes, rate negotiations, internal comments..."
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* SECTION 5: DOCUMENTS & UPLOAD & NOTES */}
-                  <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-rose-200 pb-2">
-                      <div className="flex items-center gap-2 text-rose-700 font-bold text-xs">
-                        <FileText size={15} />
-                        <span>Interview Documents & Notes</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-slate-700 font-semibold flex items-center gap-1">
-                          <FileText size={12} className="text-rose-600" /> Attached Document Files
-                        </label>
-                        <label className={`inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingEditFile ? "opacity-60 pointer-events-none" : ""}`}>
-                          {isUploadingEditFile ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin text-slate-600" />
-                              <span>Uploading to S3...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Upload size={13} />
-                              <span>Browse / Attach</span>
-                            </>
-                          )}
-                          <input
-                            type="file"
-                            multiple
-                            onChange={handleEditFileUpload}
-                            disabled={isUploadingEditFile}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-
-                      <textarea
-                        rows={2}
-                        value={editForm.interview_document_files}
-                        onChange={(e) => setEditForm({ ...editForm, interview_document_files: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono text-[11px]"
-                        placeholder="Document names or URLs (one per line)..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                        <AlignLeft size={12} className="text-rose-600" /> Notes / Special Instructions
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={editForm.notes}
-                        onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                        placeholder="Key assessment areas, prep notes..."
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Action Buttons Footer */}
-              <div className="flex justify-end items-center gap-4 pt-4 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsEditOpen(false)}
-                  className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-200 font-bold transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95"
-                >
-                  {actionLoading ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      <span>Saving Changes...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save size={16} />
-                      <span>Save Interview Details</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* RESCHEDULE MODAL */}
-      {isRescheduleOpen && selectedInterview && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-3 sm:p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200/90 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-900">
-
-            {/* Modal Header (Fixed at top) */}
-            <div className="px-6 py-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-slate-200 flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl shadow-md">
-                  <Calendar size={20} />
-                </div>
-                <div>
-                  <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                    Reschedule Interview Session
-                    <span className="bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full">
-                      Round {selectedInterview.round_number || 1}
-                    </span>
-                  </h2>
-                  <p className="text-[11px] text-slate-500 font-medium">Update scheduled date, time, and notify all stakeholders via email</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsRescheduleOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Scrollable Form Body (Flexible middle) */}
-            <form id="reschedule-form" onSubmit={handleRescheduleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs scrollbar-thin">
-
-              {/* TIME SLOT CONFLICT WARNING BANNER */}
-              {conflictWarning && (
-                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
-                  <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block text-amber-950">Schedule Time Slot Warning</span>
-                    <p className="font-medium mt-0.5 text-amber-900">{conflictWarning}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Candidate & Session Banner Card (Full Width) */}
-              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-3.5 shadow-md border border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 font-black text-sm flex items-center justify-center shadow-xs">
-                    {selectedInterview.candidate_name ? selectedInterview.candidate_name.charAt(0).toUpperCase() : "C"}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-extrabold text-sm text-white">{selectedInterview.candidate_name}</h3>
-                      <span className="bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        {selectedInterview.interview_type}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 font-medium mt-0.5">Job Role: <span className="text-white font-bold">{selectedInterview.job_title}</span></p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 bg-amber-950/70 border border-amber-700/50 px-3 py-1 rounded-xl text-[11px] text-slate-200">
-                  <span className="text-slate-400 font-medium">Current Schedule:</span>
-                  <span className="font-extrabold text-amber-400">📅 {selectedInterview.scheduled_date} at {formatTimeTo12Hour(selectedInterview.scheduled_time)}</span>
-                </div>
-              </div>
-
-              {/* 2-COLUMN WIDE GRID */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                {/* LEFT COLUMN: RESCHEDULE TIME & REASON */}
-                <div className="space-y-3.5 bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl">
-                  <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-                    <Calendar size={14} className="text-amber-600" /> New Session Schedule
-                  </span>
-
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block text-slate-800 mb-1 font-bold">New Date <span className="text-rose-500">*</span></label>
-                      <input
-                        type="date"
-                        value={rescheduleForm.scheduled_date}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setRescheduleForm((prev) => ({ ...prev, scheduled_date: val }));
-                          if (selectedInterview) {
-                            checkScheduleTimeConflict({
-                              scheduled_date: val,
-                              scheduled_time: rescheduleForm.scheduled_time,
-                              interviewer_id: selectedInterview.interviewer_id,
-                              interviewer_name: selectedInterview.interviewer_name,
-                              client_id: selectedInterview.client_id,
-                              client_name: selectedInterview.client_name,
-                              interviewers: selectedInterview.interviewers,
-                              clients: selectedInterview.clients,
-                              exclude_interview_id: selectedInterview.id,
-                            });
-                          }
-                        }}
-                        onBlur={() => {
-                          if (selectedInterview && rescheduleForm.scheduled_date && rescheduleForm.scheduled_time) {
-                            checkScheduleTimeConflict({
-                              scheduled_date: rescheduleForm.scheduled_date,
-                              scheduled_time: rescheduleForm.scheduled_time,
-                              interviewer_id: selectedInterview.interviewer_id,
-                              interviewer_name: selectedInterview.interviewer_name,
-                              client_id: selectedInterview.client_id,
-                              client_name: selectedInterview.client_name,
-                              interviewers: selectedInterview.interviewers,
-                              clients: selectedInterview.clients,
-                              exclude_interview_id: selectedInterview.id,
-                            });
-                          }
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-800 mb-1 font-bold">New Time <span className="text-rose-500">*</span></label>
-                      <input
-                        type="time"
-                        value={rescheduleForm.scheduled_time}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setRescheduleForm((prev) => ({ ...prev, scheduled_time: val }));
-                          if (selectedInterview) {
-                            checkScheduleTimeConflict({
-                              scheduled_date: rescheduleForm.scheduled_date,
-                              scheduled_time: val,
-                              interviewer_id: selectedInterview.interviewer_id,
-                              interviewer_name: selectedInterview.interviewer_name,
-                              client_id: selectedInterview.client_id,
-                              client_name: selectedInterview.client_name,
-                              interviewers: selectedInterview.interviewers,
-                              clients: selectedInterview.clients,
-                              exclude_interview_id: selectedInterview.id,
-                            });
-                          }
-                        }}
-                        onBlur={() => {
-                          if (selectedInterview && rescheduleForm.scheduled_date && rescheduleForm.scheduled_time) {
-                            checkScheduleTimeConflict({
-                              scheduled_date: rescheduleForm.scheduled_date,
-                              scheduled_time: rescheduleForm.scheduled_time,
-                              interviewer_id: selectedInterview.interviewer_id,
-                              interviewer_name: selectedInterview.interviewer_name,
-                              client_id: selectedInterview.client_id,
-                              client_name: selectedInterview.client_name,
-                              interviewers: selectedInterview.interviewers,
-                              clients: selectedInterview.clients,
-                              exclude_interview_id: selectedInterview.id,
-                            });
-                          }
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-800 mb-1 font-bold">Reason for Rescheduling</label>
-                    <textarea
-                      rows={2}
-                      value={rescheduleForm.reason}
-                      onChange={(e) => setRescheduleForm({ ...rescheduleForm, reason: e.target.value })}
-                      placeholder="e.g. Candidate requested time change due to schedule conflict..."
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all resize-none text-xs"
-                    />
-                  </div>
-                </div>
-
-                {/* RIGHT COLUMN: EMAIL NOTIFICATION & RECIPIENTS */}
-                <div className="space-y-3.5 bg-indigo-50/60 border border-indigo-200/80 p-4 rounded-2xl flex flex-col justify-between">
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wider">
-                        <Mail size={14} className="text-indigo-600" /> Reschedule Meeting Email
-                      </span>
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={rescheduleForm.send_email_notification}
-                          onChange={(e) => setRescheduleForm({ ...rescheduleForm, send_email_notification: e.target.checked })}
-                          className="rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-                        />
-                        <span className="text-[11px] font-extrabold text-indigo-900">Send Email</span>
-                      </label>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 font-medium leading-relaxed bg-white/80 border border-indigo-100 p-2 rounded-xl">
-                      An updated interview invitation email with the new date, time, and meeting details will automatically be dispatched.
-                    </p>
-
-                    {rescheduleForm.send_email_notification && (
-                      <div className="space-y-2.5 pt-1 animate-in fade-in duration-200">
-                        {/* CANDIDATE RECIPIENT FIELDS */}
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Candidate Email Recipient</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">Candidate Name</label>
-                              <input
-                                type="text"
-                                placeholder="Candidate Name"
-                                value={rescheduleForm.candidate_name}
-                                onChange={(e) => setRescheduleForm({ ...rescheduleForm, candidate_name: e.target.value })}
-                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">Candidate Email *</label>
-                              <input
-                                type="email"
-                                required
-                                placeholder="candidate@example.com"
-                                value={rescheduleForm.candidate_email}
-                                onChange={(e) => setRescheduleForm({ ...rescheduleForm, candidate_email: e.target.value })}
-                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* INTERVIEWER & CLIENT PANEL RECIPIENT INDIVIDUAL CARDS */}
-                        <div className="space-y-1.5 pt-1.5 border-t border-slate-200/80">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                              Interviewer & Client Panel Recipients
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setReschedulePanelRecipients((prev) => [
-                                  ...prev,
-                                  { send: true, name: `Panel Member ${prev.length + 1}`, email: "", type: "Interviewer" },
-                                ])
-                              }
-                              className="text-[11px] font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
-                            >
-                              + Add Recipient
-                            </button>
-                          </div>
-
-                          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                            {reschedulePanelRecipients.map((rec, idx) => (
-                              <div key={idx} className="bg-white border border-slate-200 rounded-xl p-2 space-y-1 shadow-2xs">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={rec.send}
-                                      onChange={(e) => {
-                                        const updated = [...reschedulePanelRecipients];
-                                        updated[idx].send = e.target.checked;
-                                        setReschedulePanelRecipients(updated);
-                                      }}
-                                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
-                                    />
-                                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${rec.type === "Client"
-                                      ? "bg-teal-50 border border-teal-200 text-teal-700"
-                                      : "bg-indigo-50 border border-indigo-200 text-indigo-700"
-                                      }`}>
-                                      {rec.type}
-                                    </span>
-                                  </div>
-                                  {reschedulePanelRecipients.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setReschedulePanelRecipients((prev) => prev.filter((_, i) => i !== idx))}
-                                      className="text-rose-500 hover:text-rose-700 text-[10px] font-bold cursor-pointer"
-                                    >
-                                      Remove
-                                    </button>
-                                  )}
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div>
-                                    <input
-                                      type="text"
-                                      placeholder="Recipient Name"
-                                      value={rec.name}
-                                      onChange={(e) => {
-                                        const updated = [...reschedulePanelRecipients];
-                                        updated[idx].name = e.target.value;
-                                        setReschedulePanelRecipients(updated);
-                                      }}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900 focus:bg-white focus:outline-none"
-                                    />
-                                  </div>
-                                  <div>
-                                    <input
-                                      type="email"
-                                      placeholder="recipient@company.com"
-                                      value={rec.email}
-                                      onChange={(e) => {
-                                        const updated = [...reschedulePanelRecipients];
-                                        updated[idx].email = e.target.value;
-                                        setReschedulePanelRecipients(updated);
-                                      }}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-900 focus:bg-white focus:outline-none"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            </form>
-
-            {/* Modal Footer Actions (Fixed at bottom of modal) */}
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end items-center gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsRescheduleOpen(false)}
-                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-100 font-bold transition-all text-xs cursor-pointer shadow-2xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="reschedule-form"
-                disabled={actionLoading}
-                className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-amber-600 via-amber-500 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold shadow-md shadow-amber-500/20 transition-all text-xs cursor-pointer disabled:opacity-50 active:scale-95"
-              >
-                {actionLoading ? (
-                  <>
-                    <RefreshCw size={14} className="animate-spin" />
-                    <span>Rescheduling & Sending Email...</span>
-                  </>
-                ) : (
-                  <>
-                    <Calendar size={14} />
-                    <span>Reschedule & Send Update Email</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* RATING & FEEDBACK MODAL (PREMIUM ENTERPRISE SAAS DASHBOARD) */}
-      {isFeedbackOpen && selectedInterview && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 md:p-4 font-sans animate-in fade-in duration-300">
-          <div className="bg-slate-50 border border-slate-200/80 rounded-3xl w-full max-w-[98vw] h-[95vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-900">
-
-            {/* 1. TOP WORKSPACE STICKY HEADER (SINGLE HORIZONTAL ROW) */}
-            <header className="flex flex-nowrap items-center justify-between gap-3 px-5 py-2.5 bg-white/90 backdrop-blur-md border-b border-slate-200/80 flex-shrink-0 sticky top-0 z-20">
-              {/* Left Profile Details (Single Row) */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 text-white font-black text-sm flex items-center justify-center shadow-xs flex-shrink-0">
-                  {selectedInterview.candidate_name ? selectedInterview.candidate_name.charAt(0).toUpperCase() : "C"}
-                </div>
-
-                <div className="flex flex-col justify-center min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-extrabold text-slate-900 tracking-tight whitespace-nowrap leading-tight">
-                      {selectedInterview.candidate_name}
-                    </h2>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${feedbackAiRecommendation === "Strong Hire" || feedbackAiRecommendation === "Selected"
-                      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                      : feedbackAiRecommendation === "Hire"
-                        ? "bg-teal-50 border-teal-200 text-teal-700"
-                        : "bg-amber-50 border-amber-200 text-amber-700"
-                      }`}>
-                      {feedbackAiRecommendation} ({feedbackAiScore}/100)
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full whitespace-nowrap">
-                      {selectedInterview.job_title} ({selectedInterview.interview_type} - R{selectedInterview.round_number})
-                    </span>
-                    <span className="bg-slate-100 border border-slate-200/80 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1">
-                      <Calendar size={11} className="text-slate-500" />
-                      {selectedInterview.scheduled_date} at {selectedInterview.scheduled_time}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Tab Switcher & Actions (Single Row) */}
-              <div className="flex items-center gap-2.5 flex-shrink-0">
-                {isClientUser ? (
-                  <div className="px-3 py-1 bg-teal-50 border border-teal-200 text-teal-700 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-2xs">
-                    <Building2 size={14} />
-                    <span>Client Evaluator Feedback</span>
-                  </div>
-                ) : isInterviewerUser ? (
-                  <div className="px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-2xs">
-                    <UserCheck size={14} />
-                    <span>Panel Interviewer Feedback</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center p-0.5 bg-slate-100/80 rounded-xl border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setFeedbackTab("INTERVIEWER")}
-                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${feedbackTab === "INTERVIEWER"
-                        ? "bg-white text-indigo-700 shadow-xs border border-slate-200/80"
-                        : "text-slate-600 hover:text-slate-900"
-                        }`}
-                    >
-                      <UserCheck size={14} />
-                      Panel Interviewers
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setFeedbackTab("CLIENT")}
-                      className={`px-3 py-1 rounded-lg font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${feedbackTab === "CLIENT"
-                        ? "bg-white text-teal-700 shadow-xs border border-slate-200/80"
-                        : "text-slate-600 hover:text-slate-900"
-                        }`}
-                    >
-                      <Building2 size={14} />
-                      Client Evaluators
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2 border-l border-slate-200 pl-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsFeedbackOpen(false)}
-                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 rounded-lg font-extrabold transition-all cursor-pointer text-xs"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => alert("Draft saved locally!")}
-                    className="px-3 py-1 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg font-extrabold transition-all cursor-pointer text-xs shadow-xs"
-                  >
-                    Save Draft
-                  </button>
-
-                  <button
-                    type="submit"
-                    form="interview-feedback-form"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleFeedbackSubmit(e as any);
-                    }}
-                    disabled={actionLoading}
-                    className="flex items-center gap-1.5 px-3.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white rounded-lg font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95 text-xs"
-                  >
-                    {actionLoading ? (
-                      <>
-                        <RefreshCw size={13} className="animate-spin" />
-                        <span>Submitting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={13} />
-                        <span>Save & Submit Feedback</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsFeedbackOpen(false)}
-                  className="text-slate-400 hover:text-slate-800 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer shadow-xs"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </header>
-
-            {/* 2. MAIN DASHBOARD CONTENT AREA */}
-            <form id="interview-feedback-form" onSubmit={handleFeedbackSubmit} className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col justify-between space-y-6">
-
-              {/* 3-COLUMN WORKSPACE GRID */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-                {/* LEFT SIDEBAR NAVIGATION (2 COLS) */}
-                <div className="lg:col-span-2 hidden lg:block space-y-1.5 sticky top-0 self-start">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 block mb-2">
-                    Evaluation Workspace
-                  </span>
-
-                  {!isClientUser && (
-                    <a
-                      href="#sec-interviewer"
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                    >
-                      <UserCheck size={15} className="text-indigo-600" />
-                      <span>Panel Feedback</span>
-                    </a>
-                  )}
-
-                  {isClientUser && (
-                    <a
-                      href="#sec-interviewer"
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-teal-600 border border-transparent hover:border-slate-200/80 transition-all"
-                    >
-                      <Building2 size={15} className="text-teal-600" />
-                      <span>Client Feedback</span>
-                    </a>
-                  )}
-
-                  <a
-                    href="#sec-skills"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                  >
-                    <Star size={15} className="text-amber-500" />
-                    <span>Skill Assessment</span>
-                  </a>
-
-                  <a
-                    href="#sec-compensation"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                  >
-                    <DollarSign size={15} className="text-emerald-600" />
-                    <span>Compensation & Role</span>
-                  </a>
-
-                  <a
-                    href="#sec-documents"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                  >
-                    <FileText size={15} className="text-rose-600" />
-                    <span>Documents & Notes</span>
-                  </a>
-                </div>
-
-                {/* MAIN CONTENT AREA (7 COLS) */}
-                <div className="lg:col-span-7 space-y-6">
-
-                  {/* PANEL INTERVIEWER / CLIENT CARDS SECTION */}
-                  <div id="sec-interviewer" className="space-y-4">
-                    {feedbackTab === "INTERVIEWER" && (
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
-                          <div className="flex items-center gap-2.5">
-                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                              <UserCheck size={18} />
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-extrabold text-slate-900">Panel Interviewers Evaluation</h3>
-                              <p className="text-[11px] text-slate-500 font-medium">Record individual ratings & observations</p>
-                            </div>
-                          </div>
-                          {!isInterviewerUser && (
-                            <button
-                              type="button"
-                              onClick={handleAddFeedbackInterviewer}
-                              className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
-                            >
-                              <Plus size={14} /> Add Interviewer
-                            </button>
-                          )}
-                        </div>
-
-                        {feedbackInterviewersList.map((interviewer, idx) => (
-                          <div key={idx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-indigo-200 transition-all">
-                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center">
-                                  {interviewer.interviewer_name ? interviewer.interviewer_name.charAt(0).toUpperCase() : "I"}
-                                </div>
-                                <span className="font-extrabold text-slate-900 text-sm">Interviewer #{idx + 1}</span>
-                              </div>
-                              {!isInterviewerUser && feedbackInterviewersList.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveFeedbackInterviewer(idx)}
-                                  className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Trash2 size={13} /> Remove
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
-                                <select
-                                  value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === "custom" || !val) {
-                                      handleFeedbackInterviewerItemChange(idx, "interviewer_id", undefined);
-                                    } else {
-                                      const u = systemUsers.find((user) => user.id === val);
-                                      if (u) {
-                                        handleFeedbackInterviewerItemChange(idx, "interviewer_id", u.id);
-                                        handleFeedbackInterviewerItemChange(idx, "interviewer_name", u.full_name);
-                                        handleFeedbackInterviewerItemChange(idx, "interviewer_email", u.email);
-                                      }
-                                    }
-                                  }}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
-                                >
-                                  <option value="">-- Choose Registered User --</option>
-                                  {systemUsers.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.full_name} ({u.role || u.email})
-                                    </option>
-                                  ))}
-                                  <option value="custom">+ External / Custom</option>
-                                </select>
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Name *</label>
-                                <input
-                                  type="text"
-                                  value={interviewer.interviewer_name}
-                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_name", e.target.value)}
-                                  placeholder="Interviewer Name"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Email</label>
-                                <input
-                                  type="email"
-                                  value={interviewer.interviewer_email || ""}
-                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "interviewer_email", e.target.value)}
-                                  placeholder="interviewer@company.com"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Rating (1-5)</label>
-                                <input
-                                  type="number"
-                                  step="0.5"
-                                  min="1"
-                                  max="5"
-                                  value={interviewer.rating || 1}
-                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "rating", Number(e.target.value))}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Outcome Recommendation</label>
-                                <select
-                                  value={interviewer.recommendation || "Selected"}
-                                  onChange={(e) => handleFeedbackInterviewerItemChange(idx, "recommendation", e.target.value)}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-emerald-700 focus:bg-white focus:outline-none cursor-pointer"
-                                >
-                                  {RECOMMENDATION_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>{opt}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Conditional Multiple-Selection Observation Reasons Dropdown for Interviewer Rating < 5 */}
-                            {(interviewer.rating ?? 0) < 5 && (
-                              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
-                                <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                                  <HelpCircle size={14} className="text-amber-600" />
-                                  Select Observations for Rating below 5/5 (Interview Type: {selectedInterview.interview_type})
-                                </label>
-                                <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 space-y-2">
-                                  {feedbackQuestionOptions
-                                    .filter(opt => opt && !opt.startsWith("--"))
-                                    .map((opt, optIdx) => {
-                                      const isChecked = interviewer.feedback?.includes(opt);
-                                      return (
-                                        <label key={optIdx} className="flex items-start gap-2.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
-                                          <input
-                                            type="checkbox"
-                                            checked={isChecked}
-                                            onChange={(e) => {
-                                              let currentFeedback = interviewer.feedback || "";
-                                              if (e.target.checked) {
-                                                if (!currentFeedback.includes(opt)) {
-                                                  currentFeedback = currentFeedback ? `${currentFeedback}\n- ${opt}` : `- ${opt}`;
-                                                }
-                                              } else {
-                                                currentFeedback = currentFeedback
-                                                  .replace(new RegExp(`\\n?- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g'), "")
-                                                  .replace(new RegExp(`- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\n?`, 'g'), "")
-                                                  .trim();
-                                              }
-                                              handleFeedbackInterviewerItemChange(idx, "feedback", currentFeedback);
-                                            }}
-                                            className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                          />
-                                          <span>{opt}</span>
-                                        </label>
-                                      );
-                                    })}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* SELECTABLE OBSERVATION CHIPS */}
-                            <div className="space-y-1.5">
-                              <label className="text-[11px] font-bold text-slate-600 block">Quick Observation Reasons (Click to append)</label>
-                              <div className="flex flex-wrap gap-1.5">
-                                {["Technical Skills", "Communication", "System Design", "Problem Solving", "Architecture", "Culture Fit", "Behavior"].map((chip, cIdx) => (
-                                  <button
-                                    key={cIdx}
-                                    type="button"
-                                    onClick={() => {
-                                      const newFb = interviewer.feedback ? `${interviewer.feedback}\nObservation: ${chip}` : chip;
-                                      handleFeedbackInterviewerItemChange(idx, "feedback", newFb);
-                                    }}
-                                    className="bg-slate-100 hover:bg-indigo-50 hover:border-indigo-300 border border-slate-200 text-slate-700 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all cursor-pointer"
-                                  >
-                                    + {chip}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Strengths (Comma-separated)</label>
-                                <input
-                                  type="text"
-                                  value={interviewer.strengths ? (Array.isArray(interviewer.strengths) ? interviewer.strengths.join(", ") : interviewer.strengths) : ""}
-                                  onChange={(e) => {
-                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                    handleFeedbackInterviewerItemChange(idx, "strengths", list);
-                                  }}
-                                  placeholder="e.g. Problem Solving, React"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Weaknesses / Areas for Improvement</label>
-                                <input
-                                  type="text"
-                                  value={interviewer.weaknesses ? (Array.isArray(interviewer.weaknesses) ? interviewer.weaknesses.join(", ") : interviewer.weaknesses) : ""}
-                                  onChange={(e) => {
-                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                    handleFeedbackInterviewerItemChange(idx, "weaknesses", list);
-                                  }}
-                                  placeholder="e.g. System Design edge cases"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-xs font-bold text-slate-700 mb-1">Interviewer Round Feedback Comments</label>
-                              <textarea
-                                rows={2}
-                                value={interviewer.feedback || ""}
-                                onChange={(e) => handleFeedbackInterviewerItemChange(idx, "feedback", e.target.value)}
-                                placeholder="Provide technical evaluation feedback..."
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none resize-none"
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {feedbackTab === "CLIENT" && (
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
-                          <div className="flex items-center gap-2.5">
-                            <div className="p-2 bg-teal-50 text-teal-600 rounded-xl">
-                              <Building2 size={18} />
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-extrabold text-slate-900">Client Panel Evaluators</h3>
-                              <p className="text-[11px] text-slate-500 font-medium">Manage client team feedback</p>
-                            </div>
-                          </div>
-                          {!isClientUser && (
-                            <button
-                              type="button"
-                              onClick={handleAddFeedbackClient}
-                              className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-sm active:scale-95"
-                            >
-                              <Plus size={14} /> Add Client Evaluator
-                            </button>
-                          )}
-                        </div>
-
-                        {feedbackClientsList.map((client, idx) => (
-                          <div key={idx} className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm relative hover:border-teal-200 transition-all">
-                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-xs flex items-center justify-center">
-                                  {client.client_name ? client.client_name.charAt(0).toUpperCase() : "C"}
-                                </div>
-                                <span className="font-extrabold text-slate-900 text-sm">Client Evaluator #{idx + 1}</span>
-                              </div>
-                              {!isClientUser && feedbackClientsList.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveFeedbackClient(idx)}
-                                  className="text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Trash2 size={13} /> Remove
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Select Registered User</label>
-                                <select
-                                  value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === "custom" || !val) {
-                                      handleFeedbackClientItemChange(idx, "client_id", undefined);
-                                    } else {
-                                      const u = systemUsers.find((user) => user.id === val);
-                                      if (u) {
-                                        handleFeedbackClientItemChange(idx, "client_id", u.id);
-                                        handleFeedbackClientItemChange(idx, "client_name", u.full_name);
-                                        handleFeedbackClientItemChange(idx, "client_email", u.email);
-                                      }
-                                    }
-                                  }}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
-                                >
-                                  <option value="">-- Choose Registered User --</option>
-                                  {systemUsers.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.full_name} ({u.role || u.email})
-                                    </option>
-                                  ))}
-                                  <option value="custom">+ External / Custom</option>
-                                </select>
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Name / Company</label>
-                                <input
-                                  type="text"
-                                  value={client.client_name}
-                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_name", e.target.value)}
-                                  placeholder="Client Evaluator Name"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Email</label>
-                                <input
-                                  type="email"
-                                  value={client.client_email || ""}
-                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_email", e.target.value)}
-                                  placeholder="client@company.com"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Rating (1-5)</label>
-                                <input
-                                  type="number"
-                                  step="0.5"
-                                  min="1"
-                                  max="5"
-                                  value={client.client_rating || 1}
-                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_rating", Number(e.target.value))}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Recommendation</label>
-                                <select
-                                  value={client.client_recommendation || "Selected"}
-                                  onChange={(e) => handleFeedbackClientItemChange(idx, "client_recommendation", e.target.value)}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-teal-700 focus:bg-white focus:outline-none cursor-pointer"
-                                >
-                                  {RECOMMENDATION_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>{opt}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Conditional Multiple-Selection Observation Reasons Dropdown for Client Rating < 5 */}
-                            {(client.client_rating ?? 0) < 5 && (
-                              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 animate-fadeIn">
-                                <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                                  <HelpCircle size={14} className="text-amber-600" />
-                                  Select Observations for Client Rating below 5/5 (Interview Type: {selectedInterview.interview_type})
-                                </label>
-                                <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 space-y-2">
-                                  {feedbackQuestionOptions
-                                    .filter(opt => opt && !opt.startsWith("--"))
-                                    .map((opt, optIdx) => {
-                                      const isChecked = client.client_feedback?.includes(opt);
-                                      return (
-                                        <label key={optIdx} className="flex items-start gap-2.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
-                                          <input
-                                            type="checkbox"
-                                            checked={isChecked}
-                                            onChange={(e) => {
-                                              let currentFeedback = client.client_feedback || "";
-                                              if (e.target.checked) {
-                                                if (!currentFeedback.includes(opt)) {
-                                                  currentFeedback = currentFeedback ? `${currentFeedback}\n- ${opt}` : `- ${opt}`;
-                                                }
-                                              } else {
-                                                currentFeedback = currentFeedback
-                                                  .replace(new RegExp(`\\n?- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g'), "")
-                                                  .replace(new RegExp(`- ${opt.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\n?`, 'g'), "")
-                                                  .trim();
-                                              }
-                                              handleFeedbackClientItemChange(idx, "client_feedback", currentFeedback);
-                                            }}
-                                            className="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
-                                          />
-                                          <span>{opt}</span>
-                                        </label>
-                                      );
-                                    })}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Strengths (Comma-separated)</label>
-                                <input
-                                  type="text"
-                                  value={client.client_strengths ? (Array.isArray(client.client_strengths) ? client.client_strengths.join(", ") : client.client_strengths) : ""}
-                                  onChange={(e) => {
-                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                    handleFeedbackClientItemChange(idx, "client_strengths", list);
-                                  }}
-                                  placeholder="e.g. Domain depth, Communication"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Client Weaknesses / Areas for Improvement</label>
-                                <input
-                                  type="text"
-                                  value={client.client_weaknesses ? (Array.isArray(client.client_weaknesses) ? client.client_weaknesses.join(", ") : client.client_weaknesses) : ""}
-                                  onChange={(e) => {
-                                    const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                                    handleFeedbackClientItemChange(idx, "client_weaknesses", list);
-                                  }}
-                                  placeholder="e.g. English fluency"
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-xs font-bold text-slate-700 mb-1">Client Detailed Feedback</label>
-                              <textarea
-                                rows={2}
-                                value={client.client_feedback || ""}
-                                onChange={(e) => handleFeedbackClientItemChange(idx, "client_feedback", e.target.value)}
-                                placeholder="Enter client review comments..."
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none resize-none"
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* SKILL ASSESSMENT DASHBOARD SECTION */}
-                  <div id="sec-skills">
-                    <SkillRatingsEvaluation
-                      skillRatings={feedbackSkillRatings}
-                      onChangeSkills={setFeedbackSkillRatings}
-                      categoryScores={feedbackCategoryScores}
-                      onChangeCategoryScores={setFeedbackCategoryScores}
-                      onAiScoreCalculated={(score, rec) => {
-                        setFeedbackAiScore(score);
-                        setFeedbackAiRecommendation(rec);
-                      }}
-                      currentRoundNumber={selectedInterview?.round_number}
-                      currentInterviewType={selectedInterview?.interview_type}
-                      hrCallVerification={selectedInterview?.hr_call_verification}
-                      allRounds={interviews.filter((i) => i.candidate_id === selectedInterview?.candidate_id)}
-                      evaluatorName={currentUser?.full_name || (currentUser as any)?.name || ""}
-                    />
-                  </div>
-
-                  {/* COMPENSATION & ROLE KPI CARDS SECTION */}
-                  <div id="sec-compensation" className="space-y-4">
-                    <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
-                      <DollarSign size={18} className="text-emerald-600" />
-                      <h3 className="text-sm font-extrabold text-slate-900">Compensation & Role Details</h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* KPI Card 1: Requested Salary */}
-                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
-                        <span className="text-[11px] font-bold text-amber-800 flex items-center gap-1.5">
-                          <DollarSign size={14} className="text-amber-600" /> Requested Salary
-                        </span>
-                        <input
-                          type="text"
-                          value={feedbackForm.salary_requested}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, salary_requested: e.target.value })}
-                          placeholder="e.g. 50000"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-amber-700 focus:bg-white focus:outline-none"
-                        />
-                      </div>
-
-                      {/* KPI Card 2: Final Fit Salary */}
-                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
-                        <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
-                          <TrendingUp size={14} className="text-emerald-600" /> Final Fit Salary
-                        </span>
-                        <input
-                          type="text"
-                          value={feedbackForm.final_fit_salary}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, final_fit_salary: e.target.value })}
-                          placeholder="e.g. 45000"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-emerald-600 focus:bg-white focus:outline-none"
-                        />
-                      </div>
-
-                      {/* KPI Card 3: Requested Work Role */}
-                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
-                        <span className="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
-                          <Briefcase size={14} className="text-indigo-600" /> Requested Work Role
-                        </span>
-                        <input
-                          type="text"
-                          value={feedbackForm.candidate_requested_role}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, candidate_requested_role: e.target.value })}
-                          placeholder="e.g. Senior Tech Lead"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
-                        />
-                      </div>
-
-                      {/* KPI Card 4: Expected Joining Date */}
-                      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
-                        <span className="text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
-                          <Calendar size={14} className="text-indigo-600" /> Expected Joining Date
-                        </span>
-                        <input
-                          type="date"
-                          value={feedbackForm.joining_date}
-                          onChange={(e) => setFeedbackForm({ ...feedbackForm, joining_date: e.target.value })}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* DOCUMENTS & NOTES SECTION */}
-                  <div id="sec-documents" className="space-y-4">
-                    {/* CARD 1: SESSION & CANDIDATE ATTACHED DOCUMENTS */}
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div className="flex items-center gap-2">
-                          <FileText size={18} className="text-rose-600" />
-                          <h3 className="text-sm font-extrabold text-slate-900">Session & Candidate Attached Documents</h3>
-                        </div>
-                        <label className={`inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackFile ? "opacity-60 pointer-events-none" : ""}`}>
-                          {isUploadingFeedbackFile ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin text-indigo-600" />
-                              <span>Uploading to S3...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Upload size={13} />
-                              <span>Browse / Attach File</span>
-                            </>
-                          )}
-                          <input
-                            type="file"
-                            multiple
-                            onChange={handleFeedbackFileUpload}
-                            disabled={isUploadingFeedbackFile}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-
-                      {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
-                      {(() => {
-                        const attachedList = feedbackForm.interview_document_files
-                          ? Array.from(new Set(feedbackForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)))
-                          : [];
-                        if (attachedList.length === 0) return null;
-                        return (
-                          <div className="space-y-1.5 mb-2 mt-1">
-                            {attachedList.map((fileStr, idx) => {
-                              const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
-                              const rawName = fileStr.split("/").pop() || fileStr;
-                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
-                              return (
-                                <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
-                                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <FileText size={15} className="text-rose-600 shrink-0" />
-                                    <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
-                                      {displayName}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    {isUrl && (
-                                      <a
-                                        href={fileStr}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
-                                      >
-                                        <Eye size={13} />
-                                        <span>View</span>
-                                      </a>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = attachedList.filter((_, i) => i !== idx).join("\n");
-                                        setFeedbackForm((prev) => ({ ...prev, interview_document_files: updated }));
-                                      }}
-                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
-                                      title="Remove attachment"
-                                    >
-                                      <X size={14} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Attached files chips are displayed above, no raw link textarea */}
-                    </div>
-
-                    {/* CARD 2: NEW INTERVIEW FEEDBACK & EVALUATION REPORTS ATTACHMENT FIELD */}
-                    <div className="bg-amber-50/40 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b border-amber-200 pb-3">
-                        <div className="flex items-center gap-2 text-amber-900">
-                          <ShieldCheck size={18} className="text-amber-600" />
-                          <h3 className="text-sm font-extrabold">Interview Feedback & Round Assessment Reports</h3>
-                        </div>
-                        <label className={`inline-flex items-center gap-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs px-3.5 py-1.5 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingFeedbackReportFile ? "opacity-60 pointer-events-none" : ""}`}>
-                          {isUploadingFeedbackReportFile ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin text-amber-700" />
-                              <span>Uploading to S3...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Upload size={13} />
-                              <span>Browse / Attach Feedback File</span>
-                            </>
-                          )}
-                          <input
-                            type="file"
-                            multiple
-                            onChange={handleFeedbackReportFileUpload}
-                            disabled={isUploadingFeedbackReportFile}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-
-                      {/* FEEDBACK REPORT FILES CARDS WITH VIEW BUTTON */}
-                      {(() => {
-                        const feedbackReportList = feedbackForm.interview_feedback_files
-                          ? Array.from(new Set(feedbackForm.interview_feedback_files.split("\n").map((s) => s.trim()).filter(Boolean)))
-                          : [];
-                        if (feedbackReportList.length === 0) return null;
-                        return (
-                          <div className="space-y-1.5 mb-2 mt-1">
-                            {feedbackReportList.map((fileStr, idx) => {
-                              const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
-                              const rawName = fileStr.split("/").pop() || fileStr;
-                              const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
-                              return (
-                                <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-amber-200/90 rounded-xl px-3.5 py-2 shadow-2xs">
-                                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <FileText size={15} className="text-amber-600 shrink-0" />
-                                    <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
-                                      {displayName}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    {isUrl && (
-                                      <a
-                                        href={fileStr}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs px-3 py-1 rounded-lg font-bold transition-all shadow-2xs"
-                                      >
-                                        <Eye size={13} />
-                                        <span>View</span>
-                                      </a>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = feedbackReportList.filter((_, i) => i !== idx).join("\n");
-                                        setFeedbackForm((prev) => ({ ...prev, interview_feedback_files: updated }));
-                                      }}
-                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
-                                      title="Remove attachment"
-                                    >
-                                      <X size={14} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Feedback report file cards are displayed above, no raw link textarea */}
-                    </div>
-
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <AlignLeft size={16} className="text-indigo-600" /> Special Prep Notes & Instructions
-                      </span>
-                      <textarea
-                        rows={3}
-                        value={feedbackForm.notes}
-                        onChange={(e) => setFeedbackForm({ ...feedbackForm, notes: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none"
-                        placeholder="Enter candidate prep notes or internal evaluator instructions..."
-                      />
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* RIGHT FLOATING STICKY AI SUMMARY PANEL (3 COLS) */}
-                <div className="lg:col-span-3 space-y-5 sticky top-0 self-start">
-
-                  {/* STICKY AI DASHBOARD SCORE GAUGE CARD */}
-                  <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 shadow-xl space-y-4 border border-indigo-700/50">
-                    <div className="flex items-center justify-between border-b border-indigo-700/50 pb-3">
-                      <span className="text-xs font-extrabold text-indigo-200 flex items-center gap-1.5 uppercase tracking-wider">
-                        <Sparkles size={16} className="text-cyan-400" /> AI Evaluation Index
-                      </span>
-                      <span className="bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black px-2.5 py-0.5 rounded-full">
-                        {feedbackAiRecommendation}
-                      </span>
-                    </div>
-
-                    <div className="text-center py-2 space-y-1">
-                      <div className="text-4xl font-black tracking-tight text-white">
-                        {feedbackAiScore} <span className="text-sm font-bold text-indigo-300">/ 100</span>
-                      </div>
-                      <span className="text-[11px] text-indigo-200 font-semibold uppercase tracking-widest block">
-                        Live Weighted Score
-                      </span>
-                    </div>
-
-                    {/* LIVE METRICS SUMMARY LIST */}
-                    <div className="space-y-2 pt-2 border-t border-indigo-700/50 text-xs">
-                      <div className="flex justify-between items-center text-indigo-200">
-                        <span>Panel Interviewers:</span>
-                        <span className="font-bold text-white">{feedbackInterviewersList.length} Member(s)</span>
-                      </div>
-
-                      <div className="flex justify-between items-center text-indigo-200">
-                        <span>Client Evaluators:</span>
-                        <span className="font-bold text-white">{feedbackClientsList.length} Member(s)</span>
-                      </div>
-
-                      <div className="flex justify-between items-center text-indigo-200">
-                        <span>AI Hiring Readiness:</span>
-                        <span className="font-bold text-emerald-400">{feedbackAiRecommendation}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* DYNAMIC HIRING WORKFLOW STAGE PROGRESS CARD */}
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <Layers size={14} className="text-indigo-600" /> Hiring Stage Tracker
-                      </span>
-                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                        Round {selectedInterview.round_number || 1}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 text-xs">
-                      {/* HR Call Verification Status */}
-                      <div className={`flex items-center justify-between p-2.5 rounded-xl font-bold border transition-all ${selectedInterview.hr_call_verification === "Verified"
-                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                        : selectedInterview.hr_call_verification === "Not Eligible"
-                          ? "bg-rose-50 text-rose-800 border-rose-200"
-                          : "bg-amber-50 text-amber-800 border-amber-200"
-                        }`}>
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck size={15} className={selectedInterview.hr_call_verification === "Verified" ? "text-emerald-600" : "text-amber-600"} />
-                          <span>HR Screening</span>
-                        </div>
-                        <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-white/80 shadow-2xs">
-                          {selectedInterview.hr_call_verification || "Pending"}
-                        </span>
-                      </div>
-
-                      {/* Candidate Interview Rounds Progress List */}
-                      {(() => {
-                        const candidateRounds = interviews
-                          .filter((inv) => inv.candidate_id === selectedInterview.candidate_id)
-                          .sort((a, b) => (a.round_number || 1) - (b.round_number || 1));
-
-                        const roundsToDisplay = candidateRounds.length > 0 ? candidateRounds : [selectedInterview];
-
-                        return (
-                          <div className="space-y-1.5 pt-1">
-                            {roundsToDisplay.map((rnd) => {
-                              const isCurrent = rnd.id === selectedInterview.id;
-                              const isCompleted = rnd.status === "COMPLETED";
-                              const typeLabel = (rnd.interview_type || "TECHNICAL").replace(/_/g, " ");
-
-                              return (
-                                <div
-                                  key={rnd.id}
-                                  className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all ${isCurrent
-                                    ? "bg-indigo-50/90 text-indigo-900 font-extrabold border-2 border-indigo-500 shadow-2xs"
-                                    : isCompleted
-                                      ? "bg-slate-50 text-slate-700 font-semibold border border-slate-200"
-                                      : "bg-slate-50/60 text-slate-500 font-medium border border-slate-200"
-                                    }`}
-                                >
-                                  <div className="flex items-center gap-2 truncate max-w-[160px]">
-                                    {isCurrent ? (
-                                      <span className="relative flex h-2 w-2 shrink-0">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
-                                      </span>
-                                    ) : isCompleted ? (
-                                      <CheckCircle size={14} className="text-emerald-600 shrink-0" />
-                                    ) : (
-                                      <Clock size={14} className="text-slate-400 shrink-0" />
-                                    )}
-                                    <span className="truncate" title={`${typeLabel} R${rnd.round_number}`}>
-                                      {typeLabel} R{rnd.round_number}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    {isCurrent ? (
-                                      <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-indigo-600 text-white rounded-md">
-                                        Active Evaluation
-                                      </span>
-                                    ) : isCompleted ? (
-                                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
-                                        {rnd.recommendation || "Completed"}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] font-medium text-slate-500">
-                                        {rnd.status}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* DELETE CONFIRMATION MODAL */}
       {isDeleteOpen && selectedInterview && (
@@ -5539,556 +1250,18 @@ export default function InterviewManagement() {
         </div>
       )}
 
-      {/* SCHEDULE NEXT ROUND MODAL */}
-      {isNextRoundOpen && selectedInterview && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl relative text-slate-900">
-            {/* Header */}
-            <div className="flex justify-between items-start border-b border-slate-200 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-purple-600 rounded-2xl shadow-sm text-white">
-                  <Layers size={22} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900 tracking-wide">
-                      Schedule Next Interview Round
-                    </h2>
-                    <span className="bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                      Round {nextRoundForm.round_number}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Assign next round type, interviewer details & separate schedule time for {selectedInterview.candidate_name}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsNextRoundOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleNextRoundSubmit} className="space-y-5 text-xs">
-              {/* Candidate & Job Readonly Header Card */}
-              <div className="bg-purple-50/50 border border-purple-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">Candidate</span>
-                  <div className="text-sm font-bold text-slate-900">{nextRoundForm.candidate_name}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">Target Job Position</span>
-                  <div className="text-sm font-bold text-purple-800">{nextRoundForm.job_title}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">Previous Round</span>
-                  <div className="text-sm font-bold text-amber-700">Round {selectedInterview.round_number} ({selectedInterview.interview_type})</div>
-                </div>
-              </div>
-
-              {/* SECTION 1: ROUND SETUP & INTERVIEW TYPE */}
-              <div className="bg-purple-50/30 border border-purple-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                <div className="flex items-center gap-2 text-purple-700 font-bold text-xs border-b border-purple-200 pb-2">
-                  <Sparkles size={15} />
-                  <span>Next Round Setup & Format</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Next Round Number</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={nextRoundForm.round_number}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, round_number: Number(e.target.value) })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-purple-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Next Interview Type / Format</label>
-                    <select
-                      value={nextRoundForm.interview_type}
-                      onChange={(e) => handleNextRoundTypeChange(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                    >
-                      {interviewTypes && interviewTypes.length > 0 ? (
-                        interviewTypes.filter((t) => t.is_active !== false).map((t) => (
-                          <option key={t.id} value={t.code}>
-                            {t.name} ({t.code})
-                          </option>
-                        ))
-                      ) : (
-                        <option value="TECHNICAL">Technical Round</option>
-                      )}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Duration (Minutes)</label>
-                    <input
-                      type="number"
-                      step="15"
-                      min="15"
-                      value={nextRoundForm.duration_minutes}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, duration_minutes: Number(e.target.value) })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 2: SEPARATE SCHEDULE DATE & TIME */}
-              <div className="bg-sky-50/40 border border-sky-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                <div className="flex items-center gap-2 text-sky-700 font-bold text-xs border-b border-sky-200 pb-2">
-                  <Clock size={15} />
-                  <span>Next Round Separate Schedule Date & Time</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Calendar size={12} className="text-sky-600" /> Scheduled Date
-                    </label>
-                    <input
-                      type="date"
-                      value={nextRoundForm.scheduled_date}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, scheduled_date: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold flex items-center gap-1">
-                      <Clock size={12} className="text-sky-600" /> Scheduled Time
-                    </label>
-                    <input
-                      type="time"
-                      value={nextRoundForm.scheduled_time}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, scheduled_time: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Timezone</label>
-                    <input
-                      type="text"
-                      value={nextRoundForm.timezone}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, timezone: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3: INTERVIEWER & CLIENT PANEL ASSIGNMENT & MEETING LOCATION */}
-              <div className="bg-indigo-50/40 border border-indigo-200 rounded-2xl p-4 space-y-4 shadow-xs">
-                <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs border-b border-indigo-200 pb-2">
-                  <UserCheck size={15} />
-                  <span>Panel Stakeholders, Interviewers & Meeting Location</span>
-                </div>
-
-                {/* Multi-Interviewer Panel Section */}
-                <div className="bg-white border border-purple-200 rounded-xl p-3.5 space-y-3">
-                  <div className="flex items-center justify-between border-b border-purple-100 pb-2">
-                    <div className="flex items-center gap-2 text-purple-900 font-bold text-xs">
-                      <UserCheck size={14} className="text-purple-600" />
-                      <span>Interviewer Panel Selection ({nextRoundInterviewersList.length})</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAddNextRoundInterviewer}
-                      className="flex items-center gap-1 bg-purple-100 hover:bg-purple-200 text-purple-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                    >
-                      <Plus size={13} /> Add Interviewer
-                    </button>
-                  </div>
-
-                  {nextRoundInterviewersList.map((interviewer, idx) => (
-                    <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="text-[11px] font-bold text-purple-900 uppercase">
-                          Interviewer #{idx + 1}
-                        </label>
-                        {nextRoundInterviewersList.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveNextRoundInterviewer(idx)}
-                            className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                          >
-                            <Trash2 size={12} /> Remove
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <div>
-                          <select
-                            value={getMatchedUserId(interviewer.interviewer_id, interviewer.interviewer_name, interviewer.interviewer_email, systemUsers)}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === "custom" || !val) {
-                                handleNextRoundInterviewerChange(idx, "interviewer_id", undefined);
-                              } else {
-                                const u = systemUsers.find((user) => user.id === val);
-                                if (u) {
-                                  handleNextRoundInterviewerChange(idx, "interviewer_id", u.id);
-                                  handleNextRoundInterviewerChange(idx, "interviewer_name", u.full_name);
-                                  handleNextRoundInterviewerChange(idx, "interviewer_email", u.email);
-                                }
-                              }
-                            }}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-purple-500 cursor-pointer"
-                          >
-                            <option value="">-- Choose User --</option>
-                            {systemUsers.map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.full_name} ({u.role || u.email})
-                              </option>
-                            ))}
-                            <option value="custom">+ External / Custom</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <input
-                            type="text"
-                            placeholder="Interviewer Name *"
-                            value={interviewer.interviewer_name}
-                            onChange={(e) => handleNextRoundInterviewerChange(idx, "interviewer_name", e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-purple-500 font-medium"
-                            required={idx === 0}
-                          />
-                        </div>
-
-                        <div>
-                          <input
-                            type="email"
-                            placeholder="interviewer@company.com"
-                            value={interviewer.interviewer_email || ""}
-                            onChange={(e) => handleNextRoundInterviewerChange(idx, "interviewer_email", e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-purple-500 font-medium"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Multi-Client Panel Section */}
-                <div className="bg-white border border-teal-200 rounded-xl p-3.5 space-y-3">
-                  <div className="flex items-center justify-between border-b border-teal-100 pb-2">
-                    <div className="flex items-center gap-2 text-teal-800 font-bold text-xs">
-                      <Building2 size={14} className="text-teal-600" />
-                      <span>Client Evaluator Panel Selection ({nextRoundClientsList.length})</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAddNextRoundClient}
-                      className="flex items-center gap-1 bg-teal-100 hover:bg-teal-200 text-teal-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                    >
-                      <Plus size={13} /> Add Client
-                    </button>
-                  </div>
-
-                  {nextRoundClientsList.map((client, idx) => (
-                    <div key={idx} className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-2 relative">
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="text-[11px] font-bold text-teal-900 uppercase">
-                          Client Evaluator #{idx + 1}
-                        </label>
-                        {nextRoundClientsList.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveNextRoundClient(idx)}
-                            className="text-rose-500 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                          >
-                            <Trash2 size={12} /> Remove
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <div>
-                          <select
-                            value={getMatchedUserId(client.client_id, client.client_name, client.client_email, systemUsers)}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === "custom" || !val) {
-                                handleNextRoundClientChange(idx, "client_id", undefined);
-                              } else {
-                                const u = systemUsers.find((user) => user.id === val);
-                                if (u) {
-                                  handleNextRoundClientChange(idx, "client_id", u.id);
-                                  handleNextRoundClientChange(idx, "client_name", u.full_name);
-                                  handleNextRoundClientChange(idx, "client_email", u.email);
-                                }
-                              }
-                            }}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-semibold focus:outline-none focus:border-teal-500 cursor-pointer"
-                          >
-                            <option value="">-- Choose User --</option>
-                            {systemUsers.map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.full_name} ({u.role || u.email})
-                              </option>
-                            ))}
-                            <option value="custom">+ External / Custom</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <input
-                            type="text"
-                            placeholder="Client Name / Company"
-                            value={client.client_name}
-                            onChange={(e) => handleNextRoundClientChange(idx, "client_name", e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
-                          />
-                        </div>
-
-                        <div>
-                          <input
-                            type="email"
-                            placeholder="client@company.com"
-                            value={client.client_email || ""}
-                            onChange={(e) => handleNextRoundClientChange(idx, "client_email", e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Meeting Platform</label>
-                    <select
-                      value={nextRoundForm.meeting_platform}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, meeting_platform: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                    >
-                      <option value="Google Meet">Google Meet</option>
-                      <option value="Zoom">Zoom</option>
-                      <option value="Microsoft Teams">Microsoft Teams</option>
-                      <option value="In Person">In Person / On-site</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Meeting Link / Address</label>
-                    <input
-                      type="text"
-                      placeholder="https://meet.google.com/..."
-                      value={nextRoundForm.meeting_link}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, meeting_link: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 mb-1 font-semibold">Notes / Round Assessment Guidelines</label>
-                  <textarea
-                    rows={2}
-                    value={nextRoundForm.notes}
-                    onChange={(e) => setNextRoundForm({ ...nextRoundForm, notes: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    placeholder="Focus topics, system design questions, client prep notes..."
-                  />
-                </div>
-              </div>
-
-              {/* SECTION 4: INHERITED CANDIDATE DETAILS, HR VERIFICATION & COMPENSATION */}
-              <div className="bg-amber-50/40 border border-amber-200 rounded-2xl p-4 space-y-3 shadow-xs">
-                <div className="flex items-center gap-2 text-amber-800 font-bold text-xs border-b border-amber-200 pb-2">
-                  <DollarSign size={15} />
-                  <span>Inherited Candidate Requests, HR Verification & Compensation</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">HR Verification</label>
-                    <select
-                      value={nextRoundForm.hr_call_verification}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, hr_call_verification: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                    >
-                      <option value="Verified">✅ Verified</option>
-                      <option value="Pending">⏳ Pending</option>
-                      <option value="Needs Followup">📞 Followup</option>
-                      <option value="Not Eligible">❌ Not Eligible</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Salary Requested</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 50000"
-                      value={nextRoundForm.salary_requested}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, salary_requested: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Final Fit Salary</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 30000"
-                      value={nextRoundForm.final_fit_salary}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, final_fit_salary: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 mb-1 font-semibold">Expected Joining Date</label>
-                    <input
-                      type="date"
-                      value={nextRoundForm.joining_date}
-                      onChange={(e) => setNextRoundForm({ ...nextRoundForm, joining_date: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-slate-700 font-semibold flex items-center gap-1">
-                        <FileText size={12} className="text-purple-600" /> Attached Round Documents
-                      </label>
-                      <label className={`inline-flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-xs px-3 py-1 rounded-xl cursor-pointer font-bold transition-all shadow-xs ${isUploadingNextRoundFile ? "opacity-60 pointer-events-none" : ""}`}>
-                        {isUploadingNextRoundFile ? (
-                          <>
-                            <Loader2 size={13} className="animate-spin text-purple-600" />
-                            <span>Uploading to S3...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload size={13} />
-                            <span>Browse / Attach</span>
-                          </>
-                        )}
-                        <input
-                          type="file"
-                          multiple
-                          onChange={handleNextRoundFileUpload}
-                          disabled={isUploadingNextRoundFile}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-                    {/* ATTACHED FILES LIST CARDS WITH VIEW BUTTON */}
-                    {(() => {
-                      const attachedList = nextRoundForm.interview_document_files
-                        ? nextRoundForm.interview_document_files.split("\n").map((s) => s.trim()).filter(Boolean)
-                        : [];
-                      if (attachedList.length === 0) return null;
-                      return (
-                        <div className="space-y-1.5 mb-2.5 mt-1">
-                          {attachedList.map((fileStr, idx) => {
-                            const isUrl = fileStr.startsWith("http://") || fileStr.startsWith("https://");
-                            const rawName = fileStr.split("/").pop() || fileStr;
-                            const displayName = decodeURIComponent(rawName).replace(/^[a-f0-9]{8,32}_/, "");
-                            return (
-                              <div key={idx} className="flex items-center justify-between gap-2 bg-white border border-purple-200/90 rounded-xl px-3 py-1.5 shadow-2xs">
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  <FileText size={14} className="text-purple-600 shrink-0" />
-                                  <span className="text-xs font-semibold text-slate-800 truncate" title={fileStr}>
-                                    {displayName}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {isUrl && (
-                                    <a
-                                      href={fileStr}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shadow-2xs"
-                                    >
-                                      <Eye size={12} />
-                                      <span>View</span>
-                                    </a>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updated = attachedList.filter((_, i) => i !== idx).join("\n");
-                                      setNextRoundForm((prev) => ({ ...prev, interview_document_files: updated }));
-                                    }}
-                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
-                                    title="Remove attachment"
-                                  >
-                                    <X size={13} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Next round attached files chips are displayed above, no raw link textarea */}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Footer */}
-              <div className="flex justify-end items-center gap-4 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsNextRoundOpen(false)}
-                  className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-200 font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95"
-                >
-                  {actionLoading ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      <span>Scheduling Round {nextRoundForm.round_number}...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Layers size={16} />
-                      <span>Confirm & Schedule Round {nextRoundForm.round_number}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* CANDIDATE FULL DETAILS MODAL */}
-      <CandidateDetailsModal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        candidateId={selectedCandidateId}
-        candidateName={selectedCandidateName}
-        fallbackInterview={selectedInterview}
-      />
 
       {/* BULK CANDIDATE FEEDBACK UPDATE MODAL */}
+      {/* One feedback panel, for a single interview or several selected ones */}
       <BulkFeedbackModal
-        isOpen={isBulkFeedbackOpen}
-        onClose={() => setIsBulkFeedbackOpen(false)}
-        selectedInterviews={filteredInterviews.filter((i) => selectedInterviewIds.includes(i.id))}
+        isOpen={feedbackTargets !== null}
+        onClose={() => setFeedbackTargets(null)}
+        selectedInterviews={feedbackTargets || []}
         onSuccess={() => {
-          setSelectedInterviewIds([]);
+          if ((feedbackTargets?.length || 0) > 1) setSelectedInterviewIds([]);
+          toast("Feedback saved.", "success");
           fetchAllData();
         }}
       />
@@ -6173,7 +1346,7 @@ export default function InterviewManagement() {
                 {((selectedInterview.interview_document_files && selectedInterview.interview_document_files.length > 0) ||
                   (selectedInterview.interview_feedback_files && selectedInterview.interview_feedback_files.length > 0)) && (
                     <div className="pt-2 border-t border-indigo-100/80 space-y-1.5">
-                      <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                      <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">
                         📎 Attached Session Files & S3 Resources (Included in Email)
                       </span>
                       <div className="flex flex-wrap gap-2">
@@ -6192,7 +1365,7 @@ export default function InterviewManagement() {
                                   href={fileUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="inline-flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[9px] px-1.5 py-0.2 rounded font-bold transition-all"
+                                  className="inline-flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[11px] px-1.5 py-0.2 rounded font-bold transition-all"
                                 >
                                   <Eye size={10} />
                                   <span>View</span>
@@ -6433,42 +1606,6 @@ export default function InterviewManagement() {
         </div>
       )}
 
-      {/* FLOATING TOAST NOTIFICATION */}
-      {toastMessage && (
-        <div className="fixed top-6 right-6 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
-          <div
-            className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold tracking-wide backdrop-blur-md ${toastMessage.type === "success"
-              ? "bg-slate-900/95 text-emerald-400 border-emerald-500/40 shadow-emerald-950/30"
-              : toastMessage.type === "error"
-                ? "bg-slate-900/95 text-rose-400 border-rose-500/40 shadow-rose-950/30"
-                : toastMessage.type === "warning"
-                  ? "bg-amber-950/95 text-amber-300 border-amber-500/50 shadow-amber-950/40"
-                  : "bg-slate-900/95 text-indigo-300 border-indigo-500/40"
-              }`}
-          >
-            {toastMessage.type === "success" ? (
-              <div className="p-1 bg-emerald-500/20 rounded-full text-emerald-400">
-                <CheckCircle2 size={16} />
-              </div>
-            ) : toastMessage.type === "warning" ? (
-              <div className="p-1 bg-amber-500/20 rounded-full text-amber-300">
-                <AlertCircle size={16} />
-              </div>
-            ) : (
-              <div className="p-1 bg-rose-500/20 rounded-full text-rose-400">
-                <AlertCircle size={16} />
-              </div>
-            )}
-            <span className="text-white font-semibold">{toastMessage.text}</span>
-            <button
-              onClick={() => setToastMessage(null)}
-              className="ml-2 text-slate-400 hover:text-white transition-colors cursor-pointer p-0.5"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

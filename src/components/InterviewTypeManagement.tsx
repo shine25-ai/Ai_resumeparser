@@ -178,7 +178,7 @@ export default function InterviewTypeManagement() {
           <button
             onClick={loadTypes}
             className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
-            title="Refresh List"
+            title="Refresh List" aria-label="Refresh List"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -258,7 +258,7 @@ export default function InterviewTypeManagement() {
 
                   <div className="flex items-center gap-1 shrink-0">
                     {item.is_system && (
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-md flex items-center gap-1 border border-slate-200">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-md flex items-center gap-1 border border-slate-200">
                         <Lock className="w-2.5 h-2.5" /> System
                       </span>
                     )}
@@ -302,7 +302,7 @@ export default function InterviewTypeManagement() {
                     onClick={() => handleOpenEditModal(item)}
                     className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                     title="Edit"
-                  >
+                   aria-label="Edit">
                     <Edit2 className="w-4 h-4" />
                   </button>
 
@@ -311,7 +311,7 @@ export default function InterviewTypeManagement() {
                       onClick={() => setDeletingType(item)}
                       className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                       title="Delete"
-                    >
+                     aria-label="Remove">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}

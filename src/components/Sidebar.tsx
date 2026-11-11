@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
   LayoutDashboard, UploadCloud, Users, Settings, Briefcase,
-  Calendar, Video, MessageSquare, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield, Layers
+  Calendar, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield
 } from "lucide-react";
 
 interface UserState {
@@ -40,15 +40,13 @@ export function Sidebar() {
 
   const navItems = [
     { name: "Dashboard", path: "/", perm: "dashboard", icon: <LayoutDashboard size={20} /> },
-    { name: "Upload Resume", path: "/upload", perm: "upload", icon: <UploadCloud size={20} /> },
-    { name: "Candidate Database", path: "/database", perm: "database", icon: <Users size={20} /> },
-    { name: "JD Matching", path: "/jd-match", perm: "jd-match", icon: <Briefcase size={20} /> },
+    { name: "Upload", path: "/upload", perm: "upload", icon: <UploadCloud size={20} /> },
+    // Resume templates / export now open from the Candidates page
+    { name: "Candidates", path: "/database", perm: "database", icon: <Users size={20} /> },
+    { name: "JD Match", path: "/jd-match", perm: "jd-match", icon: <Briefcase size={20} /> },
     { name: "Interviews", path: "/interviews", perm: "interviews", icon: <Calendar size={20} /> },
-    { name: "Interview Dashboard", path: "/interview-dashboard", perm: "interview-dashboard", icon: <Video size={20} /> },
-    { name: "Client Feedback", path: "/client-feedback", perm: "client-feedback", icon: <MessageSquare size={20} /> },
-    { name: "Analytics & Reports", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
-    { name: "Resume Templates", path: "/resume-templates", perm: "resume-templates", icon: <Briefcase size={20} /> },
-    { name: "Interview Types", path: "/settings?tab=interviewTypes", perm: "settings", icon: <Layers size={20} /> },
+    { name: "Analytics", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
+    // Interview types live under Settings
   ];
 
   // Dynamic role-based filtering:
@@ -59,6 +57,8 @@ export function Sidebar() {
     if (!user) return true;
     if (userRoleLower === "admin" || userRoleLower === "superadmin") return true;
     if (!user.permissions || user.permissions.length === 0) return true;
+    // The old Interview Dashboard permission now opens the Interviews page
+    if (item.perm === "interviews" && user.permissions.includes("interview-dashboard")) return true;
     return user.permissions.includes(item.perm);
   });
 
@@ -66,10 +66,28 @@ export function Sidebar() {
 
 
   return (
+    <>
+    {/* Phones: a bottom bar instead of the side rail */}
+    <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 flex justify-around px-0.5 py-1.5">
+      {[...visibleNavItems, ...(canAccessSettings ? [{ name: "Settings", path: "/settings", perm: "settings", icon: <Settings size={20} /> }] : [])].map((item) => (
+        <NavLink
+          key={item.path}
+          to={item.path}
+          className={({ isActive }) =>
+            `flex flex-col items-center gap-0.5 px-1 py-1 rounded-lg text-[11px] font-semibold min-w-0 ${isActive ? "text-indigo-700 bg-indigo-50" : "text-slate-500"}`
+          }
+        >
+          {item.icon}
+          <span className="truncate max-w-[64px]">{item.name === "Dashboard" ? "Home" : item.name}</span>
+        </NavLink>
+      ))}
+    </nav>
+
     <aside
+      aria-label="Main navigation"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`fixed top-0 left-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out shadow-lg ${isExpanded ? "w-64" : "w-20"
+      className={`hidden md:flex fixed top-0 left-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-r border-slate-200 flex-col transition-all duration-300 ease-in-out shadow-lg ${isExpanded ? "w-64" : "w-20"
         }`}
     >
       {/* Header Logo */}
@@ -85,7 +103,7 @@ export function Sidebar() {
               <h2 className="text-base font-extrabold bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-600 bg-clip-text text-transparent">
                 AI Recruiter
               </h2>
-              <p className="text-[10px] text-slate-500 font-medium">Smart Hiring Platform</p>
+              <p className="text-[11px] text-slate-500 font-medium">Smart Hiring Platform</p>
             </div>
           )}
         </div>
@@ -147,7 +165,7 @@ export function Sidebar() {
             </div>
             <div className="overflow-hidden">
               <div className="text-xs font-bold text-slate-800 truncate">{user.full_name}</div>
-              <div className="text-[10px] text-indigo-600 font-semibold flex items-center gap-1 uppercase tracking-wider">
+              <div className="text-[11px] text-indigo-600 font-semibold flex items-center gap-1 uppercase tracking-wider">
                 <Shield size={10} />
                 <span>{user.role}</span>
               </div>
@@ -195,5 +213,6 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

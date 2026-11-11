@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Activity, Server, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
-import { SETTINGS_AI_USAGE } from '../utils/Api';
+import { SETTINGS_AI_USAGE, apiFetch } from "../utils/Api";
 
 interface AIUsageModalProps {
   isOpen: boolean;
@@ -22,7 +22,7 @@ export default function AIUsageModal({ isOpen, onClose }: AIUsageModalProps) {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(SETTINGS_AI_USAGE);
+      const response = await apiFetch(SETTINGS_AI_USAGE);
       if (!response.ok) throw new Error('Failed to fetch usage');
       const data = await response.json();
       setUsage(data);
@@ -138,14 +138,14 @@ export default function AIUsageModal({ isOpen, onClose }: AIUsageModalProps) {
                           <p className="text-xl font-bold text-orange-700">
                             {usage.groq_limits.remaining_tokens?.toLocaleString() || '0'} / {usage.groq_limits.limit_tokens?.toLocaleString()}
                           </p>
-                          <p className="text-[10px] text-orange-500 mt-1">Resets in {usage.groq_limits.reset_tokens}</p>
+                          <p className="text-[11px] text-orange-500 mt-1">Resets in {usage.groq_limits.reset_tokens}</p>
                         </div>
                         <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl shadow-sm">
                           <p className="text-xs text-emerald-600 font-medium mb-1">Remaining Requests / Day</p>
                           <p className="text-xl font-bold text-emerald-700">
                             {usage.groq_limits.remaining_requests?.toLocaleString() || '0'} / {usage.groq_limits.limit_requests?.toLocaleString()}
                           </p>
-                          <p className="text-[10px] text-emerald-500 mt-1">Resets in {usage.groq_limits.reset_requests}</p>
+                          <p className="text-[11px] text-emerald-500 mt-1">Resets in {usage.groq_limits.reset_requests}</p>
                         </div>
                       </div>
                     </div>

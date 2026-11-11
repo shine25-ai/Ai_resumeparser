@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Server, Key, Box, Cpu, AlertCircle, CheckCircle2, Info, ExternalLink } from 'lucide-react';
-import { SETTINGS_AI } from '../utils/Api';
+import { SETTINGS_AI, apiFetch } from "../utils/Api";
 import AIUsageModal from './AIUsageModal';
 
 export default function AIConfiguration() {
@@ -24,7 +24,7 @@ export default function AIConfiguration() {
   const fetchConfig = async () => {
     setLoading(true);
     try {
-      const response = await fetch(SETTINGS_AI);
+      const response = await apiFetch(SETTINGS_AI);
       if (response.ok) {
         const data = await response.json();
         setConfig(prev => ({ 
@@ -52,7 +52,7 @@ export default function AIConfiguration() {
         model_name: config.model_name,
         api_key: config.api_key || null,
       };
-      const response = await fetch(SETTINGS_AI, {
+      const response = await apiFetch(SETTINGS_AI, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

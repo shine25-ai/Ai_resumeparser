@@ -117,6 +117,10 @@ export interface InterviewItem {
   strengths?: string[];
   weaknesses?: string[];
   recommendation?: string; // Selected / Rejected / Pending / Hold
+  /** Worked out by the server from recommendation: Pending, Selected, Rejected, On Hold, No Show */
+  verdict?: string;
+  /** Worked out by the server: Interviewing, Offer, Hired, Closed */
+  stage?: string;
 
   // Dynamic Skill Ratings & Weighted Category Scores & AI Calculation
   skill_ratings?: SkillRatingItem[];

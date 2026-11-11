@@ -4,10 +4,13 @@ import {
   ArrowLeft, Mail, Phone, MapPin, ChevronDown, CheckCircle2,
   ExternalLink, User, Award, Brain, Briefcase, GraduationCap, Code, Edit3, X, Save, Paperclip, FileText, Upload, Camera, Trash2
 } from "lucide-react";
-import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFILE_PICTURE } from "../utils/Api";
+import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFILE_PICTURE, apiFetch } from "../utils/Api";
 import { formatExperience, getAllSkills } from "../utils/candidateFields";
+import { useFeedback } from "../components/ui/Feedback";
 
 export default function Evaluation() {
+  const { toast, confirm } = useFeedback();
+
   const { id } = useParams();
   const navigate = useNavigate();
   const [candidate, setCandidate] = useState<any>(null);
@@ -218,7 +221,7 @@ export default function Evaluation() {
       const token = localStorage.getItem("access_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(
+      const res = await apiFetch(
         `${RESUME_DOCUMENTS(candidate.id)}?doc_type=${encodeURIComponent(docType)}&doc_title=${encodeURIComponent(docTitle || docFile.name)}`,
         { method: "POST", headers, body: formData }
       );
@@ -228,10 +231,10 @@ export default function Evaluation() {
         setDocFile(null);
         setDocTitle("");
       } else {
-        alert(data.message || "Failed to upload document.");
+        toast(data.message || "Failed to upload document.", "error");
       }
     } catch {
-      alert("Upload failed.");
+      toast("Upload failed.", "error");
     } finally {
       setIsUploadingDoc(false);
     }
@@ -242,11 +245,11 @@ export default function Evaluation() {
     e.target.value = "";
     if (!file || !candidate?.id) return;
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      alert("Profile picture must be a JPG, PNG, or WEBP image.");
+      toast("Profile picture must be a JPG, PNG, or WEBP image.", "warning");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      alert("Profile picture size exceeds the 5 MB limit.");
+      toast("Profile picture size exceeds the 5 MB limit.", "warning");
       return;
     }
     setIsUpdatingProfilePic(true);
@@ -256,37 +259,37 @@ export default function Evaluation() {
       const token = localStorage.getItem("access_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(RESUME_PROFILE_PICTURE(candidate.id), { method: "POST", headers, body: formData });
+      const res = await apiFetch(RESUME_PROFILE_PICTURE(candidate.id), { method: "POST", headers, body: formData });
       const data = await res.json();
       if (res.ok) {
         setProfilePicFailed(false);
         setCandidate(data.data || data);
       } else {
-        alert(data.message || "Failed to upload profile picture.");
+        toast(data.message || "Failed to upload profile picture.", "error");
       }
     } catch {
-      alert("Upload failed.");
+      toast("Upload failed.", "error");
     } finally {
       setIsUpdatingProfilePic(false);
     }
   };
 
   const handleRemoveProfilePic = async () => {
-    if (!candidate?.id || !window.confirm("Remove this candidate's profile picture?")) return;
+    if (!candidate?.id || !(await confirm({ title: "Remove this candidate's profile picture?", confirmLabel: "Remove", danger: true }))) return;
     setIsUpdatingProfilePic(true);
     try {
       const token = localStorage.getItem("access_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(RESUME_PROFILE_PICTURE(candidate.id), { method: "DELETE", headers });
+      const res = await apiFetch(RESUME_PROFILE_PICTURE(candidate.id), { method: "DELETE", headers });
       const data = await res.json();
       if (res.ok) {
         setCandidate(data.data || data);
       } else {
-        alert(data.message || "Failed to remove profile picture.");
+        toast(data.message || "Failed to remove profile picture.", "error");
       }
     } catch {
-      alert("Failed to remove profile picture.");
+      toast("Failed to remove profile picture.", "error");
     } finally {
       setIsUpdatingProfilePic(false);
     }
@@ -354,7 +357,7 @@ export default function Evaluation() {
       setIsEditModalOpen(false);
     } catch (err: any) {
       console.error("Failed to update resume:", err);
-      alert(err.message || "Failed to save update.");
+      toast(err.message || "Failed to save update.", "error");
     } finally {
       setIsUpdating(false);
     }
@@ -367,7 +370,7 @@ export default function Evaluation() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-slate-900">Candidate Profile</h1>
           {latestHrUpdate && (
-            <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+            <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
               HR Updated
             </span>
           )}
@@ -381,7 +384,7 @@ export default function Evaluation() {
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedResumeId(newId);
-                navigate(`/evaluation/${newId}`, { replace: true });
+                navigate(`/candidates/${newId}`, { replace: true });
               }}
               className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 pr-8 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-xs font-medium"
             >
@@ -503,7 +506,7 @@ export default function Evaluation() {
                 type="button"
                 onClick={handleRemoveProfilePic}
                 disabled={isUpdatingProfilePic}
-                title="Remove profile picture"
+                title="Remove profile picture" aria-label="Remove profile picture"
                 className="absolute top-0 right-0 w-6 h-6 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shadow-sm transition-all cursor-pointer disabled:opacity-60"
               >
                 <Trash2 size={11} />
@@ -550,7 +553,7 @@ export default function Evaluation() {
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-2 text-xs">
                 {linkedin && (
                   <a href={linkedin.startsWith("http") ? linkedin : `https://${linkedin}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline">
-                    <span className="bg-[#0a66c2] text-white w-3.5 h-3.5 rounded-xs flex items-center justify-center text-[9px] font-bold">in</span>
+                    <span className="bg-[#0a66c2] text-white w-3.5 h-3.5 rounded-xs flex items-center justify-center text-[11px] font-bold">in</span>
                     <span className="truncate max-w-[200px]">{linkedin}</span>
                   </a>
                 )}
@@ -609,7 +612,7 @@ export default function Evaluation() {
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
               </svg>
-              <span className="absolute text-[10px] font-extrabold text-slate-800">{overallAverageScore}%</span>
+              <span className="absolute text-[11px] font-extrabold text-slate-800">{overallAverageScore}%</span>
             </div>
           </div>
 
@@ -649,7 +652,7 @@ export default function Evaluation() {
           {activeInterview && (
             <div className="flex items-center justify-between pt-1 border-t border-slate-100">
               <span className="text-[11px] font-medium text-slate-500">Interview Status</span>
-              <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+              <span className="text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
                 {activeInterview.status || "Completed"}
               </span>
             </div>
@@ -721,14 +724,14 @@ export default function Evaluation() {
                     <button
                       key={inv.id || idx}
                       onClick={() => setSelectedInterviewIdx(idx)}
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
                         isSelected
                           ? "bg-blue-600 text-white border-blue-600 shadow-xs"
                           : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                       }`}
                     >
                       <span>R{roundNum}: {typeName}</span>
-                      <span className={`text-[9px] px-1 py-0.2 rounded font-extrabold ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>
+                      <span className={`text-[11px] px-1 py-0.2 rounded font-extrabold ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>
                         {roundScore}
                       </span>
                     </button>
@@ -738,7 +741,7 @@ export default function Evaluation() {
             )}
 
             {activeInterview && candidateInterviews.length <= 1 && (
-              <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+              <span className="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
                 {activeInterview.status || "Assigned"}
               </span>
             )}
@@ -815,7 +818,7 @@ export default function Evaluation() {
                     </div>
                     {exp.responsibilities && (
                       <div className="pt-1">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">Responsibilities</span>
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Responsibilities</span>
                         <p className="text-xs text-slate-700 leading-relaxed mt-1">
                           {Array.isArray(exp.responsibilities) ? exp.responsibilities.join(" ") : exp.responsibilities}
                         </p>
@@ -823,10 +826,10 @@ export default function Evaluation() {
                     )}
                     {exp.technologies_used && Array.isArray(exp.technologies_used) && exp.technologies_used.length > 0 && (
                       <div className="pt-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Technologies Used</span>
+                        <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Technologies Used</span>
                         <div className="flex flex-wrap gap-1">
                           {exp.technologies_used.map((t: string, ti: number) => (
-                            <span key={ti} className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                            <span key={ti} className="text-[11px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded font-medium">
                               {t}
                             </span>
                           ))}
@@ -835,7 +838,7 @@ export default function Evaluation() {
                     )}
                     {exp.achievements && Array.isArray(exp.achievements) && exp.achievements.length > 0 && (
                       <div className="pt-2">
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">Key Achievements</span>
+                        <span className="text-[11px] font-bold text-emerald-600 uppercase block mb-1">Key Achievements</span>
                         <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5">
                           {exp.achievements.map((ach: string, ai: number) => (
                             <li key={ai}>{ach}</li>
@@ -845,17 +848,17 @@ export default function Evaluation() {
                     )}
                     {exp.leadership_responsibilities && (
                       <div className="pt-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">Leadership Responsibilities</span>
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Leadership Responsibilities</span>
                         <p className="text-xs text-slate-700 leading-relaxed mt-1">{exp.leadership_responsibilities}</p>
                       </div>
                     )}
                     {(exp.business_domain || exp.team_size) && (
                       <div className="flex gap-4 pt-2 border-t border-slate-200 mt-2">
                         {exp.business_domain && (
-                          <div className="text-[10px]"><span className="font-bold text-slate-500">Domain:</span> <span className="text-slate-700">{exp.business_domain}</span></div>
+                          <div className="text-[11px]"><span className="font-bold text-slate-500">Domain:</span> <span className="text-slate-700">{exp.business_domain}</span></div>
                         )}
                         {exp.team_size && (
-                          <div className="text-[10px]"><span className="font-bold text-slate-500">Team Size:</span> <span className="text-slate-700">{exp.team_size}</span></div>
+                          <div className="text-[11px]"><span className="font-bold text-slate-500">Team Size:</span> <span className="text-slate-700">{exp.team_size}</span></div>
                         )}
                       </div>
                     )}
@@ -1002,17 +1005,17 @@ export default function Evaluation() {
                   <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
                     <div className="flex justify-between items-start">
                       <h4 className="text-xs font-bold text-slate-900">{proj.name}</h4>
-                      {proj.role && <span className="text-[10px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">{proj.role}</span>}
+                      {proj.role && <span className="text-[11px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">{proj.role}</span>}
                     </div>
                     {proj.description && <p className="text-xs text-slate-700 leading-relaxed">{proj.description}</p>}
                     
                     {(proj.architecture || proj.scale) && (
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 mt-2">
                         {proj.architecture && (
-                          <div className="text-[10px]"><span className="font-bold text-slate-500 uppercase block mb-0.5">Architecture</span> <span className="text-slate-700">{proj.architecture}</span></div>
+                          <div className="text-[11px]"><span className="font-bold text-slate-500 uppercase block mb-0.5">Architecture</span> <span className="text-slate-700">{proj.architecture}</span></div>
                         )}
                         {proj.scale && (
-                          <div className="text-[10px]"><span className="font-bold text-slate-500 uppercase block mb-0.5">Scale</span> <span className="text-slate-700">{proj.scale}</span></div>
+                          <div className="text-[11px]"><span className="font-bold text-slate-500 uppercase block mb-0.5">Scale</span> <span className="text-slate-700">{proj.scale}</span></div>
                         )}
                       </div>
                     )}
@@ -1020,10 +1023,10 @@ export default function Evaluation() {
                     {(proj.business_impact || proj.candidate_ownership) && (
                       <div className="grid grid-cols-1 gap-2 pt-2">
                         {proj.business_impact && (
-                          <div className="text-[10px]"><span className="font-bold text-emerald-600 uppercase block mb-0.5">Business Impact</span> <span className="text-slate-700">{proj.business_impact}</span></div>
+                          <div className="text-[11px]"><span className="font-bold text-emerald-600 uppercase block mb-0.5">Business Impact</span> <span className="text-slate-700">{proj.business_impact}</span></div>
                         )}
                         {proj.candidate_ownership && (
-                          <div className="text-[10px]"><span className="font-bold text-indigo-600 uppercase block mb-0.5">Ownership</span> <span className="text-slate-700">{proj.candidate_ownership}</span></div>
+                          <div className="text-[11px]"><span className="font-bold text-indigo-600 uppercase block mb-0.5">Ownership</span> <span className="text-slate-700">{proj.candidate_ownership}</span></div>
                         )}
                       </div>
                     )}
@@ -1031,7 +1034,7 @@ export default function Evaluation() {
                     {proj.tech_stack && Array.isArray(proj.tech_stack) && (
                       <div className="flex flex-wrap gap-1 pt-2">
                         {proj.tech_stack.map((t: string, ti: number) => (
-                          <span key={ti} className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded">
+                          <span key={ti} className="text-[11px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded">
                             {t}
                           </span>
                         ))}
@@ -1083,7 +1086,7 @@ export default function Evaluation() {
                       Original AI Evaluation Baseline
                     </h4>
                   </div>
-                  <span className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
                     AI Generated
                   </span>
                 </div>
@@ -1220,11 +1223,11 @@ export default function Evaluation() {
                     </h4>
                   </div>
                   {latestHrUpdate ? (
-                    <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                       HR Overridden
                     </span>
                   ) : (
-                    <span className="text-[10px] font-semibold bg-white text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
+                    <span className="text-[11px] font-semibold bg-white text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
                       Pending HR Review
                     </span>
                   )}
@@ -1340,7 +1343,7 @@ export default function Evaluation() {
                       </div>
 
                       {latestHrUpdate.updated_at && (
-                        <div className="text-[10px] text-slate-400 text-right pt-1">
+                        <div className="text-[11px] text-slate-400 text-right pt-1">
                           Last Updated: {new Date(latestHrUpdate.updated_at).toLocaleString()}
                         </div>
                       )}
@@ -1369,11 +1372,11 @@ export default function Evaluation() {
                     </h4>
                   </div>
                   {activeInterview ? (
-                    <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                    <span className="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
                       {activeInterview.status || "Assigned"}
                     </span>
                   ) : (
-                    <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
+                    <span className="text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
                       Not Assigned
                     </span>
                   )}
@@ -1398,7 +1401,7 @@ export default function Evaluation() {
                           }`}
                         >
                           <span>R{roundNum}: {typeName}</span>
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>
+                          <span className={`text-[11px] px-1.5 py-0.2 rounded font-extrabold ${isSelected ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>
                             {roundScore}
                           </span>
                         </button>
@@ -1414,7 +1417,7 @@ export default function Evaluation() {
                       <div className="font-bold text-slate-900 flex justify-between items-center">
                         <span>{activeInterview.job_title || "Assigned Interview Session"}</span>
                         {activeInterview.round_number && (
-                          <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-semibold">
+                          <span className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-semibold">
                             Round {activeInterview.round_number} ({activeInterview.interview_type || "Technical"})
                           </span>
                         )}
@@ -1480,7 +1483,7 @@ export default function Evaluation() {
                               <div key={cIdx} className="flex justify-between items-center text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-100">
                                 <span className="font-medium text-slate-700 truncate max-w-[180px]">{cat.category}</span>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  {cat.weightage && <span className="text-slate-400 text-[10px]">W: {cat.weightage}%</span>}
+                                  {cat.weightage && <span className="text-slate-400 text-[11px]">W: {cat.weightage}%</span>}
                                   <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
                                     {cat.rating !== undefined ? `${cat.rating} / 5` : `${cat.score}`}
                                   </span>
@@ -1497,7 +1500,7 @@ export default function Evaluation() {
                           <div className="flex justify-between items-center">
                             <span className="text-purple-700 font-bold block text-[11px]">Client Review ({activeInterview.client_name || "Client"})</span>
                             {activeInterview.client_recommendation && (
-                              <span className="bg-purple-100 text-purple-800 border border-purple-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                              <span className="bg-purple-100 text-purple-800 border border-purple-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                                 {activeInterview.client_recommendation}
                               </span>
                             )}
@@ -1596,7 +1599,7 @@ export default function Evaluation() {
                               : "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             Evaluated
                           </span>
                         </td>
@@ -1610,7 +1613,7 @@ export default function Evaluation() {
                           {activeInterview?.rating !== undefined && activeInterview?.rating !== null ? `${activeInterview.rating} / 5` : "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
@@ -1624,7 +1627,7 @@ export default function Evaluation() {
                           {activeInterview?.recommendation || activeInterview?.status || "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
@@ -1638,7 +1641,7 @@ export default function Evaluation() {
                           {activeInterview?.rating !== undefined ? `${activeInterview.rating} / 5` : "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
@@ -1652,7 +1655,7 @@ export default function Evaluation() {
                           {activeInterview?.ai_score !== undefined ? `${activeInterview.ai_score}%` : "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             {activeInterview ? "Interview Tracked" : "AI Default"}
                           </span>
                         </td>
@@ -1666,7 +1669,7 @@ export default function Evaluation() {
                           {activeInterview?.recommendation || activeInterview?.client_recommendation || "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             Final Review
                           </span>
                         </td>
@@ -1686,7 +1689,7 @@ export default function Evaluation() {
                             : activeInterview?.feedback || "N/A"}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
                             Multi-Source
                           </span>
                         </td>
@@ -1796,7 +1799,7 @@ export default function Evaluation() {
                         </div>
                         <div className="overflow-hidden">
                           <p className="text-xs font-bold text-slate-900 truncate">{doc.title || doc.filename}</p>
-                          <p className="text-[10px] text-slate-500">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                          <p className="text-[11px] text-slate-500">{doc.doc_type} • {new Date(doc.uploaded_at).toLocaleDateString()}</p>
                         </div>
                       </div>
                       {doc.s3_url && (
@@ -1896,7 +1899,7 @@ export default function Evaluation() {
               <div className="space-y-3 pt-3 border-t border-slate-200">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-indigo-600 text-xs uppercase tracking-wider">HR Evaluation Ratings (Appended to HR-Update Array)</h3>
-                  <span className="text-[10px] text-slate-500 italic">Does not modify original AI baseline</span>
+                  <span className="text-[11px] text-slate-500 italic">Does not modify original AI baseline</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

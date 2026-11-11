@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug } from 'lucide-react';
-import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST } from '../utils/Api';
+import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST, apiFetch } from "../utils/Api";
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
 import AIConfiguration from '../components/AIConfiguration';
@@ -45,7 +45,7 @@ export default function Settings() {
     setLoading(true);
     try {
       // Create a fetch or axios call depending on what's available
-      const response = await fetch(SETTINGS_EMAIL);
+      const response = await apiFetch(SETTINGS_EMAIL);
       if (response.ok) {
         const data = await response.json();
         setConfig(prev => ({ ...prev, ...data }));
@@ -62,7 +62,7 @@ export default function Settings() {
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
-      const response = await fetch(SETTINGS_EMAIL, {
+      const response = await apiFetch(SETTINGS_EMAIL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -87,7 +87,7 @@ export default function Settings() {
     setTesting(true);
     setMessage({ type: '', text: '' });
     try {
-      const response = await fetch(SETTINGS_EMAIL_TEST, {
+      const response = await apiFetch(SETTINGS_EMAIL_TEST, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: testEmail })

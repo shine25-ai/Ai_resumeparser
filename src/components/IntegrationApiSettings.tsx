@@ -240,7 +240,7 @@ export default function IntegrationApiSettings() {
               onClick={refreshAll}
               disabled={busy}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer disabled:opacity-50"
-              title="Refresh"
+              title="Refresh" aria-label="Refresh"
             >
               <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
               Refresh
@@ -365,7 +365,7 @@ export default function IntegrationApiSettings() {
                           disabled={busy}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                           title="Regenerate key"
-                        >
+                         aria-label="Refresh">
                           <RefreshCw className="w-4 h-4" />
                         </button>
                         <button
@@ -373,7 +373,7 @@ export default function IntegrationApiSettings() {
                           disabled={busy}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                           title="Delete key"
-                        >
+                         aria-label="Remove">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>

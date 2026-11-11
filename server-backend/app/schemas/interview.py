@@ -3,7 +3,9 @@ Pydantic schemas for Interview entity operations, scheduling, feedback, and resp
 """
 
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
+
+from app.utils.hiring_stage import stage_of, verdict_of
 from app.utils.enums import InterviewStatus
 
 
@@ -456,6 +458,17 @@ class InterviewResponse(BaseModel):
     updated_at: str
 
     model_config = ConfigDict(from_attributes=True)
+
+    # Worked out from recommendation/status on read; nothing new is stored
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def verdict(self) -> str:
+        return verdict_of(self.recommendation, self.status)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def stage(self) -> str:
+        return stage_of(self.recommendation, self.status)
 
 
 

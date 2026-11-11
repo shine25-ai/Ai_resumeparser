@@ -29,6 +29,20 @@ export const SETTINGS_AI = `${BASE_URL}/settings/ai`;
 export const SETTINGS_AI_USAGE = `${BASE_URL}/settings/ai/usage`;
 export const SETTINGS_APP = `${BASE_URL}/settings/app`;
 export const ANALYTICS_REPORTS_URL = `${BASE_URL}/analytics/reports`;
+
+/** Days to look back, or "all" for all time */
+export type AnalyticsRange = "7" | "30" | "90" | "365" | "all";
+
+export const getAnalyticsReports = async (range: AnalyticsRange = "30") => {
+  const token = localStorage.getItem("access_token") || "";
+  const query = range === "all" ? "?all_time=true" : `?days=${range}`;
+  const response = await fetch(`${ANALYTICS_REPORTS_URL}${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result?.message || "Failed to fetch analytics data");
+  return result.data || result;
+};
 export const MAIL_TEMPLATES_URL = `${BASE_URL}/templates`;
 export const DASHBOARD_METRICS = `${BASE_URL}/dashboard/metrics`;
 
@@ -106,6 +120,19 @@ export interface AuthSuccessResult {
   user: UserProfile;
 }
 
+/**
+ * fetch() for our own API: adds the login token when the caller has not, and
+ * shows the "session expired" dialog on a 401. Pages use this instead of fetch().
+ */
+export const apiFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
+  const token = localStorage.getItem("access_token");
+  const headers = new Headers(init.headers || {});
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(input, { ...init, headers });
+  if (response.status === 401) notifySessionExpired();
+  return response;
+};
+
 const handleAuthError = (response: Response, resData: any) => {
   const isUnauthorized = response.status === 401;
   const detail = typeof resData?.detail === "string" ? resData.detail.toLowerCase() : "";
@@ -177,6 +204,8 @@ export interface CandidateQueryParams {
   min_experience?: number;
   max_experience?: number;
   sort_by?: SortOption;
+  /** Hiring stage: Screening, Interviewing, Offer, Hired, Closed */
+  stage?: string;
 }
 
 export type SortOption = "latest" | "oldest" | "ai_score" | "experience_desc" | "experience_asc" | "name";
@@ -229,6 +258,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   let role = "";
   let experience: number | undefined = undefined;
   let sortBy: SortOption | undefined = undefined;
+  let stage = "";
 
   if (typeof params === "object" && params !== null) {
     page = params.page || 1;
@@ -239,6 +269,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
     role = params.role || "";
     experience = params.experience;
     sortBy = params.sort_by;
+    stage = params.stage || "";
   } else if (typeof params === "number") {
     page = params;
   }
@@ -253,6 +284,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   if (role && role.trim()) queryParts.push(`role=${encodeURIComponent(role.trim())}`);
   if (experience !== undefined) queryParts.push(`experience=${experience}`);
   if (sortBy) queryParts.push(`sort_by=${sortBy}`);
+  if (stage && stage !== "All") queryParts.push(`stage=${encodeURIComponent(stage)}`);
 
   const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
 
@@ -847,6 +879,8 @@ export const getInterviews = async (params: {
   search?: string;
   date_from?: string;
   date_to?: string;
+  verdict?: string;
+  stage?: string;
   recommendation?: string;
   page?: number;
   skip?: number;
@@ -868,6 +902,8 @@ export const getInterviews = async (params: {
   if (params.date_from) queryParts.push(`date_from=${encodeURIComponent(params.date_from)}`);
   if (params.date_to) queryParts.push(`date_to=${encodeURIComponent(params.date_to)}`);
   if (params.recommendation) queryParts.push(`recommendation=${encodeURIComponent(params.recommendation)}`);
+  if (params.verdict) queryParts.push(`verdict=${encodeURIComponent(params.verdict)}`);
+  if (params.stage) queryParts.push(`stage=${encodeURIComponent(params.stage)}`);
   if (params.page !== undefined) queryParts.push(`page=${params.page}`);
   if (params.skip !== undefined) queryParts.push(`skip=${params.skip}`);
   if (params.limit !== undefined) queryParts.push(`limit=${params.limit}`);

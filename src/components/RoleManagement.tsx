@@ -7,6 +7,7 @@ import {
   createUser, updateUser, deleteUser
 } from "../utils/Api";
 import type { RoleItem, UserProfile } from "../utils/Api";
+import { useFeedback } from "./ui/Feedback";
 
 const AVAILABLE_PERMISSIONS = [
   { id: "dashboard", label: "Dashboard", desc: "Access to overall analytics dashboard" },
@@ -15,14 +16,14 @@ const AVAILABLE_PERMISSIONS = [
   { id: "evaluation", label: "Evaluation", desc: "Detailed candidate scoring and evaluation" },
   { id: "jd-match", label: "JD Matching", desc: "Match resumes against Job Descriptions" },
   { id: "interviews", label: "Interviews", desc: "Schedule and manage candidate interviews" },
-  { id: "interview-dashboard", label: "Interview Dashboard", desc: "Live interview video and feedback portal" },
-  { id: "client-feedback", label: "Client Feedback", desc: "Manage client review and approval workflow" },
   { id: "analytics", label: "Analytics & Reports", desc: "Export and view hiring reports" },
   { id: "settings", label: "Settings", desc: "System settings and email configuration" },
   { id: "role-management", label: "Role & User Access", desc: "Manage roles, permissions, and user access" },
 ];
 
 export default function RoleManagement() {
+  const { confirm } = useFeedback();
+
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -178,7 +179,7 @@ export default function RoleManagement() {
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete role "${role.name}"?`)) return;
+    if (!(await confirm({ title: `Are you sure you want to delete role "${role.name}"?`, confirmLabel: "Delete", danger: true }))) return;
 
     try {
       await deleteRole(role.id);
@@ -261,7 +262,7 @@ export default function RoleManagement() {
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete user account "${user.full_name}" (${user.email})?`)) return;
+    if (!(await confirm({ title: `Are you sure you want to delete user account "${user.full_name}" (${user.email})?`, confirmLabel: "Delete", danger: true }))) return;
 
     try {
       await deleteUser(user.id);
@@ -382,11 +383,11 @@ export default function RoleManagement() {
                         </span>
 
                         {role.is_system ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 border border-indigo-200 text-indigo-700">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 border border-indigo-200 text-indigo-700">
                             System Role
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700">
                             Custom
                           </span>
                         )}
@@ -422,7 +423,7 @@ export default function RoleManagement() {
                           onClick={() => handleOpenEditRoleModal(role)}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                           title="Edit role"
-                        >
+                         aria-label="Edit">
                           <Edit2 className="w-4 h-4" />
                         </button>
                         {!isAdministratorRole(role) && (
@@ -430,7 +431,7 @@ export default function RoleManagement() {
                             onClick={() => handleDeleteRole(role)}
                             className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             title="Delete role"
-                          >
+                           aria-label="Remove">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
@@ -509,7 +510,7 @@ export default function RoleManagement() {
                           onClick={() => handleOpenEditUserModal(u)}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                           title="Edit user details"
-                        >
+                         aria-label="Edit">
                           <Edit2 className="w-4 h-4" />
                         </button>
                         {!isAdministratorUser(u) && (
@@ -517,7 +518,7 @@ export default function RoleManagement() {
                             onClick={() => handleDeleteUser(u)}
                             className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             title="Delete user account"
-                          >
+                           aria-label="Remove">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}

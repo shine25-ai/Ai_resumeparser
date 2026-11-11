@@ -30,6 +30,7 @@ from app.services.s3_service import S3Service
 from app.utils.enums import ResumeStatus
 from app.utils.helpers import generate_uuid, sanitize_filename, utc_now
 from app.utils.validators import validate_profile_picture, validate_uploaded_file
+from app.utils.hiring_stage import candidate_stage
 
 
 class ResumeService:
@@ -410,6 +411,29 @@ class ResumeService:
         enriched = await self.enrich_resumes_with_interviews([resume])
         return ResumeResponse.model_validate(enriched[0])
 
+    async def _stage_conditions(self, stage: str) -> List[Dict[str, Any]]:
+        """Resume conditions matching candidates whose hiring stage is `stage` (see app/utils/hiring_stage.py)."""
+        cursor = self.resume_repo.db["interviews"].find(
+            {},
+            {"_id": 0, "candidate_id": 1, "resume_id": 1, "recommendation": 1, "status": 1, "scheduled_date": 1, "scheduled_time": 1, "created_at": 1},
+        )
+        by_candidate: Dict[str, List[Dict[str, Any]]] = {}
+        async for inv in cursor:
+            for key in {inv.get("resume_id"), inv.get("candidate_id")} - {None, ""}:
+                by_candidate.setdefault(str(key), []).append(inv)
+
+        # Same rule as the list: ignore cancelled interviews unless that is all there is
+        stages: Dict[str, str] = {}
+        for key, invs in by_candidate.items():
+            active = [i for i in invs if str(i.get("status", "")).upper() != "CANCELLED"]
+            stages[key] = candidate_stage(active or invs)
+
+        if stage.strip() == "Screening":
+            interviewed = list(stages)
+            return [{"id": {"$nin": interviewed}}, {"candidate_id": {"$nin": interviewed}}]
+        matching = [k for k, v in stages.items() if v == stage.strip()]
+        return [{"$or": [{"id": {"$in": matching}}, {"candidate_id": {"$in": matching}}]}]
+
     async def enrich_resumes_with_interviews(self, resumes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Enrich candidate resume dicts with interview assignment status and dates."""
         if not resumes:
@@ -507,7 +531,9 @@ class ResumeService:
                     inv_clean.pop("_id", None)
                     clean_invs.append(inv_clean)
                 r["interviews"] = clean_invs
+                r["stage"] = candidate_stage(valid_invs)
             else:
+                r["stage"] = "Screening"
                 r["interview_assigned"] = False
                 r["interview_status"] = "NOT_ASSIGNED"
                 r["last_interview_assigned_date"] = None
@@ -587,10 +613,13 @@ class ResumeService:
         is_admin: bool = False,
         skill_mode: Optional[str] = "any",
         sort_by: Optional[str] = None,
+        stage: Optional[str] = None,
     ) -> ResumeListResponse:
         """Filter resumes matching criteria with backend pagination and total_pages calculation."""
         import math
+        extra_conditions = await self._stage_conditions(stage) if stage and stage.strip().upper() != "ALL" else []
         res_dict = await self.resume_repo.filter_resumes(
+            extra_conditions=extra_conditions,
             user_id=user_id,
             job_title=job_title,
             min_experience=min_experience,

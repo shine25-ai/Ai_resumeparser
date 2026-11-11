@@ -17,8 +17,8 @@ DEFAULT_SYSTEM_ROLES = [
         "description": "System administrator with full permissions across all tools and configurations.",
         "permissions": [
             "dashboard", "upload", "database", "evaluation",
-            "jd-match", "interviews", "interview-dashboard",
-            "client-feedback", "analytics", "settings", "role-management"
+            "jd-match", "interviews",
+            "analytics", "settings", "role-management"
         ],
         "is_system": True,
     },

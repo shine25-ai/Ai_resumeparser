@@ -4,7 +4,10 @@ from app.schemas.mail_template import MailTemplateCreate, MailTemplateUpdate, Ma
 from app.controllers.template_controller import TemplateController
 import json
 
-router = APIRouter(prefix="/api/v1/templates", tags=["mail_templates"])
+from app.core.dependencies import get_current_active_user
+
+# Logged-in users only (this router can also send test emails)
+router = APIRouter(prefix="/api/v1/templates", tags=["mail_templates"], dependencies=[Depends(get_current_active_user)])
 
 def get_controller():
     return TemplateController()

@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { Mic, Square, Loader2, Play, Video, UploadCloud } from "lucide-react";
+import { apiFetch, BASE_URL } from "../utils/Api";
 
 export default function InterviewRecorder() {
   const [isRecording, setIsRecording] = useState(false);
@@ -72,7 +73,7 @@ export default function InterviewRecorder() {
       formData.append("file", blob, `recording.${ext}`);
 
       // Replace with your actual API endpoint or base URL configuration
-      const response = await fetch("http://localhost:8000/api/transcription/transcribe", {
+      const response = await apiFetch(`${BASE_URL}/transcription/transcribe`, {
         method: "POST",
         body: formData,
       });

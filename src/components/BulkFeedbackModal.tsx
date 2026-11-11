@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X, ChevronLeft, ChevronRight, UserCheck,
   Building2, DollarSign, Sparkles, HelpCircle, Plus, Trash2,
@@ -19,6 +19,7 @@ import {
 import type { CategoryScoreItem } from "../types/interview";
 import { SkillRatingsEvaluation } from "./SkillRatingsEvaluation";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
+import { useFeedback } from "./ui/Feedback";
 
 interface BulkFeedbackModalProps {
   isOpen: boolean;
@@ -88,8 +89,12 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   selectedInterviews,
   onSuccess,
 }) => {
+  const { toast } = useFeedback();
+
   const [activeCandidateIndex, setActiveCandidateIndex] = useState<number>(0);
   const [formsData, setFormsData] = useState<SingleCandidateFeedbackForm[]>([]);
+  // Verdicts the evaluator chose by hand, per candidate ("0:top", "0:int:1", ...)
+  const pickedVerdictsRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
@@ -134,7 +139,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             interviewer_email: currentUser.email || item.interviewer_email || "",
             rating: item.rating || 4,
             feedback: item.feedback || "",
-            recommendation: item.recommendation || "Selected",
+            recommendation: item.recommendation || "Pending",
             strengths: item.strengths || [],
             weaknesses: item.weaknesses || [],
           }];
@@ -147,7 +152,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   interviewer_email: item.interviewer_email || "",
                   rating: item.rating || 4,
                   feedback: item.feedback || "",
-                  recommendation: item.recommendation || "Selected",
+                  recommendation: item.recommendation || "Pending",
                   strengths: item.strengths || [],
                   weaknesses: item.weaknesses || [],
                 },
@@ -169,7 +174,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             client_email: currentUser.email || item.client_email || "",
             client_rating: item.client_rating || 4,
             client_feedback: item.client_feedback || "",
-            client_recommendation: item.client_recommendation || "Selected",
+            client_recommendation: item.client_recommendation || "Pending",
             client_notes: item.client_notes || "",
           }];
         } else {
@@ -180,7 +185,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   client_name: item.client_name || "Client Evaluator 1",
                   client_rating: item.client_rating || 4,
                   client_feedback: item.client_feedback || "",
-                  client_recommendation: item.client_recommendation || "Selected",
+                  client_recommendation: item.client_recommendation || "Pending",
                   client_notes: item.client_notes || "",
                 },
               ];
@@ -209,7 +214,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           feedback: item.feedback || "",
           strengths: item.strengths ? item.strengths.join(", ") : "",
           weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
-          recommendation: item.recommendation || "Selected",
+          recommendation: item.recommendation || "Pending",
           interviewersList: initInterviewers,
 
           client_name: item.client_name || "",
@@ -217,7 +222,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           client_feedback: item.client_feedback || "",
           client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
           client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
-          client_recommendation: item.client_recommendation || "Selected",
+          client_recommendation: item.client_recommendation || "Pending",
           client_notes: item.client_notes || "",
           client_feedback_date: item.client_feedback_date || new Date().toISOString().split("T")[0],
           clientsList: initClients,
@@ -239,20 +244,32 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
         };
       });
       setFormsData(initialForms);
+      pickedVerdictsRef.current = new Set();
       setActiveCandidateIndex(0);
     }
   }, [selectedInterviews, isOpen]);
 
+  // Only load questions while the modal is open (it stays mounted while closed)
+  const activeInterviewType = isOpen ? selectedInterviews?.[activeCandidateIndex]?.interview_type : undefined;
   useEffect(() => {
-    if (selectedInterviews && selectedInterviews[activeCandidateIndex]) {
-      const type = selectedInterviews[activeCandidateIndex].interview_type;
-      getFeedbackQuestionsAsync(type).then((opts) => setQuestionOptions(opts));
+    if (activeInterviewType) {
+      getFeedbackQuestionsAsync(activeInterviewType).then((opts) => setQuestionOptions(opts));
     }
-  }, [activeCandidateIndex, selectedInterviews]);
+  }, [activeInterviewType]);
 
   if (!isOpen || selectedInterviews.length === 0) return null;
 
   const currentForm = formsData[activeCandidateIndex] || formsData[0];
+  const OFFER_VERDICTS = ["Selected", "Offer to Be Released", "Offer Accepted", "Offer Rejected", "Recommended", "Strong Hire", "Hire"];
+  const showOfferDetails =
+    !!currentForm &&
+    (OFFER_VERDICTS.includes(currentForm.recommendation) ||
+      OFFER_VERDICTS.includes(currentForm.client_recommendation) ||
+      !!(currentForm.salary_requested || currentForm.final_fit_salary || currentForm.joining_date));
+
+  // A rating suggests a verdict, but never overwrites one the evaluator picked by hand
+  const pickedVerdicts = pickedVerdictsRef.current;
+  const pickKey = (part: string) => `${activeCandidateIndex}:${part}`;
 
   const handleCurrentFormChange = (field: keyof SingleCandidateFeedbackForm, value: any) => {
     setFormsData((prev) => {
@@ -263,12 +280,15 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           [field]: value,
         };
 
-        if (field === "rating") {
+        if (field === "recommendation") pickedVerdicts.add(pickKey("top"));
+        if (field === "client_recommendation") pickedVerdicts.add(pickKey("client"));
+
+        if (field === "rating" && !pickedVerdicts.has(pickKey("top"))) {
           const outcome = getAutoRatingOutcome(Number(value));
           item.recommendation = outcome.recommendation;
         }
 
-        if (field === "client_rating") {
+        if (field === "client_rating" && !pickedVerdicts.has(pickKey("client"))) {
           const outcome = getAutoRatingOutcome(Number(value));
           item.client_recommendation = outcome.clientRecommendation;
         }
@@ -314,7 +334,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       const form = updated[activeCandidateIndex];
       if (form && form.interviewersList[intIdx]) {
         const item = { ...form.interviewersList[intIdx], [field]: val };
-        if (field === "rating") {
+        if (field === "recommendation") pickedVerdicts.add(pickKey(`int:${intIdx}`));
+        if (field === "rating" && !pickedVerdicts.has(pickKey(`int:${intIdx}`))) {
           const outcome = getAutoRatingOutcome(Number(val));
           item.recommendation = outcome.recommendation;
         }
@@ -364,7 +385,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       const form = updated[activeCandidateIndex];
       if (form && form.clientsList[clientIdx]) {
         const item = { ...form.clientsList[clientIdx], [field]: val };
-        if (field === "client_rating") {
+        if (field === "client_recommendation") pickedVerdicts.add(pickKey(`cli:${clientIdx}`));
+        if (field === "client_rating" && !pickedVerdicts.has(pickKey(`cli:${clientIdx}`))) {
           const outcome = getAutoRatingOutcome(Number(val));
           item.client_recommendation = outcome.clientDecision;
         }
@@ -409,7 +431,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       }
     } catch (err: any) {
       console.error("Failed to upload document to S3:", err);
-      alert(`Failed to upload document to S3: ${err.message || "Upload error"}`);
+      toast(`Failed to upload document to S3: ${err.message || "Upload error"}`, "error");
     } finally {
       setIsUploadingDocFile(false);
       e.target.value = "";
@@ -445,7 +467,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       }
     } catch (err: any) {
       console.error("Failed to upload feedback report to S3:", err);
-      alert(`Failed to upload feedback report to S3: ${err.message || "Upload error"}`);
+      toast(`Failed to upload feedback report to S3: ${err.message || "Upload error"}`, "error");
     } finally {
       setIsUploadingFeedbackReportFile(false);
       e.target.value = "";
@@ -554,11 +576,15 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-extrabold text-slate-900 tracking-tight whitespace-nowrap">
-                  Bulk Feedback Workspace ({selectedInterviews.length} Candidates)
+                  {selectedInterviews.length === 1
+                    ? `Feedback: ${selectedInterviews[0].candidate_name}`
+                    : `Feedback for ${selectedInterviews.length} candidates`}
                 </h2>
-                <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                  Candidate {activeCandidateIndex + 1} of {formsData.length}
-                </span>
+                {formsData.length > 1 && (
+                  <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    Candidate {activeCandidateIndex + 1} of {formsData.length}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 font-medium truncate">
                 Assess individual candidate technical round, panel interviewers & client evaluators
@@ -633,7 +659,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                 ) : (
                   <>
                     <Sparkles size={13} />
-                    <span>Save & Submit All Bulk Feedback</span>
+                    <span>{selectedInterviews.length === 1 ? "Save feedback" : `Save feedback for ${selectedInterviews.length}`}</span>
                   </>
                 )}
               </button>
@@ -665,7 +691,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                       : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[11px] font-extrabold ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`}>
                     {idx + 1}
                   </span>
                   <span className="truncate max-w-[130px]">{f.candidate_name}</span>
@@ -718,7 +744,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                     <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
                       {currentForm.candidate_name}
                     </h3>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                    <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${
                       currentForm.ai_recommendation === "Strong Hire" || currentForm.ai_recommendation === "Selected"
                         ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                         : currentForm.ai_recommendation === "Hire"
@@ -732,11 +758,11 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full whitespace-nowrap">
+                    <span className="bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[11px] font-extrabold px-2 py-0.5 rounded-full whitespace-nowrap">
                       {currentForm.job_title} ({currentForm.interview_type} - R{currentForm.round_number})
                     </span>
                     {currentForm.scheduled_date && (
-                      <span className="bg-slate-100 border border-slate-200/80 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1">
+                      <span className="bg-slate-100 border border-slate-200/80 text-slate-700 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1">
                         <Calendar size={11} className="text-slate-500" />
                         {currentForm.scheduled_date} at {currentForm.scheduled_time || "10:00"}
                       </span>
@@ -751,7 +777,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
               {/* LEFT SIDEBAR NAVIGATION (2 COLS) */}
               <div className="lg:col-span-2 hidden lg:block space-y-1.5 sticky top-0 self-start">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 block mb-2">
+                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-3 block mb-2">
                   Evaluation Workspace
                 </span>
                 
@@ -783,13 +809,15 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   <span>Skill Assessment</span>
                 </a>
 
-                <a
-                  href="#sec-compensation"
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
-                >
-                  <DollarSign size={15} className="text-emerald-600" />
-                  <span>Compensation & Role</span>
-                </a>
+                {showOfferDetails && (
+                  <a
+                    href="#sec-compensation"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 border border-transparent hover:border-slate-200/80 transition-all"
+                  >
+                    <DollarSign size={15} className="text-emerald-600" />
+                    <span>Offer details</span>
+                  </a>
+                )}
 
                 <a
                   href="#sec-documents"
@@ -1267,11 +1295,12 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   />
                 </div>
 
-                {/* COMPENSATION & ROLE KPI CARDS SECTION */}
+                {/* Offer details only appear once the verdict is Selected (or they were already filled) */}
+                {showOfferDetails && (
                 <div id="sec-compensation" className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
                     <DollarSign size={18} className="text-emerald-600" />
-                    <h3 className="text-sm font-extrabold text-slate-900">Compensation & Role Details</h3>
+                    <h3 className="text-sm font-extrabold text-slate-900">Offer details</h3>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1331,6 +1360,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                     </div>
                   </div>
                 </div>
+                )}
 
                 {/* DOCUMENTS & NOTES SECTION */}
                 <div id="sec-documents" className="space-y-4">

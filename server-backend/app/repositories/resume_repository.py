@@ -181,11 +181,13 @@ class ResumeRepository(BaseRepository):
         is_admin: bool = False,
         skill_mode: Optional[str] = "any",
         sort_by: Optional[str] = None,
+        extra_conditions: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Filter resumes based on multiple criteria matching parsed_data fields and return (results, total)."""
         import re
 
         and_conditions: List[Dict[str, Any]] = [{"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}]
+        and_conditions.extend(extra_conditions or [])
         if user_id and not is_admin:
             and_conditions.append({"user_id": user_id})
 

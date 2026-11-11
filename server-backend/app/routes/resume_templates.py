@@ -5,7 +5,8 @@ from app.schemas.resume_template import ResumeTemplateCreate, ResumeTemplateUpda
 from app.controllers.resume_template_controller import ResumeTemplateController
 from app.core.dependencies import get_current_active_user
 
-router = APIRouter(prefix="/api/v1/resume-templates", tags=["resume_templates"])
+# Logged-in users only (list, edit, delete and export were open before)
+router = APIRouter(prefix="/api/v1/resume-templates", tags=["resume_templates"], dependencies=[Depends(get_current_active_user)])
 
 def get_controller():
     return ResumeTemplateController()

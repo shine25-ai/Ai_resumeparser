@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi import status
 from app.core.exceptions import AppException
 from app.schemas.analytics import AnalyticsResponse
@@ -10,9 +11,10 @@ class AnalyticsController:
     def __init__(self, service: AnalyticsService):
         self.service = service
 
-    async def get_analytics_reports(self) -> AnalyticsResponse:
+    async def get_analytics_reports(self, days: Optional[int] = 30) -> AnalyticsResponse:
         try:
-            data = await self.service.get_analytics_reports()
+            data = await self.service.get_analytics_reports(days=days)
+            data["rangeDays"] = days
             return AnalyticsResponse(**data)
         except Exception as e:
             logger.error(f"Error fetching analytics reports: {str(e)}")

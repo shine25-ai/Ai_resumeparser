@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Edit, Download, Search, FileText, CheckCircle, AlertCircle, Eye, X, Code, Info } from "lucide-react";
-import { getResumes } from "../utils/Api";
+import { getResumes, apiFetch } from "../utils/Api";
 import { getCandidateRole } from "../utils/candidateFields";
+import { useFeedback } from "../components/ui/Feedback";
 
 // Local API wrapper
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
@@ -15,7 +16,7 @@ const getHeaders = (isFormData = false) => {
 
 const api = {
   get: async (url: string, options: any = {}) => {
-    const res = await fetch(`${BASE_URL}${url}`, { method: "GET", headers: getHeaders() });
+    const res = await apiFetch(`${BASE_URL}${url}`, { method: "GET", headers: getHeaders() });
     if (options.responseType === "blob") {
       if (!res.ok) throw { response: { data: {} } };
       const blob = await res.blob();
@@ -27,7 +28,7 @@ const api = {
   },
   post: async (url: string, data?: any) => {
     const isFormData = data instanceof FormData;
-    const res = await fetch(`${BASE_URL}${url}`, {
+    const res = await apiFetch(`${BASE_URL}${url}`, {
       method: "POST", headers: getHeaders(isFormData),
       body: isFormData ? data : JSON.stringify(data),
     });
@@ -36,7 +37,7 @@ const api = {
     return { data: json };
   },
   put: async (url: string, data?: any) => {
-    const res = await fetch(`${BASE_URL}${url}`, {
+    const res = await apiFetch(`${BASE_URL}${url}`, {
       method: "PUT", headers: getHeaders(),
       body: JSON.stringify(data),
     });
@@ -45,7 +46,7 @@ const api = {
     return { data: json };
   },
   delete: async (url: string) => {
-    const res = await fetch(`${BASE_URL}${url}`, { method: "DELETE", headers: getHeaders() });
+    const res = await apiFetch(`${BASE_URL}${url}`, { method: "DELETE", headers: getHeaders() });
     const json = await res.json();
     if (!res.ok) throw { response: { data: json } };
     return { data: json };
@@ -145,6 +146,8 @@ const DEFAULT_HTML_TEMPLATE = `<!DOCTYPE html>
 </html>`;
 
 export default function ResumeTemplates() {
+  const { confirm } = useFeedback();
+
   const [activeTab, setActiveTab] = useState<"manage" | "export">("manage");
 
   // Manage Tab State
@@ -248,7 +251,7 @@ export default function ResumeTemplates() {
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this template?")) return;
+    if (!(await confirm({ title: "Are you sure you want to delete this template?", confirmLabel: "Delete", danger: true }))) return;
     try {
       await api.delete(`/resume-templates/${id}`);
       fetchTemplates();
@@ -391,7 +394,7 @@ export default function ResumeTemplates() {
                               <Edit size={16} />
                             </button>
                             <button onClick={() => handleDeleteTemplate(t.id)}
-                              className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors" title="Delete Template">
+                              className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors" title="Delete Template" aria-label="Remove">
                               <Trash2 size={16} />
                             </button>
                           </div>

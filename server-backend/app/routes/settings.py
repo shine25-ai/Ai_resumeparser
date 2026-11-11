@@ -4,7 +4,10 @@ from app.schemas.settings import EmailConfigCreate, EmailConfigResponse
 from app.controllers.settings_controller import SettingsController
 from pydantic import BaseModel, EmailStr
 
-router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+from app.core.dependencies import get_current_active_user
+
+# Logged-in users only: these hold SMTP and AI provider settings
+router = APIRouter(prefix="/api/v1/settings", tags=["settings"], dependencies=[Depends(get_current_active_user)])
 
 def get_controller():
     return SettingsController()

@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { Search, Bell, Settings, FileText, Sparkles, CheckCircle2, Video, ChevronDown, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { PieChart, Pie, Cell } from 'recharts';
+import { Search, FileText, Sparkles, CheckCircle2, Video, Loader2 } from 'lucide-react';
 import { getDashboardMetrics } from '../utils/Api';
 
 export default function Dashboard() {
-  const [userName, setUserName] = useState<string>("Senthil C");
-  const [userRole, setUserRole] = useState<string>("Recruiter");
+  const navigate = useNavigate();
+  const [userName, setUserName] = useState<string>("");
+  const [userRole, setUserRole] = useState<string>("");
+  const [searchText, setSearchText] = useState<string>("");
+  const initials = userName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("") || "U";
   
   const [loading, setLoading] = useState<boolean>(true);
   const [stats, setStats] = useState<any[]>([]);
@@ -81,36 +90,37 @@ export default function Dashboard() {
     <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans">
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="relative w-full sm:w-96">
+        {/* Enter opens the Candidate Database filtered by this text */}
+        <form
+          className="relative w-full sm:w-96"
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = searchText.trim();
+            navigate(text ? `/database?search=${encodeURIComponent(text)}` : "/database");
+          }}
+        >
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
-            type="text"
+            type="search"
+            aria-label="Search candidates"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
             placeholder="Search candidates, skills, position..."
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
           />
-        </div>
+        </form>
 
-        <div className="flex items-center gap-4 self-end sm:self-auto">
-          <button className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200">
-            <Bell size={20} />
-          </button>
-          <button className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200">
-            <Settings size={20} />
-          </button>
-
-          <div className="flex items-center gap-3 pl-2 border-l border-slate-200">
-            <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
-              alt={userName}
-              className="w-9 h-9 rounded-full object-cover border border-slate-300"
-            />
-            <div className="text-left leading-tight hidden sm:block">
-              <div className="flex items-center gap-1">
-                <span className="font-semibold text-slate-800 text-sm">{userName}</span>
-                <ChevronDown size={14} className="text-slate-400" />
-              </div>
-              <span className="text-xs text-slate-500 font-medium">{userRole}</span>
-            </div>
+        <div className="flex items-center gap-3 self-end sm:self-auto">
+          <div
+            className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-sm flex items-center justify-center"
+            aria-hidden="true"
+          >
+            {initials}
+          </div>
+          <div className="text-left leading-tight hidden sm:block">
+            <span className="block font-semibold text-slate-800 text-sm">{userName}</span>
+            <span className="text-xs text-slate-500 font-medium">{userRole}</span>
           </div>
         </div>
       </div>
@@ -164,8 +174,7 @@ export default function Dashboard() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             {/* Donut Chart with Center Text */}
             <div className="relative w-48 h-48 flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+              <PieChart width={192} height={192}>
                   <Pie
                     data={statusData}
                     cx="50%"
@@ -174,13 +183,13 @@ export default function Dashboard() {
                     outerRadius={80}
                     paddingAngle={3}
                     dataKey="count"
+                    isAnimationActive={false}
                   >
                     {statusData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                 </PieChart>
-              </ResponsiveContainer>
               <div className="absolute flex flex-col items-center justify-center text-center">
                 <span className="text-lg font-bold text-slate-900">{totalPipeline.toLocaleString()}</span>
                 <span className="text-xs text-slate-500 font-medium">Total</span>
@@ -210,8 +219,7 @@ export default function Dashboard() {
           <h2 className="text-base font-bold text-slate-900 mb-4">Seniority Distribution</h2>
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="relative w-48 h-48 flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+              <PieChart width={192} height={192}>
                   <Pie
                     data={seniorityData}
                     cx="50%"
@@ -220,13 +228,13 @@ export default function Dashboard() {
                     outerRadius={80}
                     paddingAngle={3}
                     dataKey="count"
+                    isAnimationActive={false}
                   >
                     {seniorityData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                 </PieChart>
-              </ResponsiveContainer>
               <div className="absolute flex flex-col items-center justify-center text-center">
                 <span className="text-lg font-bold text-slate-900">{seniorityData.reduce((acc, item) => acc + item.count, 0)}</span>
                 <span className="text-xs text-slate-500 font-medium">Total</span>
@@ -252,8 +260,7 @@ export default function Dashboard() {
           <h2 className="text-base font-bold text-slate-900 mb-4">Domain Specialization</h2>
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="relative w-48 h-48 flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+              <PieChart width={192} height={192}>
                   <Pie
                     data={domainData}
                     cx="50%"
@@ -262,13 +269,13 @@ export default function Dashboard() {
                     outerRadius={80}
                     paddingAngle={3}
                     dataKey="count"
+                    isAnimationActive={false}
                   >
                     {domainData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                 </PieChart>
-              </ResponsiveContainer>
               <div className="absolute flex flex-col items-center justify-center text-center">
                 <span className="text-lg font-bold text-slate-900">{domainData.reduce((acc, item) => acc + item.count, 0)}</span>
                 <span className="text-xs text-slate-500 font-medium">Total</span>

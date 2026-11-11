@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Plus, Edit2, Trash2, Send, X, CheckCircle2, AlertCircle, Calendar, Clock } from 'lucide-react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { MAIL_TEMPLATES_URL } from '../utils/Api';
+import { MAIL_TEMPLATES_URL, apiFetch } from "../utils/Api";
+import { useFeedback } from "./ui/Feedback";
 
 export default function MailTemplates() {
+  const { confirm } = useFeedback();
+
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
@@ -25,7 +28,7 @@ export default function MailTemplates() {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const response = await fetch(MAIL_TEMPLATES_URL);
+      const response = await apiFetch(MAIL_TEMPLATES_URL);
       if (response.ok) {
         const data = await response.json();
         setTemplates(data);
@@ -61,7 +64,7 @@ export default function MailTemplates() {
       const url = selectedTemplate?.id ? `${MAIL_TEMPLATES_URL}/${selectedTemplate.id}` : MAIL_TEMPLATES_URL;
       const method = selectedTemplate?.id ? 'PUT' : 'POST';
       
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -79,9 +82,9 @@ export default function MailTemplates() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this template?')) return;
+    if (!(await confirm({ title: 'Are you sure you want to delete this template?', confirmLabel: "Delete", danger: true }))) return;
     try {
-      const response = await fetch(`${MAIL_TEMPLATES_URL}/${id}`, { method: 'DELETE' });
+      const response = await apiFetch(`${MAIL_TEMPLATES_URL}/${id}`, { method: 'DELETE' });
       if (response.ok) {
         fetchTemplates();
       }
@@ -105,7 +108,7 @@ export default function MailTemplates() {
     });
 
     try {
-      const response = await fetch(`${MAIL_TEMPLATES_URL}/${selectedTemplate.id}/send-test`, {
+      const response = await apiFetch(`${MAIL_TEMPLATES_URL}/${selectedTemplate.id}/send-test`, {
         method: 'POST',
         body: formDataObj
       });
@@ -288,8 +291,8 @@ export default function MailTemplates() {
                 </div>
                 <div className="flex items-center gap-2 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={() => openTest(template)} className="p-2 bg-cyan-50 text-cyan-600 hover:bg-cyan-100 rounded-lg transition-colors border border-cyan-200 cursor-pointer" title="Send Test Email"><Send className="w-4 h-4" /></button>
-                  <button onClick={() => openEdit(template)} className="p-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 cursor-pointer" title="Edit Template"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => handleDelete(template.id)} className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 cursor-pointer" title="Delete Template"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => openEdit(template)} className="p-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 cursor-pointer" title="Edit Template" aria-label="Edit"><Edit2 className="w-4 h-4" /></button>
+                  <button onClick={() => handleDelete(template.id)} className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 cursor-pointer" title="Delete Template" aria-label="Remove"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
             ))}

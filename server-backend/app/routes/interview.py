@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.controllers.interview_controller import InterviewController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, get_current_active_user_optional
+from app.core.dependencies import get_current_active_user
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
     BulkInterviewFeedbackRequest,
@@ -43,7 +43,7 @@ def get_interview_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -
 )
 async def check_interview_conflict(
     payload: InterviewCheckConflictRequest,
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.check_interview_conflict(payload)
@@ -63,7 +63,7 @@ async def check_interview_conflict_get(
     client_id: Optional[str] = Query(None),
     client_name: Optional[str] = Query(None),
     exclude_interview_id: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     payload = InterviewCheckConflictRequest(
@@ -142,6 +142,7 @@ async def share_interview_summary(
 )
 async def get_feedback_questions(
     interview_type: Optional[str] = Query(None, description="Interview type filter (e.g. TECHNICAL, HR, MANAGERIAL, FINAL_ROUND)"),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.get_feedback_questions(interview_type=interview_type)
@@ -156,7 +157,7 @@ async def get_feedback_questions(
 async def check_candidate_active_status(
     candidate_id: str,
     candidate_name: Optional[str] = Query(None, description="Candidate name to check"),
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.check_candidate_active_status(candidate_id, candidate_name=candidate_name)
@@ -172,7 +173,7 @@ async def get_next_round_number(
     candidate_id: str,
     interview_type: Optional[str] = Query(None, description="Interview type filter"),
     interview_type_id: Optional[str] = Query(None, description="Interview type ID filter"),
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.get_next_round_number(candidate_id, interview_type=interview_type, interview_type_id=interview_type_id)
@@ -186,7 +187,7 @@ async def get_next_round_number(
 )
 async def get_candidate_history(
     candidate_id: str,
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.get_candidate_history(candidate_id)
@@ -213,18 +214,22 @@ async def list_interviews(
     date_from: Optional[str] = Query(None, description="Filter scheduled_date >= date_from (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Filter scheduled_date <= date_to (YYYY-MM-DD)"),
     recommendation: Optional[str] = Query(None, description="Filter by Recommendation"),
+    verdict: Optional[str] = Query(None, description="Filter by Verdict: Pending, Selected, Rejected, On Hold, No Show"),
+    stage: Optional[str] = Query(None, description="Filter by Stage: Interviewing, Offer, Hired, Closed"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     limit: int = Query(10, ge=1, le=500, description="Items per page"),
     skip: Optional[int] = Query(None, ge=0),
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
-    if current_user and isinstance(current_user, dict):
-        user_role = str(current_user.get("role", "")).lower()
-        if user_role in ["client", "client_guest"] and not client_id and not interviewer_id:
-            client_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
-        elif user_role in ["external_interviewer", "candidate_interviewer"] and not interviewer_id and not client_id:
-            interviewer_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
+    # Client and interviewer accounts only ever see their own interviews,
+    # whatever client_id / interviewer_id the request asks for.
+    user_role = str(current_user.get("role", "")).lower()
+    own_id = current_user.get("id") or current_user.get("email") or current_user.get("full_name")
+    if user_role in ["client", "client_guest"]:
+        client_id, interviewer_id = own_id, None
+    elif user_role in ["external_interviewer", "candidate_interviewer"]:
+        interviewer_id, client_id = own_id, None
 
     return await controller.list_interviews(
         candidate_id=candidate_id,
@@ -241,6 +246,8 @@ async def list_interviews(
         date_from=date_from,
         date_to=date_to,
         recommendation=recommendation,
+        verdict=verdict,
+        stage=stage,
         page=page,
         limit=limit,
         skip=skip,
@@ -255,7 +262,7 @@ async def list_interviews(
 )
 async def get_interview(
     interview_id: str,
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.get_interview(interview_id)
@@ -272,7 +279,7 @@ async def bulk_submit_feedback(
     current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
-    return await controller.bulk_submit_feedback(payload, user_id=current_user["id"])
+    return await controller.bulk_submit_feedback(payload, user_id=current_user["id"], user_info=current_user)
 
 
 @router.put(
@@ -345,7 +352,7 @@ async def delete_interview(
 async def send_interview_mail(
     interview_id: str,
     payload: SendInterviewEmailRequest,
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.send_interview_email(interview_id, payload)
@@ -360,7 +367,7 @@ async def send_interview_mail(
 async def cancel_interview(
     interview_id: str,
     payload: InterviewCancelRequest,
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: InterviewController = Depends(get_interview_controller),
 ):
     user_id = current_user.get("id") if current_user and isinstance(current_user, dict) else None

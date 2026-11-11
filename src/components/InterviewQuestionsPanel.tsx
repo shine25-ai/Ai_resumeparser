@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Brain, Code, User, Briefcase, Video, Upload, CheckCircle, XCircle } from "lucide-react";
-import { generateInterviewQuestions, BASE_URL } from "../utils/Api";
+import { generateInterviewQuestions, BASE_URL, apiFetch } from "../utils/Api";
+import { useFeedback } from "./ui/Feedback";
 
 interface InterviewQuestionsPanelProps {
   candidateId: string;
@@ -9,6 +10,8 @@ interface InterviewQuestionsPanelProps {
 }
 
 export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategories }: InterviewQuestionsPanelProps) {
+  const { toast, confirm } = useFeedback();
+
   const [interviewQuestions, setInterviewQuestions] = useState<any>(null);
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
@@ -66,7 +69,7 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
       formData.append("file", e.target.files[0]);
 
       try {
-        const response = await fetch(`${BASE_URL}/transcription/transcribe`, {
+        const response = await apiFetch(`${BASE_URL}/transcription/transcribe`, {
           method: "POST",
           body: formData,
         });
@@ -81,7 +84,7 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
         }
       } catch (err) {
         console.error("Transcription error:", err);
-        alert("Failed to transcribe the uploaded video.");
+        toast("Failed to transcribe the uploaded video.", "error");
       } finally {
         setIsTranscribing(false);
       }
@@ -90,14 +93,14 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
 
   const handleEvaluateAnswer = async (qIndex: number, category: string, questionObj: any) => {
     if (!videoTranscript) {
-      alert("Please upload and transcribe a video first.");
+      toast("Please upload and transcribe a video first.", "warning");
       return;
     }
     const qId = `${category}-${qIndex}`;
     setEvaluatingQuestionId(qId);
     
     try {
-      const response = await fetch(`${BASE_URL}/transcription/evaluate-answer`, {
+      const response = await apiFetch(`${BASE_URL}/transcription/evaluate-answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -118,7 +121,7 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
       }
     } catch (err) {
       console.error("Evaluation error:", err);
-      alert("Failed to evaluate answer.");
+      toast("Failed to evaluate answer.", "error");
     } finally {
       setEvaluatingQuestionId(null);
     }
@@ -155,8 +158,8 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
           
           {interviewQuestions && (
             <button
-              onClick={() => {
-                if(window.confirm("Are you sure you want to clear and regenerate all questions?")) {
+              onClick={async () => {
+                if (await confirm({ title: "Clear and regenerate all questions?", message: "The current questions and answers are replaced.", confirmLabel: "Regenerate" })) {
                   setInterviewQuestions(null);
                   handleGenerateQuestions();
                 }

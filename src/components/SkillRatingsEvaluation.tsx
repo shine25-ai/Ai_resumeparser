@@ -701,7 +701,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                         className="px-3 py-1.5 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer flex items-center justify-between transition-colors"
                       >
                         <span className="font-bold uppercase tracking-wider">{template.skill_name}</span>
-                        <span className="text-[10px] text-slate-400 font-medium">Database Skill</span>
+                        <span className="text-[11px] text-slate-400 font-medium">Database Skill</span>
                       </li>
                     ))}
                   </ul>
@@ -738,12 +738,12 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                       {skill.skill_name}
                     </span>
                     {isSelected && (
-                      <span className="bg-indigo-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider scale-90">
+                      <span className="bg-indigo-600 text-white text-[11px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider scale-90">
                         Active
                       </span>
                     )}
                     {(skill.evaluator_name || currentLoggedInName) && (
-                      <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
+                      <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
                         <span>Added by: {skill.evaluator_name || currentLoggedInName}</span>
                       </span>
@@ -785,7 +785,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                       handleRemoveSkill(index);
                     }}
                     className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors"
-                  >
+                   aria-label="Remove">
                     <Trash2 size={13} />
                   </button>
                 )}
@@ -804,7 +804,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
               <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                 Category-wise Weighted Evaluation {selectedSkillName && `for "${selectedSkillName}"`}
               </h4>
-              <p className="text-[10px] text-slate-500 font-medium">
+              <p className="text-[11px] text-slate-500 font-medium">
                 {selectedSkillName
                   ? `Category scores & AI live score calculated for the selected skill: ${selectedSkillName}`
                   : "Please select a skill above to perform category evaluations"}
@@ -816,18 +816,18 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
             {/* AI Score Badge */}
             <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 px-3 py-1.5 rounded-xl">
               <div className="text-center">
-                <span className="text-[9px] text-indigo-600 font-bold uppercase tracking-wider block">
+                <span className="text-[11px] text-indigo-600 font-bold uppercase tracking-wider block">
                   Skill AI Score
                 </span>
                 <span className="text-base font-black text-indigo-900">
-                  {activeAiScore} <span className="text-[10px] font-bold text-slate-500">/ 100</span>
+                  {activeAiScore} <span className="text-[11px] font-bold text-slate-500">/ 100</span>
                 </span>
               </div>
 
               <div className="border-l border-indigo-200 pl-2.5 space-y-0.5">
-                <span className="text-[9px] text-slate-500 font-semibold block">Recommendation</span>
+                <span className="text-[11px] text-slate-500 font-semibold block">Recommendation</span>
                 <span
-                  className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${aiRecommendation === "Strong Hire"
+                  className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${aiRecommendation === "Strong Hire"
                     ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                     : aiRecommendation === "Hire"
                       ? "bg-teal-50 border-teal-200 text-teal-700"
@@ -912,7 +912,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                                 />
                               </button>
                             ))}
-                            <span className="text-[10px] font-bold text-slate-700 ml-1">
+                            <span className="text-[11px] font-bold text-slate-700 ml-1">
                               ({cat.rating}/5)
                             </span>
                           </div>
@@ -926,7 +926,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                               type="button"
                               onClick={() => handleRemoveCategory(cat.category)}
                               className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors"
-                            >
+                             aria-label="Remove">
                               <Trash2 size={13} />
                             </button>
                           </td>
@@ -975,7 +975,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
             {!readOnly && (
               <div className="bg-slate-50/50 border border-dashed border-slate-200 rounded-xl p-3 flex flex-wrap items-end gap-3.5">
                 <div className="flex-1 min-w-[200px] space-y-1 relative">
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                     New Category Name
                   </label>
                   <div className="relative">
@@ -997,9 +997,9 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
 
                     {showCatSuggestions && filteredCategorySuggestions.length > 0 && (
                       <ul className="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-52 overflow-y-auto py-1 text-xs font-medium text-slate-800 animate-in fade-in duration-150">
-                        <li className="px-3 py-1 text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider bg-indigo-50/60 border-b border-slate-100 flex items-center justify-between">
+                        <li className="px-3 py-1 text-[11px] font-extrabold text-indigo-600 uppercase tracking-wider bg-indigo-50/60 border-b border-slate-100 flex items-center justify-between">
                           <span>Template Suggestions for {selectedSkillName}</span>
-                          <span className="text-[9px] font-bold text-slate-400">Click to select</span>
+                          <span className="text-[11px] font-bold text-slate-400">Click to select</span>
                         </li>
                         {filteredCategorySuggestions.map((catItem: any, idx: number) => (
                           <li
@@ -1011,7 +1011,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                             className="px-3 py-2 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer flex items-center justify-between transition-colors border-b border-slate-50 last:border-0"
                           >
                             <span className="font-bold text-slate-900 text-xs">{catItem.category}</span>
-                            <span className="text-[10px] font-black text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-full shrink-0 ml-2">
+                            <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-full shrink-0 ml-2">
                               {catItem.weightage}% Weightage
                             </span>
                           </li>
@@ -1022,7 +1022,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                 </div>
 
                 <div className="w-28 space-y-1">
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                     Weightage (%)
                   </label>
                   <input
@@ -1059,7 +1059,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
             Hiring Manager Review & Interview Workflow Progress
           </span>
           {currentRoundNumber && (
-            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
               Active Evaluation: Round {currentRoundNumber} ({(currentInterviewType || "Interview").replace(/_/g, " ")})
             </span>
           )}
@@ -1110,7 +1110,7 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                   {isCompleted && <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
                   <span>{rndType} R{rndNum}</span>
                   {isCurrent && (
-                    <span className="bg-white/20 text-white text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-black">
+                    <span className="bg-white/20 text-white text-[11px] px-1.5 py-0.2 rounded-full uppercase tracking-wider font-black">
                       Active
                     </span>
                   )}

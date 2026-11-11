@@ -5,11 +5,10 @@ const ROUTE_PERMISSION_MAP: Record<string, string> = {
   "/": "dashboard",
   "/upload": "upload",
   "/database": "database",
+  "/candidates": "evaluation",
   "/evaluation": "evaluation",
   "/jd-match": "jd-match",
   "/interviews": "interviews",
-  "/interview-dashboard": "interview-dashboard",
-  "/client-feedback": "client-feedback",
   "/analytics": "analytics",
   "/settings": "settings",
 };
@@ -29,6 +28,11 @@ export const ProtectedRoute: React.FC = () => {
     // If admin or no explicit permissions set, allow all protected routes
     if (user.role === "admin" || !user.permissions || user.permissions.length === 0) {
       return <Outlet />;
+    }
+
+    // The old Interview Dashboard permission now opens the Interviews page
+    if (user.permissions.includes("interview-dashboard") && !user.permissions.includes("interviews")) {
+      user.permissions = [...user.permissions, "interviews"];
     }
 
     const currentPath = location.pathname;

@@ -63,6 +63,8 @@ class ResumeResponse(BaseModel):
     parse_error: Optional[str] = None  # why parsing failed, shown on the upload page
     interview_assigned: Optional[bool] = False
     interview_status: Optional[str] = "NOT_ASSIGNED"
+    # Hiring stage from the latest interview: Screening, Interviewing, Offer, Hired, Closed
+    stage: Optional[str] = "Screening"
     last_interview_assigned_date: Optional[str] = None
     last_interview_updated_at: Optional[str] = None
     latest_interview: Optional[Dict[str, Any]] = None

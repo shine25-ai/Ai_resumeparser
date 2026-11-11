@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.resume_controller import ResumeController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, get_current_active_user_optional, is_admin_or_staff_user
+from app.core.dependencies import get_current_active_user, is_admin_or_staff_user
 from app.repositories.resume_repository import ResumeRepository
 from app.schemas.resume import ResumeUpdateRequest
 from app.services.resume_service import ResumeService
@@ -104,6 +104,7 @@ async def match_resumes(
     keywords: list[str] = Query(None, description="List of keywords to search in full resume text"),
     skill_mode: str = Query("any", pattern="^(any|all)$", description="'all' = candidate must have every skill; 'any' = at least one"),
     sort_by: Optional[str] = Query(None, description="Sort order: latest, oldest, ai_score, experience_desc, experience_asc, name"),
+    stage: Optional[str] = Query(None, description="Hiring stage: Screening, Interviewing, Offer, Hired, Closed"),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
@@ -130,6 +131,7 @@ async def match_resumes(
         is_admin=is_admin,
         skill_mode=skill_mode,
         sort_by=sort_by,
+        stage=stage,
     )
 
 
@@ -230,7 +232,7 @@ async def export_resumes(
 )
 async def get_resume(
     resume_id: str,
-    current_user: dict = Depends(get_current_active_user_optional),
+    current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
     is_admin = is_admin_or_staff(current_user)
