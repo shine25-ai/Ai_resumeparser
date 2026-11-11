@@ -400,6 +400,9 @@ export interface CandidateMatch {
   ai_fit_score?: number;
   why?: string;
   gaps?: string;
+  // Phase 3: how close the resume is to the request by meaning (0-100, relative to the other candidates).
+  meaning_score?: number;
+  found_by_meaning?: boolean;
 }
 
 export interface PromptMatchResponse {

@@ -2,6 +2,7 @@
 The MongoDB tests use a throwaway database on localhost and are skipped when MongoDB isn't running."""
 
 import asyncio
+import re
 import os
 import uuid
 from unittest import mock
@@ -117,9 +118,35 @@ def with_service(test):
     return asyncio.run(run())
 
 
+def fake_vectors(texts):
+    """Deterministic stand-in for the meaning model: a normalised bag of words in 64 buckets."""
+    import hashlib as _h
+    out = []
+    for t in texts:
+        v = [0.0] * 64
+        for w in re.findall(r"[a-z0-9+#]+", t.lower()):
+            v[int(_h.md5(w.encode()).hexdigest(), 16) % 64] += 1.0
+        n = sum(x * x for x in v) ** 0.5 or 1.0
+        out.append([x / n for x in v])
+    return out
+
+
+def fake_embed(request):
+    import json as _json
+    body = _json.loads(request.read())
+    return httpx.Response(200, json={"status": "success", "model": "test-model", "vectors": fake_vectors(body["texts"])})
+
+
+def ai_calls(calls):
+    """Calls that use the AI (search plan, re-rank); the local meaning model is not counted."""
+    return [c for c in calls if not c.endswith("/api/embed")]
+
+
 def fake_parser(plan, calls, status_code=200):
     def handler(request):
         calls.append(request.url.path)
+        if request.url.path.endswith("/api/embed"):
+            return fake_embed(request)
         if status_code != 200:
             return httpx.Response(status_code, json={"detail": "LLM rate limit (429)"})
         return httpx.Response(200, json={"status": "success", "plan": plan})
@@ -146,7 +173,7 @@ def test_prompt_search_ranks_and_caches_plan():
         with no_ai_settings(), fake_parser(JAVA_PLAN, calls):
             first = await service.search("Senior Java dev with Spring Boot and Kafka, 5-8 yrs, Chennai", None, "u1", True)
             again = await service.search("senior java dev with spring boot and kafka,  5-8 yrs, chennai", None, "u1", True, page=1)
-        assert calls == ["/api/search-plan"]                    # second search used the cached plan
+        assert ai_calls(calls) == ["/api/search-plan"]                    # second search used the cached plan
         assert first["plan_cached"] is False and again["plan_cached"] is True
         ids = [r["id"] for r in first["resumes"]]
         assert ids[:2] == ["best", "no_kafka"]
@@ -164,7 +191,7 @@ def test_edited_plan_skips_the_ai():
         calls = []
         with no_ai_settings(), fake_parser({}, calls):
             res = await service.search(None, {"must_have_skills": ["React"]}, "u1", True)
-        assert calls == [] and [r["id"] for r in res["resumes"]] == ["js_dev"]
+        assert ai_calls(calls) == [] and [r["id"] for r in res["resumes"]] == ["js_dev"]
     with_service(t)
 
 
@@ -277,6 +304,8 @@ def rerank_parser(calls, results=None, status_code=200):
     def handler(request):
         import json as _json
         calls.append(request.url.path)
+        if request.url.path.endswith("/api/embed"):
+            return fake_embed(request)
         if status_code != 200:
             return httpx.Response(status_code, json={"detail": "LLM rate limit (429)"})
         if request.url.path.endswith("/search-plan"):
@@ -295,7 +324,7 @@ def test_rerank_search_uses_ai_scores_and_caches_them():
         with no_ai_settings(), rerank_parser(calls, {"no_kafka": 100, "best": 10}):
             res = await service.search(None, JAVA_PLAN, "u1", True, rerank=True)
             again = await service.search(None, JAVA_PLAN, "u1", True, rerank=True, page=1, limit=2)
-        assert calls == ["/api/rerank"]                                      # second search fully cached
+        assert ai_calls(calls) == ["/api/rerank"]                                      # second search fully cached
         assert res["reranked"] is True and again["reranked"] is True
         top = res["resumes"][0]
         assert top["id"] == "no_kafka" and top["match"]["ai_fit_score"] == 100 and top["match"]["why"] == "why no_kafka"
@@ -321,7 +350,7 @@ def test_no_rerank_by_default():
         calls = []
         with no_ai_settings(), rerank_parser(calls):
             res = await service.search(None, JAVA_PLAN, "u1", True)
-        assert calls == [] and res["reranked"] is False
+        assert ai_calls(calls) == [] and res["reranked"] is False
     with_service(t)
 
 
@@ -393,3 +422,126 @@ def test_data_role_still_prefers_data_engineers():
 def test_past_specialism_gives_earlier_role_credit():
     c = cand("c", ["Python"], 6, "Technical Lead", past_roles=["Backend Developer", "Software Engineer"])
     assert match_score(c, BACKEND_PLAN)["role_match"] == "earlier role"
+
+
+# ---------------------------------------------------------------- phase 3: meaning-based search
+
+from app.repositories.resume_repository import MEANING_COLLECTION
+from app.services.prompt_match_service import (meaning_points, meaning_text, pack_vector, query_text,
+                                               unpack_vector, WEIGHTS)
+
+
+def test_meaning_text_has_the_work_but_no_contact_details():
+    c = cand("a", ["Python", "Kafka"], 6, "Backend Developer", "Chennai")
+    c["parsed_data"].update(email="a@x.com", phone="+919845012345", full_name="Arjun Ramesh", specialization="Payments",
+                            experience=[{"designation": "Backend Developer", "responsibilities": "Built UPI payment APIs"}])
+    text = meaning_text(c["parsed_data"])
+    assert "Role: Backend Developer." in text and "Specialization: Payments." in text
+    assert "Python" in text and "Built UPI payment APIs" in text
+    assert "Arjun" not in text and "a@x.com" not in text and "9845012345" not in text and "Chennai" not in text
+
+
+def test_vectors_survive_storage():
+    v = [0.125, -0.5, 0.333333, 0.0]
+    assert [round(x, 5) for x in unpack_vector(pack_vector(v))] == [0.125, -0.5, 0.33333, 0.0]
+
+
+def test_meaning_points_are_relative_to_the_request():
+    pts = meaning_points({"a": 0.80, "b": 0.70, "c": 0.62, "d": 0.60, "e": 0.40})
+    assert pts["a"] == 1.0 and pts["c"] == 0.0 and pts["e"] == 0.0     # c is the median
+    assert abs(pts["b"] - 0.08 / 0.18) < 1e-9                         # (0.70 - 0.62) / (0.80 - 0.62)
+    assert meaning_points({"a": 0.5, "b": 0.5}) == {"a": 0.0, "b": 0.0}
+    assert meaning_points({}) == {}
+
+
+def test_meaning_adds_up_to_ten_points_and_is_optional():
+    c = cand("c", ["Java", "Spring Boot", "Kafka"], 6, "Java Developer", "Chennai")
+    without = match_score(c, JAVA_PLAN)
+    full, none = match_score(c, JAVA_PLAN, 1.0), match_score(c, JAVA_PLAN, 0.0)
+    assert "meaning" not in without["score_parts"] and "meaning_score" not in without
+    assert full["score_parts"]["meaning"] == WEIGHTS["meaning"] and full["meaning_score"] == 100
+    assert none["score_parts"]["meaning"] == 0 and none["meaning_score"] == 0
+    assert none["match_score"] < without["match_score"] <= full["match_score"]
+
+
+def test_query_text_prefers_the_recruiters_words():
+    assert query_text("  Payments   engineer ", JAVA_PLAN) == "Payments engineer"
+    assert query_text(None, JAVA_PLAN).startswith("Java Developer, Java, Spring Boot, Kafka")
+
+
+async def seed_payments(repo):
+    await seed(repo)
+    upi = cand("upi", ["Go", "PostgreSQL"], 5, "Software Engineer", "Chennai")
+    upi["parsed_data"]["experience"] = [{"designation": "Software Engineer",
+                                         "responsibilities": "Built the UPI payment gateway and card processing for a fintech app"}]
+    await repo.create(upi)
+
+
+PAY_PLAN = {"role_titles": ["Payments Engineer"], "must_have_skills": ["Payments"], "keywords": []}
+PAY_PROMPT = "Engineer who built payment gateway, UPI and card processing for a fintech app"
+
+
+def test_meaning_finds_a_candidate_the_keywords_missed_and_reuses_vectors():
+    async def t(repo, service):
+        await seed_payments(repo)
+        calls = []
+        with no_ai_settings(), fake_parser(PAY_PLAN, calls):
+            res = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+            again = await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        assert calls.count("/api/embed") == 3                  # first: request + 5 resumes; second: request only
+        assert ai_calls(calls) == []                           # an edited plan never calls the AI
+        top = res["resumes"][0]
+        assert top["id"] == "upi" and top["match"]["found_by_meaning"] is True and top["match"]["meaning_score"] == 100
+        assert any("by meaning" in n for n in res["notes"])
+        assert [r["id"] for r in again["resumes"]] == [r["id"] for r in res["resumes"]]
+        assert await repo.db[MEANING_COLLECTION].count_documents({}) == 5
+    with_service(t)
+
+
+def test_changed_resume_gets_a_fresh_vector():
+    async def t(repo, service):
+        await seed_payments(repo)
+        with no_ai_settings(), fake_parser(PAY_PLAN, []):
+            await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        store = repo.db[MEANING_COLLECTION]
+        await repo.update("hr", {"status": "PARSED"})                         # not the resume content
+        assert await store.count_documents({"_id": "hr"}) == 1
+        await repo.update("hr", {"parsed_data": {"full_name": "hr", "current_role": "HR Lead"}})
+        assert await store.count_documents({"_id": "hr"}) == 0
+        await repo.update_resume_fields("best", {"parsed_data.current_role": "Lead Java Developer"})
+        assert await store.count_documents({"_id": "best"}) == 0
+        calls = []
+        with no_ai_settings(), fake_parser(PAY_PLAN, calls):
+            await service.search(PAY_PROMPT, PAY_PLAN, "u1", True)
+        assert calls.count("/api/embed") == 2 and await store.count_documents({}) == 5   # request + the 2 changed
+    with_service(t)
+
+
+def test_meaning_failure_falls_back_to_keywords():
+    async def t(repo, service):
+        await seed(repo)
+        real = httpx.AsyncClient
+
+        def handler(request):
+            if request.url.path.endswith("/api/embed"):
+                return httpx.Response(502, json={"detail": "model not loaded"})
+            return httpx.Response(200, json={"plan": JAVA_PLAN})
+        with no_ai_settings(), mock.patch.object(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)):
+            res = await service.search(None, JAVA_PLAN, "u1", True)
+        assert res["resumes"][0]["id"] == "best"
+        assert "meaning_score" not in res["resumes"][0]["match"]
+        assert any("Meaning-based matching is unavailable" in n for n in res["notes"])
+    with_service(t)
+
+
+def test_meaning_respects_who_can_see_which_resume():
+    async def t(repo, service):
+        await seed_payments(repo)
+        other = cand("other_upi", ["Go"], 5, "Software Engineer")
+        other["user_id"] = "u2"
+        other["parsed_data"]["experience"] = [{"designation": "Engineer", "responsibilities": "UPI payment gateway card processing fintech"}]
+        await repo.create(other)
+        with no_ai_settings(), fake_parser(PAY_PLAN, []):
+            res = await service.search(PAY_PROMPT, PAY_PLAN, "u1", False)
+        assert "other_upi" not in [r["id"] for r in res["resumes"]]
+    with_service(t)

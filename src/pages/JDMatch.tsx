@@ -1173,7 +1173,21 @@ export default function JDMatch() {
                                   <span key={`nice-${sk}`} className="bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md" title="Nice-to-have skill">+{sk}</span>
                                 ))}
                               </div>
-                              {match.role_match && <div className="text-[10px] text-slate-500">Title fits: {match.role_match}</div>}
+                              {match.role_match === "different specialism" ? (
+                                <div className="text-[10px] text-amber-700">Different specialism from the role asked for</div>
+                              ) : match.role_match ? (
+                                <div className="text-[10px] text-slate-500">Title fits: {match.role_match}</div>
+                              ) : null}
+                              {match.meaning_score !== undefined && (
+                                <div className="text-[10px] text-slate-500" title="How close the resume is to the request by meaning, compared with the other candidates (adds up to 10 points)">
+                                  Meaning match: {match.meaning_score}%
+                                  {match.found_by_meaning && (
+                                    <span className="ml-1.5 bg-violet-50 border border-violet-200 text-violet-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md" title="Not found by the keyword search; added because the resume matches the request by meaning">
+                                      Found by meaning
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-[11px] text-slate-400">-</span>

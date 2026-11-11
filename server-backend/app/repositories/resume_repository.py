@@ -91,6 +91,8 @@ def _global_search_or(regex: Any) -> List[Dict[str, Any]]:
     ]
 
 
+MEANING_COLLECTION = "resume_embeddings"  # JD Match phase 3: one meaning vector per resume
+
 class ResumeRepository(BaseRepository):
     """Repository handling database operations for resumes collection."""
 
@@ -406,6 +408,27 @@ class ResumeRepository(BaseRepository):
 
         return result
 
+    async def _drop_meaning_vector(self, resume_id: str, fields: Optional[Dict[str, Any]]) -> None:
+        """JD Match phase 3: a changed resume gets a fresh meaning vector at its next prompt search."""
+        if fields and any(k == "parsed_data" or k.startswith("parsed_data.") for k in fields):
+            await self.db[MEANING_COLLECTION].delete_one({"_id": resume_id})
+
+    async def update(self, id_val: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        await self._drop_meaning_vector(id_val, update_data)
+        return await super().update(id_val, update_data)
+
+    async def accessible_ids(self, user_id: Optional[str], is_admin: bool) -> List[str]:
+        """Ids of the parsed resumes this user may search (same rules as filter_resumes)."""
+        query: Dict[str, Any] = {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}],
+                                 "parsed_data": {"$ne": None}}
+        if user_id and not is_admin:
+            query["user_id"] = user_id
+        return [d["id"] async for d in self.collection.find(query, {"id": 1, "_id": 0}) if d.get("id")]
+
+    async def get_many_by_ids(self, ids: List[str]) -> List[Dict[str, Any]]:
+        docs = await self.collection.find({"id": {"$in": list(ids)}}).to_list(length=len(ids))
+        return [self._sanitize_doc(d) for d in docs]
+
     async def update_status_and_text(self, resume_id: str, status: ResumeStatus, extracted_text: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Update resume extraction status and extracted text content."""
         update_fields: Dict[str, Any] = {"status": status.value}
@@ -420,6 +443,7 @@ class ResumeRepository(BaseRepository):
         hr_update: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update resume document fields directly and optionally push a new HR Update entry."""
+        await self._drop_meaning_vector(resume_id, update_fields)
         mongo_update: Dict[str, Any] = {}
         if update_fields:
             mongo_update["$set"] = update_fields
