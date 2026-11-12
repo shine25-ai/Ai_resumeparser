@@ -27,7 +27,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [historyData, setHistoryData] = useState<any>(null);
-  const [showQuestionsForRound, setShowQuestionsForRound] = useState<number | null>(null);
+  const [showQuestionsForRound, setShowQuestionsForRound] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && candidateId) {
@@ -348,9 +348,9 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                           )}
                           
                           <button
-                            onClick={() => setShowQuestionsForRound(showQuestionsForRound === round.round_number ? null : round.round_number)}
+                            onClick={() => setShowQuestionsForRound(showQuestionsForRound === round.id ? null : round.id)}
                             className={`inline-flex items-center gap-1 border text-xs px-3 py-1 rounded-xl font-bold transition-all cursor-pointer ${
-                              showQuestionsForRound === round.round_number
+                              showQuestionsForRound === round.id
                                 ? "bg-violet-600 border-violet-700 text-white"
                                 : "bg-violet-50 hover:bg-violet-100 border-violet-200 text-violet-700"
                             }`}
@@ -370,7 +370,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                       </div>
 
                       {/* AI INTERVIEW QUESTIONS & VIDEO EVALUATION PANEL */}
-                      {showQuestionsForRound === round.round_number && candidateId && (() => {
+                      {showQuestionsForRound === round.id && candidateId && (() => {
                         const roundSkillsForAI = (round.skill_ratings && round.skill_ratings.length > 0)
                           ? round.skill_ratings
                           : (round.interviewers && round.interviewers[0]?.skill_ratings) || [];
@@ -379,7 +379,7 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                           : (round.interviewers && round.interviewers[0]?.category_scores) || [];
                         return (
                           <div className="mt-4 pt-4 border-t border-slate-200/60 animate-in fade-in slide-in-from-top-2 duration-300">
-                             <InterviewQuestionsPanel candidateId={candidateId} roundSkills={roundSkillsForAI} roundCategories={roundCategoriesForAI} />
+                             <InterviewQuestionsPanel candidateId={candidateId} interviewId={round.id} roundSkills={roundSkillsForAI} roundCategories={roundCategoriesForAI} />
                           </div>
                         );
                       })()}

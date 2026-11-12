@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Brain, Code, User, Briefcase, Video, Upload, CheckCircle, XCircle } from "lucide-react";
-import { generateInterviewQuestions, BASE_URL, apiFetch } from "../utils/Api";
+import { generateInterviewQuestions, BASE_URL, apiFetch, getInterviewAiPrep, saveInterviewAiPrep } from "../utils/Api";
 import { useFeedback } from "./ui/Feedback";
 
 interface InterviewQuestionsPanelProps {
   candidateId: string;
+  /** The round these questions belong to. With it, questions, transcript and scores are saved with the round. */
+  interviewId?: string;
   roundSkills?: { skill_name: string; rating: number }[];
   roundCategories?: { category: string; weightage: number; rating: number }[];
 }
@@ -27,7 +29,7 @@ const normalizeQuestions = (data: any) => {
   return { technical: fix(data?.technical), behavioral: fix(data?.behavioral), domain: fix(data?.domain) };
 };
 
-export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategories }: InterviewQuestionsPanelProps) {
+export function InterviewQuestionsPanel({ candidateId, interviewId, roundSkills, roundCategories }: InterviewQuestionsPanelProps) {
   const { toast, confirm } = useFeedback();
 
   const [interviewQuestions, setInterviewQuestions] = useState<any>(null);
@@ -40,7 +42,46 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
   const [evaluationResults, setEvaluationResults] = useState<Record<string, any>>({});
   const [evaluatingQuestionId, setEvaluatingQuestionId] = useState<string | null>(null);
 
-  const handleGenerateQuestions = async () => {
+  // Saved with the round, so questions and scores are still there next time the panel opens
+  const [loadingSaved, setLoadingSaved] = useState(!!interviewId);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState(false);
+  const latest = useRef<{ questions: any; transcript: string | null; evaluations: Record<string, any> }>({ questions: null, transcript: null, evaluations: {} });
+
+  useEffect(() => {
+    if (!interviewId) return;
+    let cancelled = false;
+    setLoadingSaved(true);
+    getInterviewAiPrep(interviewId)
+      .then((prep) => {
+        if (cancelled) return;
+        const questions = prep.questions ? normalizeQuestions(prep.questions) : null;
+        latest.current = { questions, transcript: prep.transcript || null, evaluations: prep.evaluations || {} };
+        setInterviewQuestions(questions);
+        setVideoTranscript(prep.transcript || null);
+        setEvaluationResults(prep.evaluations || {});
+        setSavedAt(prep.updated_at || null);
+      })
+      .catch(() => undefined) // Nothing saved yet, or offline: the panel still works, it just starts empty
+      .finally(() => !cancelled && setLoadingSaved(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [interviewId]);
+
+  const persist = async (patch: Partial<typeof latest.current>) => {
+    latest.current = { ...latest.current, ...patch };
+    if (!interviewId) return;
+    try {
+      const saved = await saveInterviewAiPrep(interviewId, latest.current);
+      setSavedAt(saved.updated_at || new Date().toISOString());
+      setSaveError(false);
+    } catch {
+      setSaveError(true);
+    }
+  };
+
+  const handleGenerateQuestions = async (replace = false) => {
     if (!candidateId) return;
     setGeneratingQuestions(true);
     setQuestionsError(null);
@@ -49,7 +90,7 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
       const categoriesList = roundCategories ? roundCategories.map(c => c.category) : undefined;
       
       let existingQuestionsText: string | undefined = undefined;
-      if (interviewQuestions) {
+      if (interviewQuestions && !replace) {
         const allQuestions = [
           ...(interviewQuestions.technical || []),
           ...(interviewQuestions.behavioral || []),
@@ -61,14 +102,19 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
       }
       
       const data = normalizeQuestions(await generateInterviewQuestions(candidateId, skillsList, categoriesList, existingQuestionsText));
-      setInterviewQuestions((prev: any) => {
-        if (!prev) return data;
-        return {
-          technical: [...(prev.technical || []), ...(data.technical || [])],
-          behavioral: [...(prev.behavioral || []), ...(data.behavioral || [])],
-          domain: [...(prev.domain || []), ...(data.domain || [])]
-        };
-      });
+      const prev = replace ? null : latest.current.questions;
+      const next = !prev
+        ? data
+        : {
+            technical: [...(prev.technical || []), ...(data.technical || [])],
+            behavioral: [...(prev.behavioral || []), ...(data.behavioral || [])],
+            domain: [...(prev.domain || []), ...(data.domain || [])],
+          };
+      setInterviewQuestions(next);
+      // New questions are added at the end, so earlier scores still match their questions; a full regenerate clears them
+      const evaluations = replace ? {} : latest.current.evaluations;
+      if (replace) setEvaluationResults({});
+      await persist({ questions: next, evaluations });
     } catch (err: any) {
       console.error(err);
       setQuestionsError(err.message || "Failed to generate questions.");
@@ -97,6 +143,7 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
         const data = await response.json();
         if (data.status === "success") {
           setVideoTranscript(data.transcription);
+          await persist({ transcript: data.transcription });
         } else {
           throw new Error("Failed to transcribe video");
         }
@@ -135,7 +182,9 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
       
       const data = await response.json();
       if (data.status === "success") {
-        setEvaluationResults(prev => ({ ...prev, [qId]: data.data }));
+        const evaluations = { ...latest.current.evaluations, [qId]: data.data };
+        setEvaluationResults(evaluations);
+        await persist({ evaluations });
       }
     } catch (err) {
       console.error("Evaluation error:", err);
@@ -158,8 +207,8 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={handleGenerateQuestions}
-            disabled={generatingQuestions}
+            onClick={() => handleGenerateQuestions()}
+            disabled={generatingQuestions || loadingSaved}
             className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md disabled:opacity-50 min-w-[180px]"
           >
             {generatingQuestions ? (
@@ -177,9 +226,8 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
           {interviewQuestions && (
             <button
               onClick={async () => {
-                if (await confirm({ title: "Clear and regenerate all questions?", message: "The current questions and answers are replaced.", confirmLabel: "Regenerate" })) {
-                  setInterviewQuestions(null);
-                  handleGenerateQuestions();
+                if (await confirm({ title: "Clear and regenerate all questions?", message: "The current questions and their scores are replaced.", confirmLabel: "Regenerate" })) {
+                  handleGenerateQuestions(true);
                 }
               }}
               disabled={generatingQuestions}
@@ -190,6 +238,16 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
           )}
         </div>
       </div>
+
+      {interviewId && (loadingSaved || savedAt || saveError) && (
+        <p className={`text-xs font-semibold ${saveError ? "text-rose-700" : "text-slate-500"}`} role="status">
+          {loadingSaved
+            ? "Loading saved questions..."
+            : saveError
+            ? "Couldn't save to this round. Questions are shown but will be lost when you close this."
+            : `Saved with this round · ${new Date(savedAt as string).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
+        </p>
+      )}
 
       {questionsError && (
         <div className="p-4 text-xs font-semibold text-rose-700 bg-rose-50 rounded-xl border border-rose-200">

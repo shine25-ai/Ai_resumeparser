@@ -11,6 +11,7 @@ from app.core.database import get_database
 from app.core.dependencies import get_current_active_user
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
+    InterviewAiPrepRequest,
     BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
     InterviewCancelRequest,
@@ -356,6 +357,35 @@ async def send_interview_mail(
     controller: InterviewController = Depends(get_interview_controller),
 ):
     return await controller.send_interview_email(interview_id, payload)
+
+
+@router.get(
+    "/{interview_id}/ai-prep",
+    status_code=status.HTTP_200_OK,
+    summary="Get a round's AI prep",
+    description="AI-generated questions, video transcript and per-question scores saved with this round.",
+)
+async def get_ai_prep(
+    interview_id: str,
+    current_user: dict = Depends(get_current_active_user),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.get_ai_prep(interview_id)
+
+
+@router.put(
+    "/{interview_id}/ai-prep",
+    status_code=status.HTTP_200_OK,
+    summary="Save a round's AI prep",
+    description="Save AI-generated questions, video transcript and per-question scores with this round.",
+)
+async def save_ai_prep(
+    interview_id: str,
+    payload: InterviewAiPrepRequest,
+    current_user: dict = Depends(get_current_active_user),
+    controller: InterviewController = Depends(get_interview_controller),
+):
+    return await controller.save_ai_prep(interview_id, payload, user_id=current_user.get("id"))
 
 
 @router.post(

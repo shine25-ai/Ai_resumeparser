@@ -1138,6 +1138,35 @@ export const getCandidateInterviewHistory = async (candidateId: string) => {
   return resData.data || resData;
 };
 
+/** AI questions, video transcript and per-question scores saved with one interview round. */
+export interface InterviewAiPrep {
+  questions: { technical?: any[]; behavioral?: any[]; domain?: any[] } | null;
+  transcript: string | null;
+  evaluations: Record<string, any>;
+  updated_at?: string | null;
+}
+
+export const getInterviewAiPrep = async (interviewId: string): Promise<InterviewAiPrep> => {
+  const response = await apiFetch(`${INTERVIEWS_URL}/${interviewId}/ai-prep`);
+  const resData = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(resData.detail || "Could not load saved questions.");
+  return resData.data || resData;
+};
+
+export const saveInterviewAiPrep = async (
+  interviewId: string,
+  prep: Pick<InterviewAiPrep, "questions" | "transcript" | "evaluations">
+): Promise<InterviewAiPrep> => {
+  const response = await apiFetch(`${INTERVIEWS_URL}/${interviewId}/ai-prep`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prep),
+  });
+  const resData = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(resData.detail || "Could not save questions.");
+  return resData.data || resData;
+};
+
 export const sendInterviewEmail = async (interviewId: string, payload: SendInterviewEmailPayload) => {
   const token = localStorage.getItem("access_token") || "";
   const response = await fetch(`${INTERVIEWS_URL}/${interviewId}/send-mail`, {

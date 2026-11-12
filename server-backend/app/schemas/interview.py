@@ -581,6 +581,16 @@ class InterviewCheckConflictResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InterviewAiPrepRequest(BaseModel):
+    """AI interview prep saved with a round: generated questions, the video transcript and per-question scores."""
+
+    questions: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    transcript: Optional[str] = None
+    evaluations: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InterviewCancelRequest(BaseModel):
     """Payload for canceling an interview session."""
 

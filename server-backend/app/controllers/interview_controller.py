@@ -7,6 +7,7 @@ from fastapi import UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.schemas.interview import (
+    InterviewAiPrepRequest,
     BulkInterviewFeedbackRequest,
     InterviewBatchCreateRequest,
     InterviewCancelRequest,
@@ -255,6 +256,16 @@ class InterviewController:
             data=res,
             message="Candidate active status checked successfully.",
         )
+
+    async def get_ai_prep(self, interview_id: str) -> JSONResponse:
+        """Saved AI questions, transcript and scores for one round."""
+        data = await self.interview_service.get_ai_prep(interview_id)
+        return success_response(data=data, message="AI prep loaded.")
+
+    async def save_ai_prep(self, interview_id: str, payload: InterviewAiPrepRequest, user_id: Optional[str] = None) -> JSONResponse:
+        """Save AI questions, transcript and scores with one round."""
+        data = await self.interview_service.save_ai_prep(interview_id, payload, updated_by=user_id)
+        return success_response(data=data, message="AI prep saved.")
 
     async def cancel_interview(
         self,
