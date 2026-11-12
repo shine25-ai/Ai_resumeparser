@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Briefcase, CalendarDays, ChevronDown, Clock3, Loader2, MapPin, Search } from "lucide-react";
 import { fetchPublicJobs, type PublicJob } from "../utils/jobsApi";
-import { ApplyModal, CareersHeader, Meta, Pill, openingsLabel, postedAgo } from "../components/careers/CareersShared";
+import { ApplyModal, CareersFooter, CareersHeader, Meta, Pill, openingsLabel, postedAgo } from "../components/careers/CareersShared";
 
 const uniqueValues = (jobs: PublicJob[], key: "department" | "location" | "employment_type") =>
   Array.from(new Set(jobs.map((j) => (j[key] || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -115,7 +115,7 @@ export default function PublicJobs() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F4F8] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#F4F4F8] text-slate-900">
       <CareersHeader />
 
       <section className="border-b border-slate-200 bg-white">
@@ -151,7 +151,7 @@ export default function PublicJobs() {
         </div>
       </section>
 
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <main className="mx-auto w-full flex-1 max-w-6xl px-4 py-10 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Explore Open Positions</h2>
@@ -198,6 +198,8 @@ export default function PublicJobs() {
           </div>
         </div>
       </main>
+
+      <CareersFooter />
 
       {applying && (
         <ApplyModal

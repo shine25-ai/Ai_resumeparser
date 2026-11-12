@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import logoUrl from "../../assets/shinelogics-logo.png";
 import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, Pencil, Upload, X } from "lucide-react";
 import { confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "../../utils/jobsApi";
 
@@ -53,13 +54,8 @@ export function Description({ text }: { text: string }) {
 
 // ── Layout pieces ───────────────────────────────────────────────────────────
 
-export function Wordmark() {
-  return (
-    <span className="select-none text-xl font-extrabold tracking-tight">
-      <span className="text-[#1F4FA8]">Shine</span>
-      <span className="text-[#E2541F]">logics</span>
-    </span>
-  );
+export function Logo({ className = "h-10" }: { className?: string }) {
+  return <img src={logoUrl} alt="Shinelogics, Building What's Next." className={`w-auto select-none ${className}`} draggable={false} />;
 }
 
 export function Meta({ icon, children }: { icon: ReactNode; children: ReactNode }) {
@@ -108,7 +104,7 @@ export function Modal({ onClose, children, wide = false }: { onClose: () => void
 export function ModalHeader({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex items-center justify-between px-6 pt-5">
-      <Wordmark />
+      <Logo className="h-9" />
       <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
         <X size={18} />
       </button>
@@ -475,15 +471,44 @@ export function ApplyModal({ job, onClose }: { job: PublicJob; onClose: () => vo
   );
 }
 
+const COMPANY_SITE = "https://shinelogics.com";
+const CAREERS_EMAIL = "careers@shinelogics.com";
+
 export function CareersHeader() {
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link to="/jobs" aria-label="Shinelogics careers home"><Wordmark /></Link>
+        <Link to="/jobs" aria-label="Shinelogics careers home"><Logo className="h-11" /></Link>
         <nav className="flex h-full items-center gap-6 text-sm font-medium">
           <Link to="/jobs" className="flex h-full items-center border-b-2 border-[#5B3EF0] text-[#5B3EF0]">Careers</Link>
+          <a href={COMPANY_SITE} target="_blank" rel="noreferrer" className="flex h-full items-center border-b-2 border-transparent text-slate-800 hover:text-[#5B3EF0]">
+            About Us
+          </a>
         </nav>
       </div>
     </header>
+  );
+}
+
+export function CareersFooter() {
+  return (
+    <footer className="border-t border-slate-200 bg-white">
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <div className="max-w-xs">
+          <Logo className="h-16" />
+          <p className="mt-4 text-sm leading-6 text-slate-600">
+            We design and build AI-powered products that turn ideas into meaningful technology.
+          </p>
+          <ul className="mt-5 space-y-2.5 text-sm text-slate-800">
+            <li><a href={COMPANY_SITE} target="_blank" rel="noreferrer" className="hover:text-[#5B3EF0]">shinelogics.com</a></li>
+            <li>LinkedIn</li>
+            <li><a href={`mailto:${CAREERS_EMAIL}`} className="hover:text-[#5B3EF0]">{CAREERS_EMAIL}</a></li>
+          </ul>
+        </div>
+        <div className="mt-8 border-t border-slate-200 pt-6 text-xs text-slate-500">
+          © {new Date().getFullYear()} Shinelogics. All rights reserved.
+        </div>
+      </div>
+    </footer>
   );
 }

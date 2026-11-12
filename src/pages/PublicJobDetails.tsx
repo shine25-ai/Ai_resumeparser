@@ -18,6 +18,7 @@ import {
 import { fetchPublicJobs, type PublicJob } from "../utils/jobsApi";
 import {
   ApplyModal,
+  CareersFooter,
   CareersHeader,
   Description,
   Meta,
@@ -102,9 +103,9 @@ export default function PublicJobDetails() {
 
   if (loading || error || !job) {
     return (
-      <div className="min-h-screen bg-[#F4F4F8] text-slate-900">
+      <div className="flex min-h-screen flex-col bg-[#F4F4F8] text-slate-900">
         <CareersHeader />
-        <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <main className="mx-auto w-full flex-1 max-w-6xl px-4 py-10 sm:px-6">
           {backLink}
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-10 text-center">
             {loading ? (
@@ -122,6 +123,7 @@ export default function PublicJobDetails() {
             )}
           </div>
         </main>
+        <CareersFooter />
       </div>
     );
   }
@@ -137,7 +139,7 @@ export default function PublicJobDetails() {
   ].filter((d) => d.value);
 
   return (
-    <div className="min-h-screen bg-[#F4F4F8] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#F4F4F8] text-slate-900">
       <CareersHeader />
 
       <section className="border-b border-slate-200 bg-white">
@@ -174,7 +176,7 @@ export default function PublicJobDetails() {
         </div>
       </section>
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <main className="mx-auto w-full flex-1 grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
           <Card title="About the role">
             {job.description ? (
@@ -243,6 +245,8 @@ export default function PublicJobDetails() {
           )}
         </aside>
       </main>
+
+      <CareersFooter />
 
       {applying && <ApplyModal job={job} onClose={() => setApplying(false)} />}
     </div>
