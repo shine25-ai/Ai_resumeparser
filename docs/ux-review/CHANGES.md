@@ -175,7 +175,7 @@ The old Client Feedback page was a mock (hard-coded candidate; Save stored nothi
 - An interview earlier today couldn't get feedback until the next day; interviews scheduled today now offer **Give feedback**.
 
 ### Walkthrough video
-[`docs/ux-review/walkthrough.mp4`](https://github.com/shine25-ai/Ai_resumeparser/blob/fix/restore-captured-fields/docs/ux-review/walkthrough.mp4): 2 min 17 s, 25 captioned steps (test data). It follows one candidate: find them, Round 1 with AI questions and feedback, Round 2 with offer details, the full history, then client feedback, analytics and the phone layout.
+[`docs/ux-review/walkthrough.mp4`](https://github.com/shine25-ai/Ai_resumeparser/blob/fix/restore-captured-fields/docs/ux-review/walkthrough.mp4): 2 min 26 s, 27 captioned steps (test data). It follows one candidate: find them, Round 1 with AI questions (saved with the round and back when reopened) and feedback, Round 2 with offer details, the full history, then client feedback, analytics and the phone layout.
 
 ## How the interview flow works
 
