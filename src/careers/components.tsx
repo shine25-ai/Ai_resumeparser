@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Link } from "react-router-dom";
-import logoUrl from "../../assets/shinelogics-logo.png";
-import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, Pencil, Upload, X } from "lucide-react";
-import { confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "../../utils/jobsApi";
+import logoUrl from "./assets/shinelogics-logo.png";
+import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, MapPin, Pencil, Upload, Users, X } from "lucide-react";
+import { confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
 
-/** Pieces shared by the public careers list (/jobs) and the job details page (/jobs/:jobId). */
+/** Building blocks of the public careers site: layout, the job details pop-up and the apply flow. */
 
 const ACCEPTED = ".pdf,.doc,.docx";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -73,7 +72,7 @@ export function Pill({ children }: { children: ReactNode }) {
   );
 }
 
-export function Modal({ onClose, children, wide = false }: { onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function Modal({ onClose, children, wide = false, label }: { onClose: () => void; children: ReactNode; wide?: boolean; label?: string }) {
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -93,7 +92,8 @@ export function Modal({ onClose, children, wide = false }: { onClose: () => void
       <div
         role="dialog"
         aria-modal="true"
-        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-2xl bg-white shadow-2xl ${wide ? "max-w-2xl" : "max-w-md"}`}
+        aria-label={label}
+        className={`max-h-[calc(100vh-2rem)] w-full rounded-2xl bg-white shadow-2xl ${wide ? "flex max-w-2xl flex-col overflow-hidden" : "max-w-md overflow-y-auto"}`}
       >
         {children}
       </div>
@@ -219,7 +219,17 @@ function OtpInput({ value, onChange, onComplete }: { value: string; onChange: (v
   );
 }
 
-export function ApplyModal({ job, onClose }: { job: PublicJob; onClose: () => void }) {
+export function ApplyModal({
+  job,
+  onClose,
+  successTitle,
+  successMessage,
+}: {
+  job: PublicJob;
+  onClose: () => void;
+  successTitle: string;
+  successMessage: string;
+}) {
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -459,8 +469,8 @@ export function ApplyModal({ job, onClose }: { job: PublicJob; onClose: () => vo
         {step === "done" && (
           <div className="mt-6 flex flex-col items-center gap-3 py-2 text-center">
             <CheckCircle2 className="text-emerald-500" size={48} />
-            <p className="text-lg font-semibold text-slate-900">Application submitted successfully</p>
-            <p className="text-sm text-slate-500">Your resume is being processed. Thank you for applying.</p>
+            <p className="text-lg font-semibold text-slate-900">{successTitle}</p>
+            <p className="text-sm text-slate-500">{successMessage}</p>
             <button onClick={onClose} className={`${primaryBtn} mt-2`}>Close</button>
           </div>
         )}
@@ -474,13 +484,18 @@ export function ApplyModal({ job, onClose }: { job: PublicJob; onClose: () => vo
 const COMPANY_SITE = "https://shinelogics.com";
 const CAREERS_EMAIL = "careers@shinelogics.com";
 
-export function CareersHeader() {
+/** onHome: back to the role list (closes any open role). */
+export function CareersHeader({ homeHref, onHome }: { homeHref: string; onHome: () => void }) {
+  const goHome = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onHome();
+  };
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link to="/jobs" aria-label="Shinelogics careers home"><Logo className="h-11" /></Link>
+        <a href={homeHref} onClick={goHome} aria-label="Shinelogics careers home"><Logo className="h-11" /></a>
         <nav className="flex h-full items-center gap-6 text-sm font-medium">
-          <Link to="/jobs" className="flex h-full items-center border-b-2 border-[#5B3EF0] text-[#5B3EF0]">Careers</Link>
+          <a href={homeHref} onClick={goHome} aria-current="page" className="flex h-full items-center border-b-2 border-[#5B3EF0] text-[#5B3EF0]">Careers</a>
           <a href={COMPANY_SITE} target="_blank" rel="noreferrer" className="flex h-full items-center border-b-2 border-transparent text-slate-800 hover:text-[#5B3EF0]">
             About Us
           </a>
@@ -510,5 +525,94 @@ export function CareersFooter() {
         </div>
       </div>
     </footer>
+  );
+}
+
+// ── Job details pop-up (Figma: "View Details") ─────────────────────────────
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h3 className="mb-3 border-l-[3px] border-[#5B3EF0] pl-2.5 text-sm font-semibold text-slate-900">{children}</h3>;
+}
+
+function BulletList({ items }: { items: string[] }) {
+  return (
+    <ul className="space-y-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2.5 text-sm leading-6 text-slate-600">
+          <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B3EF0]" aria-hidden />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Every section comes from the role as set up in the resume portal (Job openings page).
+ * Empty sections are left out.
+ */
+export function JobDetailsModal({ job, onClose, onApply }: { job: PublicJob; onClose: () => void; onApply: () => void }) {
+  const sections: { title: string; body: ReactNode; show: boolean }[] = [
+    { title: "About the Role", body: <Description text={job.description} />, show: !!job.description.trim() },
+    { title: "Key Responsibilities", body: <BulletList items={job.responsibilities} />, show: job.responsibilities.length > 0 },
+    {
+      title: "Required Skills",
+      body: (
+        <div className="flex flex-wrap gap-2">
+          {job.required_skills.map((skill) => (
+            <span key={skill} className="rounded-full bg-[#EEEAFE] px-3 py-1 text-xs font-medium text-[#5B3EF0]">{skill}</span>
+          ))}
+        </div>
+      ),
+      show: job.required_skills.length > 0,
+    },
+    { title: "Qualifications", body: <BulletList items={job.qualifications} />, show: job.qualifications.length > 0 },
+    { title: "Preferred Skills", body: <BulletList items={job.preferred_skills} />, show: job.preferred_skills.length > 0 },
+  ].filter((section) => section.show);
+
+  return (
+    <Modal onClose={onClose} wide label={`${job.title} details`}>
+      <div className="shrink-0 border-b-2 border-[#5B3EF0] px-6 pb-4 pt-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            {job.department && (
+              <span className="inline-block rounded-md bg-[#EEEAFE] px-2.5 py-1 text-xs font-medium text-[#5B3EF0]">{job.department}</span>
+            )}
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{job.title}</h2>
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
+          {job.location && <Meta icon={<MapPin size={15} />}>{job.location}</Meta>}
+          {job.employment_type && <Meta icon={<Briefcase size={15} />}>{job.employment_type}</Meta>}
+          {job.experience && <Meta icon={<Clock3 size={15} />}>{job.experience}</Meta>}
+          <Meta icon={<Users size={15} />}>{openingsLabel(job.open_positions)}</Meta>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto px-6">
+        {sections.length === 0 ? (
+          <p className="py-6 text-sm text-slate-500">More details will be shared with shortlisted candidates.</p>
+        ) : (
+          sections.map((section) => (
+            <section key={section.title} className="py-5">
+              <SectionTitle>{section.title}</SectionTitle>
+              {section.body}
+            </section>
+          ))
+        )}
+      </div>
+
+      <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 px-6 py-4">
+        <button onClick={onClose} className="rounded-lg border border-slate-300 px-6 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Close
+        </button>
+        <button onClick={onApply} className="rounded-lg bg-[#5B3EF0] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#4A2FD8]">
+          Apply Now
+        </button>
+      </div>
+    </Modal>
   );
 }

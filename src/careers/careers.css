@@ -1,0 +1,30 @@
+/* Styles for the embeddable careers page (inside its shadow root). Tailwind scans only this folder. */
+@import "tailwindcss" source(none);
+@source "./";
+
+@theme {
+  --font-sans: "Inter", "Roboto", "Helvetica Neue", sans-serif;
+}
+
+@layer base {
+  /* The page renders inside a shadow root. */
+  :host {
+    display: block;
+  }
+
+  /*
+   * Text styles are inherited from the host element, and the host site's own rules on that
+   * element beat :host. So the page's container resets everything inherited and sets its own.
+   */
+  .careers-root {
+    all: initial;
+    display: block;
+    color-scheme: light;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    text-align: left;
+    -webkit-text-size-adjust: 100%;
+    @apply bg-[#F4F4F8] text-slate-900 antialiased;
+  }
+}

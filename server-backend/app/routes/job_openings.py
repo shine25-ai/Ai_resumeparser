@@ -5,17 +5,19 @@ Public (no login): list open roles, request and confirm an email code, apply wit
 Staff (login): manage openings and open positions, and review applications.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, Query, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+from typing_extensions import Annotated
 
 from app.core.database import get_database
 from app.core.dependencies import get_current_active_user, is_admin_or_staff_user
 from app.core.exceptions import AuthorizationError
 from app.repositories.job_repository import (
     ApplicantVerificationRepository,
+    CareersPageSettingsRepository,
     JobApplicationRepository,
     JobOpeningRepository,
 )
@@ -39,6 +41,7 @@ def get_job_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> JobOpen
         verification_repo=ApplicantVerificationRepository(db),
         resume_repo=resume_repo,
         resume_service=resume_service,
+        page_settings_repo=CareersPageSettingsRepository(db),
     )
 
 
@@ -62,6 +65,12 @@ class CodeConfirmRequest(BaseModel):
 async def list_public_openings(service: JobOpeningService = Depends(get_job_service)):
     data = await service.list_public_openings()
     return success_response(data=data, message="Open roles retrieved successfully.")
+
+
+@public_router.get("/page", summary="Text for the public careers page")
+async def get_public_page_settings(service: JobOpeningService = Depends(get_job_service)):
+    data = await service.get_page_settings()
+    return success_response(data=data, message="Careers page settings retrieved successfully.")
 
 
 @public_router.post("/verification/request", summary="Email a verification code to the applicant")
@@ -99,6 +108,10 @@ async def apply_for_role(
 
 # ── Staff ─────────────────────────────────────────────────────────────────────
 
+# One line in a role section (a responsibility, a skill, a qualification).
+DetailLine = Annotated[str, StringConstraints(max_length=300)]
+
+
 class JobOpeningCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     department: Optional[str] = Field(default="", max_length=200)
@@ -106,6 +119,10 @@ class JobOpeningCreate(BaseModel):
     employment_type: Optional[str] = Field(default="", max_length=100)
     experience: Optional[str] = Field(default="", max_length=100)
     description: Optional[str] = Field(default="", max_length=5000)
+    responsibilities: List[DetailLine] = Field(default_factory=list, max_length=30)
+    required_skills: List[DetailLine] = Field(default_factory=list, max_length=30)
+    qualifications: List[DetailLine] = Field(default_factory=list, max_length=30)
+    preferred_skills: List[DetailLine] = Field(default_factory=list, max_length=30)
     open_positions: int = Field(default=1, ge=0, le=10000)
 
 
@@ -116,6 +133,10 @@ class JobOpeningUpdate(BaseModel):
     employment_type: Optional[str] = Field(default=None, max_length=100)
     experience: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = Field(default=None, max_length=5000)
+    responsibilities: Optional[List[DetailLine]] = Field(default=None, max_length=30)
+    required_skills: Optional[List[DetailLine]] = Field(default=None, max_length=30)
+    qualifications: Optional[List[DetailLine]] = Field(default=None, max_length=30)
+    preferred_skills: Optional[List[DetailLine]] = Field(default=None, max_length=30)
     open_positions: Optional[int] = Field(default=None, ge=0, le=10000)
     status: Optional[str] = Field(default=None, pattern="^(OPEN|CLOSED)$")
 
@@ -139,6 +160,39 @@ async def create_opening(
     _require_staff(current_user)
     data = await service.create_opening(body.model_dump())
     return success_response(data=data, message="Job opening created.", status_code=status.HTTP_201_CREATED)
+
+
+class CareersPageSettingsUpdate(BaseModel):
+    hero_eyebrow: Optional[str] = Field(default=None, max_length=100)
+    hero_title: Optional[str] = Field(default=None, max_length=150)
+    hero_subtitle: Optional[str] = Field(default=None, max_length=300)
+    search_placeholder: Optional[str] = Field(default=None, max_length=100)
+    listing_title: Optional[str] = Field(default=None, max_length=150)
+    listing_subtitle: Optional[str] = Field(default=None, max_length=300)
+    empty_message: Optional[str] = Field(default=None, max_length=300)
+    success_title: Optional[str] = Field(default=None, max_length=150)
+    success_message: Optional[str] = Field(default=None, max_length=300)
+
+
+@router.get("/page-settings", summary="Careers page text (staff)")
+async def get_page_settings(
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+):
+    _require_staff(current_user)
+    data = await service.get_page_settings()
+    return success_response(data=data, message="Careers page settings retrieved successfully.")
+
+
+@router.put("/page-settings", summary="Change careers page text (staff); a blank value restores the default")
+async def update_page_settings(
+    body: CareersPageSettingsUpdate,
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+):
+    _require_staff(current_user)
+    data = await service.update_page_settings(body.model_dump(exclude_unset=True))
+    return success_response(data=data, message="Careers page updated.")
 
 
 @router.get("/applications", summary="List applications, optionally for one opening (staff)")

@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.repositories.base_repository import BaseRepository
 from app.utils.constants import (
     APPLICANT_VERIFICATIONS_COLLECTION,
+    CAREERS_PAGE_SETTINGS_COLLECTION,
     JOB_APPLICATIONS_COLLECTION,
     JOB_OPENINGS_COLLECTION,
 )
@@ -37,3 +38,18 @@ class ApplicantVerificationRepository(BaseRepository):
     async def save_code(self, email: str, data: Dict[str, Any]) -> None:
         """Create or replace the pending code for an email."""
         await self.collection.update_one({"id": email}, {"$set": {**data, "id": email}}, upsert=True)
+
+
+class CareersPageSettingsRepository(BaseRepository):
+    """One document (id "default") holding the editable text of the public careers page."""
+
+    DOC_ID = "default"
+
+    def __init__(self, db: AsyncIOMotorDatabase):
+        super().__init__(db, CAREERS_PAGE_SETTINGS_COLLECTION)
+
+    async def get_settings(self) -> Dict[str, Any]:
+        return await self.get_by_id(self.DOC_ID) or {}
+
+    async def save_settings(self, data: Dict[str, Any]) -> None:
+        await self.collection.update_one({"id": self.DOC_ID}, {"$set": {**data, "id": self.DOC_ID}}, upsert=True)

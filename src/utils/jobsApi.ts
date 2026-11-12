@@ -1,16 +1,8 @@
 import { BASE_URL, apiFetch } from "./Api";
 
-export interface PublicJob {
-  id: string;
-  title: string;
-  department: string;
-  location: string;
-  employment_type: string;
-  experience: string;
-  description: string;
-  open_positions: number;
-  created_at: string;
-}
+// Public careers types and calls live in src/careers/api.ts so the careers site can be hosted on its own.
+import { readJson, type CareersPageSettings, type PublicJob } from "../careers/api";
+export type { CareersPageSettings, PublicJob };
 
 export interface JobOpening extends PublicJob {
   status: "OPEN" | "CLOSED";
@@ -30,55 +22,7 @@ export interface JobApplicationRow {
   phone: string | null;
 }
 
-const PUBLIC_JOBS = `${BASE_URL}/public/jobs`;
 const JOB_OPENINGS = `${BASE_URL}/job-openings`;
-
-const readJson = async (response: Response) => {
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = body?.message || body?.detail;
-    throw new Error(typeof detail === "string" ? detail : "Request failed. Please try again.");
-  }
-  return body.data ?? body;
-};
-
-// ── Public (no login) ───────────────────────────────────────────────────────
-
-export const fetchPublicJobs = async (): Promise<PublicJob[]> =>
-  readJson(await fetch(PUBLIC_JOBS));
-
-export const requestApplicantCode = async (email: string) =>
-  readJson(
-    await fetch(`${PUBLIC_JOBS}/verification/request`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    })
-  );
-
-export const confirmApplicantCode = async (
-  email: string,
-  code: string
-): Promise<{ applicant_token: string }> =>
-  readJson(
-    await fetch(`${PUBLIC_JOBS}/verification/confirm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code }),
-    })
-  );
-
-export const submitApplication = async (jobId: string, applicantToken: string, file: File) => {
-  const form = new FormData();
-  form.append("file", file);
-  return readJson(
-    await fetch(`${PUBLIC_JOBS}/${jobId}/apply`, {
-      method: "POST",
-      headers: { "X-Applicant-Token": applicantToken },
-      body: form,
-    })
-  );
-};
 
 // ── Staff (login) ───────────────────────────────────────────────────────────
 
@@ -92,6 +36,10 @@ export const createJobOpening = async (payload: {
   employment_type?: string;
   experience?: string;
   description?: string;
+  responsibilities?: string[];
+  required_skills?: string[];
+  qualifications?: string[];
+  preferred_skills?: string[];
   open_positions: number;
 }) =>
   readJson(
@@ -120,3 +68,15 @@ export const fetchJobApplications = async (
   if (openingId) params.set("opening_id", openingId);
   return readJson(await apiFetch(`${JOB_OPENINGS}/applications?${params.toString()}`));
 };
+
+export const fetchCareersPageSettings = async (): Promise<CareersPageSettings> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/page-settings`));
+
+export const updateCareersPageSettings = async (changes: Partial<CareersPageSettings>): Promise<CareersPageSettings> =>
+  readJson(
+    await apiFetch(`${JOB_OPENINGS}/page-settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    })
+  );

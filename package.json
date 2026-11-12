@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:careers": "vite --config vite.careers.config.ts",
     "build": "tsc -b && vite build",
+    "build:careers": "tsc -b && vite build --config vite.careers.config.ts && node scripts/careers-pages.mjs",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:careers": "vite preview --config vite.careers.config.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

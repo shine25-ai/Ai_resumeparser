@@ -2,7 +2,7 @@
 Job opening, public job application, and applicant email verification models for MongoDB persistence.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from app.utils.helpers import generate_uuid, utc_now
 
@@ -19,7 +19,11 @@ class JobOpeningDocument(BaseModel):
     location: Optional[str] = ""
     employment_type: Optional[str] = ""
     experience: Optional[str] = ""  # e.g. "2-4 years"
-    description: Optional[str] = ""
+    description: Optional[str] = ""  # "About the role"
+    responsibilities: List[str] = Field(default_factory=list)
+    required_skills: List[str] = Field(default_factory=list)
+    qualifications: List[str] = Field(default_factory=list)
+    preferred_skills: List[str] = Field(default_factory=list)
     open_positions: int = 1
     status: str = JOB_STATUS_OPEN
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
@@ -27,6 +31,20 @@ class JobOpeningDocument(BaseModel):
 
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump()
+
+
+# Text on the public careers page that staff can change. The header and footer are fixed.
+CAREERS_PAGE_DEFAULTS: Dict[str, str] = {
+    "hero_eyebrow": "Careers at Shinelogics",
+    "hero_title": "Find work that moves you forward.",
+    "hero_subtitle": "Explore opportunities, build your skills and make an impact with us.",
+    "search_placeholder": "Search by job title or keyword...",
+    "listing_title": "Explore Open Positions",
+    "listing_subtitle": "Find the right opportunity to grow your career with us.",
+    "empty_message": "There are no open roles right now. Please check back later.",
+    "success_title": "Application submitted successfully",
+    "success_message": "Your resume is being processed. Thank you for applying.",
+}
 
 
 class JobApplicationDocument(BaseModel):

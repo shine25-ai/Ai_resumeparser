@@ -114,3 +114,100 @@ def test_staff_token_cannot_be_used_as_applicant_token():
     )
     with pytest.raises(AuthenticationError):
         JobOpeningService._email_from_token(staff_token)
+
+
+# ── Role detail sections ─────────────────────────────────────────────────────
+
+def test_clean_lines_trims_drops_blanks_bullets_and_repeats():
+    assert jos.clean_lines(["  - Write tests ", "", "• Review code", "write tests", "  "]) == ["Write tests", "Review code"]
+    assert jos.clean_lines(None) == []
+
+
+class FakeOpeningRepo:
+    def __init__(self):
+        self.docs = {}
+
+    async def create(self, data):
+        self.docs[data["id"]] = dict(data)
+        return dict(data)
+
+    async def get_by_id(self, id_val):
+        doc = self.docs.get(id_val)
+        return dict(doc) if doc else None
+
+    async def update(self, id_val, changes):
+        self.docs[id_val].update(changes)
+        return dict(self.docs[id_val])
+
+    async def find_many(self, query=None, **_):
+        return [dict(d) for d in self.docs.values() if d["status"] == "OPEN" and d["open_positions"] > 0]
+
+
+class FakeApplicationRepo:
+    async def count_by_opening(self):
+        return {}
+
+
+@pytest.fixture
+def opening_service():
+    svc = JobOpeningService.__new__(JobOpeningService)
+    svc.opening_repo = FakeOpeningRepo()
+    svc.application_repo = FakeApplicationRepo()
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_sections_are_saved_cleaned_and_listed_publicly(opening_service):
+    created = await opening_service.create_opening({
+        "title": "Fullstack Developer",
+        "responsibilities": ["Build features", " ", "build features"],
+        "required_skills": ["React", "Python"],
+        "qualifications": ["Degree in CS"],
+        "preferred_skills": [],
+    })
+    assert created["responsibilities"] == ["Build features"]
+
+    updated = await opening_service.update_opening(created["id"], {"preferred_skills": ["- Docker", "CI/CD"]})
+    assert updated["preferred_skills"] == ["Docker", "CI/CD"]
+    assert updated["required_skills"] == ["React", "Python"]  # untouched fields stay
+
+    public = await opening_service.list_public_openings()
+    assert public[0]["required_skills"] == ["React", "Python"]
+    assert public[0]["preferred_skills"] == ["Docker", "CI/CD"]
+
+
+@pytest.mark.asyncio
+async def test_older_roles_without_sections_list_empty_sections(opening_service):
+    opening_service.opening_repo.docs["old"] = {"id": "old", "title": "QA", "status": "OPEN", "open_positions": 1}
+    public = await opening_service.list_public_openings()
+    assert public[0]["responsibilities"] == [] and public[0]["qualifications"] == []
+
+
+# ── Careers page text ────────────────────────────────────────────────────────
+
+class FakePageSettingsRepo:
+    def __init__(self):
+        self.doc = {}
+
+    async def get_settings(self):
+        return dict(self.doc)
+
+    async def save_settings(self, data):
+        self.doc.update(data)
+
+
+@pytest.mark.asyncio
+async def test_page_settings_default_then_override_and_blank_restores_default():
+    from app.models.job_opening import CAREERS_PAGE_DEFAULTS
+
+    svc = JobOpeningService.__new__(JobOpeningService)
+    svc.page_settings_repo = FakePageSettingsRepo()
+
+    assert await svc.get_page_settings() == CAREERS_PAGE_DEFAULTS
+
+    updated = await svc.update_page_settings({"hero_title": "  Join us  ", "unknown_key": "ignored"})
+    assert updated["hero_title"] == "Join us"
+    assert "unknown_key" not in updated
+
+    restored = await svc.update_page_settings({"hero_title": ""})
+    assert restored["hero_title"] == CAREERS_PAGE_DEFAULTS["hero_title"]

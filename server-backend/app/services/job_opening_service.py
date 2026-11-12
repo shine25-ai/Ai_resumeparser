@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BadRequestError, ConflictError, NotFoundError
 from app.core.security import decode_jwt_token
 from app.models.job_opening import (
+    CAREERS_PAGE_DEFAULTS,
     JOB_STATUS_CLOSED,
     JOB_STATUS_OPEN,
     ApplicantVerificationDocument,
@@ -29,6 +30,7 @@ from app.models.job_opening import (
 )
 from app.repositories.job_repository import (
     ApplicantVerificationRepository,
+    CareersPageSettingsRepository,
     JobApplicationRepository,
     JobOpeningRepository,
 )
@@ -44,6 +46,19 @@ CODE_MAX_ATTEMPTS = 5
 APPLICANT_TOKEN_MINUTES = 30
 PUBLIC_APPLICANT_USER_ID = "public-applicant"
 EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+# Role detail sections shown on the careers page; each is a list of short lines.
+LIST_FIELDS = ("responsibilities", "required_skills", "qualifications", "preferred_skills")
+
+
+def clean_lines(values: Any) -> List[str]:
+    """Trim each item, drop blanks and repeats, keep the order."""
+    seen, out = set(), []
+    for value in values or []:
+        item = str(value).strip().lstrip("-•*").strip()
+        if item and item.lower() not in seen:
+            seen.add(item.lower())
+            out.append(item)
+    return out
 
 
 class JobOpeningService:
@@ -54,6 +69,7 @@ class JobOpeningService:
         verification_repo: ApplicantVerificationRepository,
         resume_repo: ResumeRepository,
         resume_service: ResumeService,
+        page_settings_repo: Optional[CareersPageSettingsRepository] = None,
     ):
         self.opening_repo = opening_repo
         self.application_repo = application_repo
@@ -61,6 +77,20 @@ class JobOpeningService:
         self.resume_repo = resume_repo
         self.resume_service = resume_service
         self.settings_repo = SettingsRepository()
+        self.page_settings_repo = page_settings_repo
+
+    # ── Careers page text ─────────────────────────────────────────────────────
+
+    async def get_page_settings(self) -> Dict[str, str]:
+        """Saved page text over the defaults; a blank saved value falls back to the default."""
+        saved = await self.page_settings_repo.get_settings() if self.page_settings_repo else {}
+        return {key: (saved.get(key) or "").strip() or default for key, default in CAREERS_PAGE_DEFAULTS.items()}
+
+    async def update_page_settings(self, changes: Dict[str, Any]) -> Dict[str, str]:
+        clean = {k: (v or "").strip() for k, v in changes.items() if k in CAREERS_PAGE_DEFAULTS}
+        if clean:
+            await self.page_settings_repo.save_settings({**clean, "updated_at": utc_now().isoformat()})
+        return await self.get_page_settings()
 
     # ── Public: listing ───────────────────────────────────────────────────────
 
@@ -81,6 +111,7 @@ class JobOpeningService:
                 "employment_type": o.get("employment_type", ""),
                 "experience": o.get("experience", ""),
                 "description": o.get("description", ""),
+                **{field: o.get(field) or [] for field in LIST_FIELDS},
                 "open_positions": o.get("open_positions", 0),
                 "created_at": o.get("created_at", ""),
             }
@@ -256,6 +287,7 @@ class JobOpeningService:
             employment_type=(data.get("employment_type") or "").strip(),
             experience=(data.get("experience") or "").strip(),
             description=(data.get("description") or "").strip(),
+            **{field: clean_lines(data.get(field)) for field in LIST_FIELDS},
             open_positions=data.get("open_positions", 1),
         )
         created = await self.opening_repo.create(doc.to_dict())
@@ -272,6 +304,9 @@ class JobOpeningService:
             changes["title"] = (changes["title"] or "").strip()
             if not changes["title"]:
                 raise BadRequestError("Job title is required.")
+        for field in LIST_FIELDS:
+            if field in changes:
+                changes[field] = clean_lines(changes[field])
         changes["updated_at"] = utc_now().isoformat()
         updated = await self.opening_repo.update(opening_id, changes)
         counts = await self.application_repo.count_by_opening()
