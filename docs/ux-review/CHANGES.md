@@ -175,7 +175,54 @@ The old Client Feedback page was a mock (hard-coded candidate; Save stored nothi
 - An interview earlier today couldn't get feedback until the next day; interviews scheduled today now offer **Give feedback**.
 
 ### Walkthrough video
-[`docs/ux-review/walkthrough.mp4`](https://github.com/shine25-ai/Ai_resumeparser/blob/fix/restore-captured-fields/docs/ux-review/walkthrough.mp4): a 1 min 50 s captioned walkthrough of the full flow (test data).
+[`docs/ux-review/walkthrough.mp4`](https://github.com/shine25-ai/Ai_resumeparser/blob/fix/restore-captured-fields/docs/ux-review/walkthrough.mp4): 2 min 17 s, 25 captioned steps (test data). It follows one candidate: find them, Round 1 with AI questions and feedback, Round 2 with offer details, the full history, then client feedback, analytics and the phone layout.
+
+## How the interview flow works
+
+1. **Schedule.** **Schedule Interview** on the Interviews page, **Schedule** from a candidate, or several at once from JD Match. One short form: job, type, round, date, time, panel and link; everything else is under **More details**. Panel availability is checked as you type.
+2. **Before the interview.** It shows under its day in **Today and Upcoming**, with **Join** and **Reschedule**. The row menu also has edit, history, email and cancel.
+3. **After the start time.** It moves to **Needs feedback**, and **Give feedback** becomes the first action.
+4. **Feedback.** One panel for one interview or many. Each panel member and client gets a rating, outcome and comments. Skill ratings and documents are optional, and offer details open after **Selected** (or by hand). Saving marks the interview **Completed**.
+5. **Verdict and Stage** are worked out from the outcome when read: Verdict says how this round went (Pending, Selected, Rejected, On Hold, No Show); Stage says where the candidate is (Interviewing, Offer, Hired, Closed). Nothing stored is rewritten.
+6. **Next round.** Once a round is done, **Schedule next round** is the first action (see below).
+7. **Client.** A client user signs in, lands on Interviews, sees only their own interviews and gives feedback in the same panel.
+
+## How rounds are managed
+
+- **Each round is its own interview** with a `round_number`, linked to the candidate. Nothing is overwritten when a new round is added.
+- **Round number is filled in.** The next round = the highest round of the **same interview type** + 1. A new type starts at 1 (Technical R1, Technical R2, then HR R1). It can be changed by hand.
+- **One open round per candidate.** A new round can't be booked while the candidate has a Scheduled or Rescheduled interview. Feedback on that round completes it first, which the server checks for single and bulk scheduling.
+- **Where rounds show up:**
+  - The **All** list shows each candidate's latest round.
+  - **Interview history** shows every round with all its details.
+  - The feedback panel's **Interview rounds** box lists the candidate's real rounds, with the one being reviewed highlighted. It used to show the same three hard-coded steps for everyone.
+
+| Row actions for a scheduled round | Schedule next round once feedback is in |
+| --- | --- |
+| <img src="after/rounds/01-row-actions.jpg" alt="Row actions" width="420"> | <img src="after/rounds/03-next-round-action.jpg" alt="Schedule next round action" width="420"> |
+| **Round 2 filled in, panel checked** | **Feedback for Round 2 with the real rounds** |
+| <img src="after/rounds/04-next-round-form.jpg" alt="Next round form" width="420"> | <img src="after/rounds/05-feedback-rounds.jpg" alt="Feedback with rounds tracker" width="420"> |
+
+<img src="after/rounds/06-history.jpg" alt="Interview history with two rounds" width="560">
+
+## Where the interview questions are
+
+- **Where:** Interviews → row menu → **Interview history** → the round → **AI Prep & Questions**.
+- **Generate questions:**
+  - Asks the AI for technical, behavioral and domain questions from the candidate's resume and the round's skills, each with an expected answer and how to judge it.
+  - **Generate more questions** adds new ones without repeats.
+- **Video answer:** upload the candidate's recording; it is transcribed, then **Evaluate via video** scores the answer to each question.
+- **How it runs:** browser → backend `POST /api/resumes/{id}/generate-questions` → ai-parser `/api/generate-questions` → the AI model set in Settings → AI. The ai-parser service and the model must be running.
+- **Not saved:** questions and video scores are kept only while the panel is open. Closing it loses them (this was already the case before these changes).
+- **On `development`:** the history pop-up that holds this panel was unreachable after the simplification. PR #60 brings it back.
+
+<img src="after/rounds/02-ai-questions.jpg" alt="AI interview questions for a round" width="560">
+
+### Fixed in PR #60 while checking rounds and questions
+- **Placeholder rows:** an empty "Client Evaluator 1" row was saved with every feedback and next round. Empty rows are no longer saved, and the history no longer shows a made-up client card.
+- **Workflow strip:** the strip in the feedback panel marked Round 1 as active on every round. It now marks the round being reviewed.
+- **Questions panel crash:** it crashed when the AI returned an expected answer as a list. It now accepts lists and objects.
+- **Row menu:** every action stays reachable, and the menu is no longer cut off on short tables.
 
 ## Testing
 - `tsc` clean; production build succeeds.
