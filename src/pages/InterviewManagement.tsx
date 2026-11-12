@@ -10,7 +10,7 @@ import {
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { InterviewForm, type InterviewFormMode, type CandidatePrefill } from "../components/interview/InterviewForm";
-import { getInterviewPhase, hasFeedback, todayIso, VERDICTS, INTERVIEW_STAGES, getVerdictBadge } from "../utils/interviewState";
+import { getInterviewPhase, hasFeedback, VERDICTS, INTERVIEW_STAGES, getVerdictBadge } from "../utils/interviewState";
 import { TodayView } from "../components/interview/TodayView";
 import { ShareSummaryDialog } from "../components/interview/ShareSummaryDialog";
 import { RECOMMENDATION_OPTIONS } from "../types/interview";
@@ -603,12 +603,15 @@ export default function InterviewManagement() {
           candidate: { candidate_id: row.candidate_id, candidate_name: row.candidate_name, candidate_email: row.candidate_email, resume_id: row.resume_id, job_title: row.job_title },
         }),
     };
-    const list: { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean }[] =
-      // An interview later today can already take feedback (it may start early or run short)
-      phase === "upcoming" ? [...(row.scheduled_date === todayIso() ? [feedback] : []), view, history, edit, reschedule, email, cancel]
-      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, reschedule, edit, view, history, email, cancel]
-      : phase === "done" ? [{ ...nextRound, primary: true }, feedback, edit, view, history, email]
-      : [again, edit, view, history, email];
+    type RowAction = { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean };
+    // Most useful first for the interview's state; every action from the old menu stays available
+    const first: RowAction[] =
+      phase === "upcoming" ? [view, history, edit, reschedule]
+      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, nextRound, reschedule]
+      : phase === "done" ? [{ ...nextRound, primary: true }, feedback]
+      : [again];
+    const all: RowAction[] = [feedback, nextRound, view, history, edit, reschedule, email, ...(row.status === "CANCELLED" ? [] : [cancel])];
+    const list: RowAction[] = [...first, ...all.filter((a) => !first.some((f) => f.label === a.label))];
     return isAdmin ? [...list, remove as (typeof list)[number]] : list;
   };
 
@@ -851,7 +854,8 @@ export default function InterviewManagement() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm min-h-[340px]">
+          <div className={`overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm min-h-[340px] ${openActionMenuId ? "pb-96" : ""}`}>
+            {/* pb-96 while a row menu is open, so this scroll container doesn't clip the menu */}
             <table className="w-full text-left border-collapse min-w-[1150px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase tracking-wider">

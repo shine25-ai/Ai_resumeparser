@@ -90,10 +90,16 @@ const panelFromInterview = (item?: InterviewItem | null): PanelMember[] => {
   return [{ id: item.interviewer_id, name: item.interviewer_name || "", email: item.interviewer_email || "" }];
 };
 
+// "Client Evaluator 1"-style rows with no person behind them are placeholders, not real clients
+const isPlaceholderClient = (c: { client_id?: string; client_email?: string; client_name?: string }) =>
+  !c.client_id && !(c.client_email || "").trim() && /^Client Evaluator \d+$/.test(c.client_name || "");
+
 const clientsFromInterview = (item?: InterviewItem | null): PanelMember[] => {
   if (!item) return [];
   if (item.clients && item.clients.length > 0) {
-    return item.clients.map((c) => ({ id: c.client_id, name: c.client_name || "", email: c.client_email || "" }));
+    return item.clients
+      .filter((c) => !isPlaceholderClient(c))
+      .map((c) => ({ id: c.client_id, name: c.client_name || "", email: c.client_email || "" }));
   }
   return item.client_name ? [{ id: item.client_id, name: item.client_name, email: item.client_email || "" }] : [];
 };

@@ -20,6 +20,7 @@ import type { CategoryScoreItem } from "../types/interview";
 import { SkillRatingsEvaluation } from "./SkillRatingsEvaluation";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 import { useFeedback } from "./ui/Feedback";
+import { RoundsTracker } from "./interview/RoundsTracker";
 
 interface BulkFeedbackModalProps {
   isOpen: boolean;
@@ -82,6 +83,26 @@ interface SingleCandidateFeedbackForm {
   interview_feedback_files: string;
   notes: string;
 }
+
+// The panel shows an empty "Client Evaluator 1" / "Interviewer 1" row so people can fill it in.
+// Rows nobody filled in (no person, rating, comments or verdict) are not saved; they used to be
+// stored as if a client or interviewer had given feedback.
+const hasPerson = (id?: string, email?: string) => !!(id || (email && email.trim()));
+const isFilledClient = (c: ClientFeedbackItem) =>
+  hasPerson(c.client_id, c.client_email) ||
+  !!c.client_rating ||
+  !!(c.client_feedback && c.client_feedback.trim()) ||
+  (c.client_strengths?.length ?? 0) > 0 ||
+  (c.client_weaknesses?.length ?? 0) > 0 ||
+  !!(c.client_recommendation && c.client_recommendation !== "Pending");
+const isFilledInterviewer = (i: InterviewerItem) =>
+  hasPerson(i.interviewer_id, i.interviewer_email) ||
+  !!i.rating ||
+  !!(i.feedback && i.feedback.trim()) ||
+  (i.strengths?.length ?? 0) > 0 ||
+  (i.weaknesses?.length ?? 0) > 0 ||
+  !!(i.recommendation && i.recommendation !== "Pending") ||
+  !/^Interviewer \d+$/.test(i.interviewer_name || "");
 
 export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   isOpen,
@@ -528,7 +549,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           strengths: f.strengths ? f.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
           weaknesses: f.weaknesses ? f.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
           recommendation: f.recommendation || undefined,
-          interviewers: finalInterviewersList,
+          interviewers: (finalInterviewersList || []).filter(isFilledInterviewer),
 
           client_name: f.client_name || undefined,
           client_rating: f.client_rating ? Number(f.client_rating) : undefined,
@@ -538,7 +559,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           client_recommendation: f.client_recommendation || undefined,
           client_notes: f.client_notes || undefined,
           client_feedback_date: f.client_feedback_date || undefined,
-          clients: finalClientsList,
+          clients: (finalClientsList || []).filter(isFilledClient),
 
           skill_ratings: f.skill_ratings,
           category_scores: f.category_scores,
@@ -1289,6 +1310,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                     onChangeSkills={(newSkills) => handleCurrentFormChange("skill_ratings", newSkills)}
                     categoryScores={currentForm.category_scores}
                     onChangeCategoryScores={(newCatScores) => handleCurrentFormChange("category_scores", newCatScores)}
+                    currentRoundNumber={currentForm.round_number}
+                    currentInterviewType={currentForm.interview_type}
+                    hrCallVerification={selectedInterviews[activeCandidateIndex]?.hr_call_verification}
                     onAiScoreCalculated={(score, rec) => {
                       setFormsData((prev) => {
                         const updated = [...prev];
@@ -1637,23 +1661,11 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   </div>
                 </div>
 
-                {/* HIRING WORKFLOW STAGE PROGRESS CARD */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
-                  <span className="text-xs font-extrabold text-slate-900 block uppercase tracking-wider">
-                    Hiring Stage Tracker
-                  </span>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center gap-2 p-2 bg-emerald-50 text-emerald-700 rounded-xl font-bold border border-emerald-200">
-                      <ShieldCheck size={14} /> HR Screening (Verified)
-                    </div>
-                    <div className="flex items-center gap-2 p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold border border-indigo-200">
-                      <UserCheck size={14} /> Technical Round {currentForm.round_number || 1} (In Progress)
-                    </div>
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 text-slate-400 rounded-xl font-medium border border-slate-200">
-                      Managerial Round (Upcoming)
-                    </div>
-                  </div>
-                </div>
+                {/* The candidate's real rounds (was a hard-coded HR / Technical / Managerial list) */}
+                <RoundsTracker
+                  candidateId={selectedInterviews[activeCandidateIndex]?.candidate_id}
+                  currentInterviewId={currentForm.interview_id}
+                />
 
               </div>
 

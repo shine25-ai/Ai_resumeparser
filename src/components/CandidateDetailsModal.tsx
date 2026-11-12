@@ -302,6 +302,9 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                   const clientList: ClientFeedbackItem[] =
                     round.clients && round.clients.length > 0
                       ? round.clients
+                      : // Older records keep one client's feedback in flat fields; show it only if there is some
+                        !(round.client_name || round.client_rating || round.client_feedback || (round.client_recommendation && round.client_recommendation !== "Pending"))
+                      ? []
                       : [
                           {
                             client_name: round.client_name || "Client Evaluator",
@@ -502,6 +505,9 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                             </span>
                           </div>
 
+                          {clientList.length === 0 && (
+                            <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No client feedback for this round.</p>
+                          )}
                           {clientList.map((clientItem, clientIdx) => (
                             <div key={clientIdx} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5 shadow-xs">
                               <div className="flex items-center justify-between border-b border-slate-100 pb-2">

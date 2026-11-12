@@ -9,6 +9,24 @@ interface InterviewQuestionsPanelProps {
   roundCategories?: { category: string; weightage: number; rating: number }[];
 }
 
+// Models don't always return text for each field (a list of points, or an object, is common).
+// Turn every field into text so one unusual answer can't blank the page.
+const asText = (v: unknown): string => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map(asText).filter(Boolean).join("\n");
+  if (typeof v === "object") return Object.values(v as Record<string, unknown>).map(asText).filter(Boolean).join("\n");
+  return String(v);
+};
+
+const normalizeQuestions = (data: any) => {
+  const fix = (list: any) =>
+    (Array.isArray(list) ? list : []).map((q: any) =>
+      typeof q === "string" ? { question: q, expectedAnswer: "" } : { ...q, question: asText(q?.question), expectedAnswer: asText(q?.expectedAnswer) }
+    );
+  return { technical: fix(data?.technical), behavioral: fix(data?.behavioral), domain: fix(data?.domain) };
+};
+
 export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategories }: InterviewQuestionsPanelProps) {
   const { toast, confirm } = useFeedback();
 
@@ -42,7 +60,7 @@ export function InterviewQuestionsPanel({ candidateId, roundSkills, roundCategor
         }
       }
       
-      const data = await generateInterviewQuestions(candidateId, skillsList, categoriesList, existingQuestionsText);
+      const data = normalizeQuestions(await generateInterviewQuestions(candidateId, skillsList, categoriesList, existingQuestionsText));
       setInterviewQuestions((prev: any) => {
         if (!prev) return data;
         return {
