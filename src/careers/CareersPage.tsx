@@ -1,8 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Briefcase, CalendarDays, ChevronDown, Clock3, Loader2, MapPin, Search } from "lucide-react";
-import { fetchPublicJobs, type PublicJob } from "../utils/jobsApi";
-import { ApplyModal, CareersFooter, CareersHeader, Meta, Pill, openingsLabel, postedAgo } from "../components/careers/CareersShared";
+import { Briefcase, CalendarDays, ChevronDown, Clock3, Info, Loader2, MapPin, Search } from "lucide-react";
+import { DEFAULT_PAGE_SETTINGS, fetchPageSettings, fetchPublicJobs, type CareersPageSettings, type PublicJob } from "./api";
+import { ApplyModal, CareersFooter, CareersHeader, JobDetailsModal, Meta, Pill, openingsLabel, postedAgo } from "./components";
+
+/**
+ * Public careers page. It does not use the router, so it can be embedded in any site:
+ * the open role is kept in the page address as ?job=<id>, so a role link can be shared.
+ * All text below the header and above the footer comes from the resume portal
+ * (Job openings page): the page text and every role.
+ */
+
+const JOB_PARAM = "job";
+
+const jobFromUrl = () => new URLSearchParams(window.location.search).get(JOB_PARAM);
+
+/** The current page address with ?job set to id, or removed when id is null. */
+const urlWithJob = (id: string | null) => {
+  const url = new URL(window.location.href);
+  if (id) url.searchParams.set(JOB_PARAM, id);
+  else url.searchParams.delete(JOB_PARAM);
+  return `${url.pathname}${url.search}${url.hash}`;
+};
+
+export interface CareersPageProps {
+  /** Show the Shinelogics header (logo, Careers, About Us). Turn off when the host site has its own. */
+  showHeader?: boolean;
+  /** Show the Shinelogics footer. */
+  showFooter?: boolean;
+  /** Set the browser tab title to the open role. Off when embedded, so the host page keeps its title. */
+  manageTitle?: boolean;
+}
 
 const uniqueValues = (jobs: PublicJob[], key: "department" | "location" | "employment_type") =>
   Array.from(new Set(jobs.map((j) => (j[key] || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -36,7 +63,7 @@ function FilterSelect({
   );
 }
 
-function JobCard({ job, onApply }: { job: PublicJob; onApply: () => void }) {
+function JobCard({ job, onDetails, onApply }: { job: PublicJob; onDetails: () => void; onApply: () => void }) {
   const posted = postedAgo(job.created_at);
   return (
     <article className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -56,9 +83,16 @@ function JobCard({ job, onApply }: { job: PublicJob; onApply: () => void }) {
       </div>
 
       <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
-        <Link to={`/jobs/${job.id}`} className="rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-800 hover:bg-slate-50">
+        <a
+          href={urlWithJob(job.id)}
+          onClick={(e) => {
+            e.preventDefault();
+            onDetails();
+          }}
+          className="rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-800 hover:bg-slate-50"
+        >
           View Details
-        </Link>
+        </a>
         <button onClick={onApply} className="rounded-lg bg-[#5B3EF0] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#4A2FD8]">
           Apply Now
         </button>
@@ -67,7 +101,9 @@ function JobCard({ job, onApply }: { job: PublicJob; onApply: () => void }) {
   );
 }
 
-export default function PublicJobs() {
+export default function CareersPage({ showHeader = true, showFooter = true, manageTitle = false }: CareersPageProps) {
+  const [jobId, setJobId] = useState<string | null>(jobFromUrl);
+  const [page, setPage] = useState<CareersPageSettings>(DEFAULT_PAGE_SETTINGS);
   const [jobs, setJobs] = useState<PublicJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -91,6 +127,37 @@ export default function PublicJobs() {
 
   useEffect(load, []);
 
+  useEffect(() => {
+    // The defaults stay on screen if the saved text cannot be loaded.
+    fetchPageSettings().then(setPage).catch(() => undefined);
+  }, []);
+
+  // Back / forward buttons open and close roles.
+  useEffect(() => {
+    const onPop = () => setJobId(jobFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const showJob = (id: string | null) => {
+    if (id === jobId) return;
+    window.history.pushState(window.history.state, "", urlWithJob(id));
+    setJobId(id);
+  };
+
+  const viewing = jobId ? jobs.find((j) => j.id === jobId) ?? null : null;
+  const missingRole = !!jobId && !loading && !error && !viewing;
+  const closeDetails = () => showJob(null);
+
+  useEffect(() => {
+    if (!manageTitle) return;
+    const previous = document.title;
+    document.title = viewing ? `${viewing.title} · ${page.hero_eyebrow}` : page.hero_eyebrow;
+    return () => {
+      document.title = previous;
+    };
+  }, [manageTitle, viewing, page.hero_eyebrow]);
+
   const departments = useMemo(() => uniqueValues(jobs, "department"), [jobs]);
   const locations = useMemo(() => uniqueValues(jobs, "location"), [jobs]);
   const types = useMemo(() => uniqueValues(jobs, "employment_type"), [jobs]);
@@ -102,7 +169,9 @@ export default function PublicJobs() {
       if (filters.location && j.location !== filters.location) return false;
       if (filters.employment_type && j.employment_type !== filters.employment_type) return false;
       if (!q) return true;
-      return [j.title, j.department, j.description, j.location].some((v) => (v || "").toLowerCase().includes(q));
+      return [j.title, j.department, j.description, j.location, ...j.required_skills, ...j.preferred_skills].some((v) =>
+        (v || "").toLowerCase().includes(q)
+      );
     });
   }, [jobs, filters]);
 
@@ -115,14 +184,22 @@ export default function PublicJobs() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F4F4F8] text-slate-900">
-      <CareersHeader />
+    <div className={`flex flex-col bg-[#F4F4F8] text-slate-900 ${showHeader ? "min-h-screen" : ""}`}>
+      {showHeader && (
+        <CareersHeader
+          homeHref={urlWithJob(null)}
+          onHome={() => {
+            showJob(null);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      )}
 
       <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#5B3EF0]">Careers at Shinelogics</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Find work that moves you forward.</h1>
-          <p className="mt-2 text-sm text-slate-600">Explore opportunities, build your skills and make an impact with us.</p>
+          {page.hero_eyebrow && <p className="text-[11px] font-semibold uppercase tracking-widest text-[#5B3EF0]">{page.hero_eyebrow}</p>}
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{page.hero_title}</h1>
+          {page.hero_subtitle && <p className="mt-2 text-sm text-slate-600">{page.hero_subtitle}</p>}
 
           <form
             className="mt-6 grid gap-3 md:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto]"
@@ -134,10 +211,10 @@ export default function PublicJobs() {
             <div className="relative">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                aria-label="Search by job title or keyword"
+                aria-label={page.search_placeholder}
                 value={draft.query}
                 onChange={(e) => setDraft({ ...draft, query: e.target.value })}
-                placeholder="Search by job title or keyword..."
+                placeholder={page.search_placeholder}
                 className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
               />
             </div>
@@ -154,8 +231,8 @@ export default function PublicJobs() {
       <main className="mx-auto w-full flex-1 max-w-6xl px-4 py-10 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Explore Open Positions</h2>
-            <p className="mt-1 text-sm text-slate-600">Find the right opportunity to grow your career with us.</p>
+            <h2 className="text-2xl font-bold tracking-tight">{page.listing_title}</h2>
+            {page.listing_subtitle && <p className="mt-1 text-sm text-slate-600">{page.listing_subtitle}</p>}
           </div>
           {!loading && !error && (
             <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600">
@@ -165,13 +242,18 @@ export default function PublicJobs() {
         </div>
 
         <div className="mt-6">
+          {missingRole && (
+            <p className="mb-5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <Info size={16} className="shrink-0" /> That role is no longer open. Have a look at the roles below.
+            </p>
+          )}
           {loading && (
             <p className="flex items-center gap-2 text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading roles…</p>
           )}
           {!loading && error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
           {!loading && !error && jobs.length === 0 && (
             <p className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
-              There are no open roles right now. Please check back later.
+              {page.empty_message}
             </p>
           )}
           {!loading && !error && jobs.length > 0 && visible.length === 0 && (
@@ -193,17 +275,30 @@ export default function PublicJobs() {
 
           <div className="grid gap-5 md:grid-cols-2">
             {visible.map((job) => (
-              <JobCard key={job.id} job={job} onApply={() => setApplying(job)} />
+              <JobCard key={job.id} job={job} onDetails={() => showJob(job.id)} onApply={() => setApplying(job)} />
             ))}
           </div>
         </div>
       </main>
 
-      <CareersFooter />
+      {showFooter && <CareersFooter />}
+
+      {viewing && (
+        <JobDetailsModal
+          job={viewing}
+          onClose={closeDetails}
+          onApply={() => {
+            setApplying(viewing);
+            closeDetails();
+          }}
+        />
+      )}
 
       {applying && (
         <ApplyModal
           job={applying}
+          successTitle={page.success_title}
+          successMessage={page.success_message}
           onClose={() => {
             setApplying(null);
             load();

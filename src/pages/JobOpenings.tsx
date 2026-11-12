@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import CareersPageSettingsPanel from "../components/jobs/CareersPageSettingsPanel";
 import {
   createJobOpening,
   fetchJobApplications,
@@ -12,6 +13,38 @@ import {
 
 const PAGE_SIZE = 20;
 
+// Where the public careers site lives. Defaults to /jobs in this app until it moves to its own site.
+const CAREERS_SITE_URL: string = import.meta.env.VITE_CAREERS_SITE_URL || "";
+
+// Role sections shown in the careers "View Details" pop-up. Typed one item per line.
+const SECTIONS = [
+  { key: "responsibilities", label: "Key responsibilities", hint: "One per line", placeholder: "Build and maintain user-facing features\nWrite clean, tested, reviewable code" },
+  { key: "required_skills", label: "Required skills", hint: "One per line or comma separated; shown as tags", placeholder: "JavaScript / TypeScript, HTML & CSS, REST APIs" },
+  { key: "qualifications", label: "Qualifications", hint: "One per line", placeholder: "Degree in Computer Science or equivalent practical experience" },
+  { key: "preferred_skills", label: "Preferred skills", hint: "One per line", placeholder: "Cloud deployment experience\nAutomated testing" },
+] as const;
+type SectionKey = (typeof SECTIONS)[number]["key"];
+
+/** Skills may be comma separated; the other sections are one item per line. */
+const toList = (key: SectionKey, text: string) =>
+  text
+    .split(key === "required_skills" ? /[\n,]/ : /\n/)
+    .map((line) => line.trim().replace(/^[-•*]\s*/, ""))
+    .filter(Boolean);
+
+const fieldClass = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none";
+
+function Field({ label, hint, className = "", children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
+  return (
+    <label className={`flex flex-col gap-1 ${className}`}>
+      <span className="text-xs font-medium text-slate-600">
+        {label} {hint && <span className="font-normal text-slate-400">· {hint}</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 export default function JobOpenings() {
   const [openings, setOpenings] = useState<JobOpening[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +54,10 @@ export default function JobOpenings() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const emptyForm = { title: "", department: "", location: "", employment_type: "", experience: "", description: "", open_positions: "1" };
+  const emptyForm = {
+    title: "", department: "", location: "", employment_type: "", experience: "", description: "", open_positions: "1",
+    responsibilities: "", required_skills: "", qualifications: "", preferred_skills: "",
+  };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -94,6 +130,10 @@ export default function JobOpenings() {
       experience: opening.experience || "",
       description: opening.description || "",
       open_positions: String(opening.open_positions),
+      responsibilities: (opening.responsibilities || []).join("\n"),
+      required_skills: (opening.required_skills || []).join("\n"),
+      qualifications: (opening.qualifications || []).join("\n"),
+      preferred_skills: (opening.preferred_skills || []).join("\n"),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -114,6 +154,10 @@ export default function JobOpenings() {
       experience: form.experience.trim(),
       description: form.description.trim(),
       open_positions: Number(form.open_positions) || 0,
+      responsibilities: toList("responsibilities", form.responsibilities),
+      required_skills: toList("required_skills", form.required_skills),
+      qualifications: toList("qualifications", form.qualifications),
+      preferred_skills: toList("preferred_skills", form.preferred_skills),
     };
     try {
       if (editingId) await updateJobOpening(editingId, payload);
@@ -137,10 +181,16 @@ export default function JobOpenings() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Job openings</h1>
           <p className="text-sm text-slate-500">
-            Public list:{" "}
-            <Link to="/jobs" className="text-indigo-600 hover:underline" target="_blank">
-              /jobs
-            </Link>
+            Careers site:{" "}
+            {CAREERS_SITE_URL ? (
+              <a href={CAREERS_SITE_URL} className="inline-flex items-center gap-1 text-indigo-600 hover:underline" target="_blank" rel="noreferrer">
+                {CAREERS_SITE_URL} <ExternalLink size={12} />
+              </a>
+            ) : (
+              <Link to="/jobs" className="inline-flex items-center gap-1 text-indigo-600 hover:underline" target="_blank">
+                /jobs <ExternalLink size={12} />
+              </Link>
+            )}
           </p>
         </div>
         <button onClick={loadOpenings} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
@@ -159,31 +209,69 @@ export default function JobOpenings() {
             </button>
           )}
         </div>
-        <form onSubmit={create} className="grid gap-3 md:grid-cols-6">
-          <input required placeholder="Job title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 md:col-span-2" />
-          <input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2" />
-          <input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2" />
-          <input placeholder="Type (Full time…)" value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2" />
-          <input placeholder="Experience (2-4 years)" value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2" />
-          <textarea
-            placeholder={"Role details shown on the careers page. Blank lines start a new paragraph; lines starting with - become bullets."}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            rows={4}
-            maxLength={5000}
-            className="rounded-lg border border-slate-300 px-3 py-2 md:col-span-5"
-          />
-          <div className="flex items-start gap-2">
-            <label className="flex flex-col text-xs text-slate-500">
-              Open positions
-              <input type="number" min={0} value={form.open_positions} onChange={(e) => setForm({ ...form, open_positions: e.target.value })} className="mt-1 w-20 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800" />
-            </label>
-            <button disabled={saving} className="mt-5 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
-              {editingId ? "Save" : <><Plus size={16} /> Add</>}
-            </button>
+        <form onSubmit={create} className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <Field label="Job title" className="lg:col-span-2">
+              <input required maxLength={200} placeholder="Fullstack Developer" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={fieldClass} />
+            </Field>
+            <Field label="Department">
+              <input maxLength={200} placeholder="Software Development" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className={fieldClass} />
+            </Field>
+            <Field label="Location">
+              <input maxLength={200} placeholder="Remote" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={fieldClass} />
+            </Field>
+            <Field label="Employment type">
+              <input maxLength={100} placeholder="Full Time" value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })} className={fieldClass} />
+            </Field>
+            <Field label="Experience">
+              <input maxLength={100} placeholder="2–4 years" value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} className={fieldClass} />
+            </Field>
+          </div>
+
+          <Field label="About the role" hint="Blank lines start a new paragraph">
+            <textarea
+              placeholder="Build and ship product features across the stack. Collaborate with design and product on the candidate experience."
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              rows={3}
+              maxLength={5000}
+              className={fieldClass}
+            />
+          </Field>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {SECTIONS.map((section) => (
+              <Field key={section.key} label={section.label} hint={section.hint}>
+                <textarea
+                  placeholder={section.placeholder}
+                  value={form[section.key]}
+                  onChange={(e) => setForm({ ...form, [section.key]: e.target.value })}
+                  rows={4}
+                  className={fieldClass}
+                />
+              </Field>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-4">
+            <Field label="Open positions">
+              <input type="number" min={0} value={form.open_positions} onChange={(e) => setForm({ ...form, open_positions: e.target.value })} className={`${fieldClass} w-28`} />
+            </Field>
+            <div className="flex gap-2">
+              {editingId && (
+                <button type="button" onClick={cancelEdit} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  Cancel
+                </button>
+              )}
+              <button disabled={saving} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                {editingId ? "Save changes" : <><Plus size={16} /> Add role</>}
+              </button>
+            </div>
           </div>
         </form>
       </section>
+
+      <CareersPageSettingsPanel />
 
       <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[720px] text-sm">

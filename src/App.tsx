@@ -13,9 +13,14 @@ import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import ResumeTemplates from "./pages/ResumeTemplates";
-import PublicJobs from "./pages/PublicJobs";
-import PublicJobDetails from "./pages/PublicJobDetails";
+import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
+
+// Role links are now /jobs?job=<id> (the careers page can be embedded in any site)
+function RedirectToJob() {
+  const { jobId } = useParams();
+  return <Navigate to={`/jobs?job=${encodeURIComponent(jobId ?? "")}`} replace />;
+}
 
 // Candidate profiles moved from /evaluation/:id to /candidates/:id
 function RedirectToCandidate() {
@@ -30,8 +35,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         {/* Public careers page: no login needed */}
-        <Route path="/jobs" element={<PublicJobs />} />
-        <Route path="/jobs/:jobId" element={<PublicJobDetails />} />
+        <Route path="/jobs" element={<CareersPage manageTitle />} />
+        <Route path="/jobs/:jobId" element={<RedirectToJob />} />
         <Route element={<ProtectedRoute />}>
           <Route
             path="/*"

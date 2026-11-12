@@ -22,6 +22,7 @@ INTERVIEWS_COLLECTION = "interviews"
 SKILLS_EVALUATION_COLLECTION = "skills_evaluations"
 INTERVIEW_TYPES_COLLECTION = "interview_types"
 JOB_OPENINGS_COLLECTION = "job_openings"
+CAREERS_PAGE_SETTINGS_COLLECTION = "careers_page_settings"
 JOB_APPLICATIONS_COLLECTION = "job_applications"
 APPLICANT_VERIFICATIONS_COLLECTION = "applicant_verifications"
 
