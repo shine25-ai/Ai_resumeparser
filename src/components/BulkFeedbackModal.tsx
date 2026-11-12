@@ -20,6 +20,7 @@ import type { CategoryScoreItem } from "../types/interview";
 import { SkillRatingsEvaluation } from "./SkillRatingsEvaluation";
 import { getFeedbackQuestionsAsync, getAutoRatingOutcome } from "../utils/feedbackHelpers";
 import { useFeedback } from "./ui/Feedback";
+import { RoundsTracker } from "./interview/RoundsTracker";
 
 interface BulkFeedbackModalProps {
   isOpen: boolean;
@@ -83,6 +84,26 @@ interface SingleCandidateFeedbackForm {
   notes: string;
 }
 
+// The panel shows an empty "Client Evaluator 1" / "Interviewer 1" row so people can fill it in.
+// Rows nobody filled in (no person, rating, comments or verdict) are not saved; they used to be
+// stored as if a client or interviewer had given feedback.
+const hasPerson = (id?: string, email?: string) => !!(id || (email && email.trim()));
+const isFilledClient = (c: ClientFeedbackItem) =>
+  hasPerson(c.client_id, c.client_email) ||
+  !!c.client_rating ||
+  !!(c.client_feedback && c.client_feedback.trim()) ||
+  (c.client_strengths?.length ?? 0) > 0 ||
+  (c.client_weaknesses?.length ?? 0) > 0 ||
+  !!(c.client_recommendation && c.client_recommendation !== "Pending");
+const isFilledInterviewer = (i: InterviewerItem) =>
+  hasPerson(i.interviewer_id, i.interviewer_email) ||
+  !!i.rating ||
+  !!(i.feedback && i.feedback.trim()) ||
+  (i.strengths?.length ?? 0) > 0 ||
+  (i.weaknesses?.length ?? 0) > 0 ||
+  !!(i.recommendation && i.recommendation !== "Pending") ||
+  !/^Interviewer \d+$/.test(i.interviewer_name || "");
+
 export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   isOpen,
   onClose,
@@ -95,6 +116,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   const [formsData, setFormsData] = useState<SingleCandidateFeedbackForm[]>([]);
   // Verdicts the evaluator chose by hand, per candidate ("0:top", "0:int:1", ...)
   const pickedVerdictsRef = useRef<Set<string>>(new Set());
+  // Candidates whose offer details were opened by hand before a Selected verdict
+  const [offerOpened, setOfferOpened] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
@@ -137,7 +160,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             interviewer_id: uId,
             interviewer_name: currentUser.full_name || item.interviewer_name || "Interviewer 1",
             interviewer_email: currentUser.email || item.interviewer_email || "",
-            rating: item.rating || 4,
+            rating: item.rating ?? undefined,
             feedback: item.feedback || "",
             recommendation: item.recommendation || "Pending",
             strengths: item.strengths || [],
@@ -150,7 +173,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                 {
                   interviewer_name: item.interviewer_name || "Interviewer 1",
                   interviewer_email: item.interviewer_email || "",
-                  rating: item.rating || 4,
+                  rating: item.rating ?? undefined,
                   feedback: item.feedback || "",
                   recommendation: item.recommendation || "Pending",
                   strengths: item.strengths || [],
@@ -172,7 +195,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             client_id: uId,
             client_name: currentUser.full_name || item.client_name || "Client Evaluator 1",
             client_email: currentUser.email || item.client_email || "",
-            client_rating: item.client_rating || 4,
+            client_rating: item.client_rating ?? undefined,
             client_feedback: item.client_feedback || "",
             client_recommendation: item.client_recommendation || "Pending",
             client_notes: item.client_notes || "",
@@ -183,7 +206,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             : [
                 {
                   client_name: item.client_name || "Client Evaluator 1",
-                  client_rating: item.client_rating || 4,
+                  client_rating: item.client_rating ?? undefined,
                   client_feedback: item.client_feedback || "",
                   client_recommendation: item.client_recommendation || "Pending",
                   client_notes: item.client_notes || "",
@@ -210,7 +233,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
           feedbackTab: isClientUser ? "CLIENT" : "INTERVIEWER",
           
-          rating: item.rating !== undefined && item.rating !== null ? item.rating : 1,
+          // 0 = not rated yet; only real ratings are saved
+          rating: item.rating ?? 0,
           feedback: item.feedback || "",
           strengths: item.strengths ? item.strengths.join(", ") : "",
           weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
@@ -218,7 +242,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           interviewersList: initInterviewers,
 
           client_name: item.client_name || "",
-          client_rating: item.client_rating !== undefined && item.client_rating !== null ? item.client_rating : 1,
+          client_rating: item.client_rating ?? 0,
           client_feedback: item.client_feedback || "",
           client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
           client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
@@ -245,6 +269,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       });
       setFormsData(initialForms);
       pickedVerdictsRef.current = new Set();
+      setOfferOpened(new Set());
       setActiveCandidateIndex(0);
     }
   }, [selectedInterviews, isOpen]);
@@ -265,7 +290,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
     !!currentForm &&
     (OFFER_VERDICTS.includes(currentForm.recommendation) ||
       OFFER_VERDICTS.includes(currentForm.client_recommendation) ||
-      !!(currentForm.salary_requested || currentForm.final_fit_salary || currentForm.joining_date));
+      offerOpened.has(activeCandidateIndex) ||
+      !!(currentForm.salary_requested || currentForm.final_fit_salary || currentForm.joining_date ||
+        currentForm.candidate_requested_date || currentForm.candidate_requested_role));
 
   // A rating suggests a verdict, but never overwrites one the evaluator picked by hand
   const pickedVerdicts = pickedVerdictsRef.current;
@@ -335,14 +362,14 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       if (form && form.interviewersList[intIdx]) {
         const item = { ...form.interviewersList[intIdx], [field]: val };
         if (field === "recommendation") pickedVerdicts.add(pickKey(`int:${intIdx}`));
-        if (field === "rating" && !pickedVerdicts.has(pickKey(`int:${intIdx}`))) {
+        if (field === "rating" && val !== undefined && !pickedVerdicts.has(pickKey(`int:${intIdx}`))) {
           const outcome = getAutoRatingOutcome(Number(val));
           item.recommendation = outcome.recommendation;
         }
         form.interviewersList[intIdx] = item;
 
         if (intIdx === 0) {
-          form.rating = Number(item.rating || 4);
+          form.rating = Number(item.rating ?? 0);
           form.recommendation = item.recommendation || "Selected";
         }
       }
@@ -386,14 +413,14 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       if (form && form.clientsList[clientIdx]) {
         const item = { ...form.clientsList[clientIdx], [field]: val };
         if (field === "client_recommendation") pickedVerdicts.add(pickKey(`cli:${clientIdx}`));
-        if (field === "client_rating" && !pickedVerdicts.has(pickKey(`cli:${clientIdx}`))) {
+        if (field === "client_rating" && val !== undefined && !pickedVerdicts.has(pickKey(`cli:${clientIdx}`))) {
           const outcome = getAutoRatingOutcome(Number(val));
           item.client_recommendation = outcome.clientDecision;
         }
         form.clientsList[clientIdx] = item;
 
         if (clientIdx === 0) {
-          form.client_rating = Number(item.client_rating || 4);
+          form.client_rating = Number(item.client_rating ?? 0);
           form.client_name = item.client_name || "";
           form.client_recommendation = item.client_recommendation || "Selected";
         }
@@ -517,12 +544,12 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
         return {
           interview_id: f.interview_id,
-          rating: Number(f.rating),
+          rating: f.rating ? Number(f.rating) : undefined,
           feedback: f.feedback || undefined,
           strengths: f.strengths ? f.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
           weaknesses: f.weaknesses ? f.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
           recommendation: f.recommendation || undefined,
-          interviewers: finalInterviewersList,
+          interviewers: (finalInterviewersList || []).filter(isFilledInterviewer),
 
           client_name: f.client_name || undefined,
           client_rating: f.client_rating ? Number(f.client_rating) : undefined,
@@ -532,7 +559,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           client_recommendation: f.client_recommendation || undefined,
           client_notes: f.client_notes || undefined,
           client_feedback_date: f.client_feedback_date || undefined,
-          clients: finalClientsList,
+          clients: (finalClientsList || []).filter(isFilledClient),
 
           skill_ratings: f.skill_ratings,
           category_scores: f.category_scores,
@@ -938,8 +965,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                                 step="0.5"
                                 min="1"
                                 max="5"
-                                value={interviewer.rating || 4}
-                                onChange={(e) => handleInterviewerItemChange(intIdx, "rating", Number(e.target.value))}
+                                value={interviewer.rating ?? ""}
+                                placeholder="Not rated"
+                                onChange={(e) => handleInterviewerItemChange(intIdx, "rating", e.target.value === "" ? undefined : Number(e.target.value))}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                               />
                             </div>
@@ -947,7 +975,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                             <div>
                               <label className="block text-xs font-bold text-slate-700 mb-1">Outcome Recommendation</label>
                               <select
-                                value={interviewer.recommendation || "Selected"}
+                                value={interviewer.recommendation || "Pending"}
                                 onChange={(e) => handleInterviewerItemChange(intIdx, "recommendation", e.target.value)}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-emerald-700 focus:bg-white focus:outline-none cursor-pointer"
                               >
@@ -1168,8 +1196,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                                 step="0.5"
                                 min="1"
                                 max="5"
-                                value={client.client_rating || 4}
-                                onChange={(e) => handleClientItemChange(clientIdx, "client_rating", Number(e.target.value))}
+                                value={client.client_rating ?? ""}
+                                placeholder="Not rated"
+                                onChange={(e) => handleClientItemChange(clientIdx, "client_rating", e.target.value === "" ? undefined : Number(e.target.value))}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
                               />
                             </div>
@@ -1177,7 +1206,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                             <div>
                               <label className="block text-xs font-bold text-slate-700 mb-1">Client Recommendation</label>
                               <select
-                                value={client.client_recommendation || "Selected"}
+                                value={client.client_recommendation || "Pending"}
                                 onChange={(e) => handleClientItemChange(clientIdx, "client_recommendation", e.target.value)}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-teal-700 focus:bg-white focus:outline-none cursor-pointer"
                               >
@@ -1281,6 +1310,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                     onChangeSkills={(newSkills) => handleCurrentFormChange("skill_ratings", newSkills)}
                     categoryScores={currentForm.category_scores}
                     onChangeCategoryScores={(newCatScores) => handleCurrentFormChange("category_scores", newCatScores)}
+                    currentRoundNumber={currentForm.round_number}
+                    currentInterviewType={currentForm.interview_type}
+                    hrCallVerification={selectedInterviews[activeCandidateIndex]?.hr_call_verification}
                     onAiScoreCalculated={(score, rec) => {
                       setFormsData((prev) => {
                         const updated = [...prev];
@@ -1295,7 +1327,17 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   />
                 </div>
 
-                {/* Offer details only appear once the verdict is Selected (or they were already filled) */}
+                {/* Offer details open by themselves after a Selected verdict (or when already filled),
+                    and can always be opened by hand so nothing is out of reach */}
+                {!showOfferDetails && (
+                  <button
+                    type="button"
+                    onClick={() => setOfferOpened((prev) => new Set(prev).add(activeCandidateIndex))}
+                    className="w-full text-left px-4 py-3 rounded-2xl border border-dashed border-slate-300 text-sm font-semibold text-slate-600 hover:bg-white cursor-pointer"
+                  >
+                    + Add offer and candidate request details (salary, joining date, requested slot and role)
+                  </button>
+                )}
                 {showOfferDetails && (
                 <div id="sec-compensation" className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
@@ -1316,6 +1358,27 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                         placeholder="e.g. 50000"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-amber-700 focus:bg-white focus:outline-none"
                       />
+                    </div>
+
+                    {/* Candidate's requested interview slot (was in the old single-interview form) */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-slate-700">Candidate's requested date and time</span>
+                      <div className="flex gap-2">
+                        <input
+                          type="date"
+                          aria-label="Candidate's requested date"
+                          value={currentForm.candidate_requested_date}
+                          onChange={(e) => handleCurrentFormChange("candidate_requested_date", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:bg-white focus:outline-none"
+                        />
+                        <input
+                          type="time"
+                          aria-label="Candidate's requested time"
+                          value={currentForm.candidate_requested_time}
+                          onChange={(e) => handleCurrentFormChange("candidate_requested_time", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:bg-white focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     {/* KPI Card 2: Final Fit Salary */}
@@ -1598,23 +1661,11 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   </div>
                 </div>
 
-                {/* HIRING WORKFLOW STAGE PROGRESS CARD */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-xs">
-                  <span className="text-xs font-extrabold text-slate-900 block uppercase tracking-wider">
-                    Hiring Stage Tracker
-                  </span>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center gap-2 p-2 bg-emerald-50 text-emerald-700 rounded-xl font-bold border border-emerald-200">
-                      <ShieldCheck size={14} /> HR Screening (Verified)
-                    </div>
-                    <div className="flex items-center gap-2 p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold border border-indigo-200">
-                      <UserCheck size={14} /> Technical Round {currentForm.round_number || 1} (In Progress)
-                    </div>
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 text-slate-400 rounded-xl font-medium border border-slate-200">
-                      Managerial Round (Upcoming)
-                    </div>
-                  </div>
-                </div>
+                {/* The candidate's real rounds (was a hard-coded HR / Technical / Managerial list) */}
+                <RoundsTracker
+                  candidateId={selectedInterviews[activeCandidateIndex]?.candidate_id}
+                  currentInterviewId={currentForm.interview_id}
+                />
 
               </div>
 

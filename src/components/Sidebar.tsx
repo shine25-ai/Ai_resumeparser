@@ -58,8 +58,8 @@ export function Sidebar() {
     if (!user) return true;
     if (userRoleLower === "admin" || userRoleLower === "superadmin") return true;
     if (!user.permissions || user.permissions.length === 0) return true;
-    // The old Interview Dashboard permission now opens the Interviews page
-    if (item.perm === "interviews" && user.permissions.includes("interview-dashboard")) return true;
+    // The old Interview Dashboard and Client Feedback permissions now open the Interviews page
+    if (item.perm === "interviews" && (user.permissions.includes("interview-dashboard") || user.permissions.includes("client-feedback"))) return true;
     return user.permissions.includes(item.perm);
   });
 

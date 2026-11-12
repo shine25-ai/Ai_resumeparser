@@ -18,6 +18,7 @@ from app.core.exceptions import NotFoundError
 from app.models.interview import InterviewDocument
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
+    InterviewAiPrepRequest,
     BulkInterviewFeedbackRequest,
     CandidateFullHistoryResponse,
     InterviewBatchCreateRequest,
@@ -1330,6 +1331,37 @@ class InterviewService:
             "has_active_interview": False,
             "message": "Candidate has no active pending interviews."
         }
+
+    async def get_ai_prep(self, interview_id: str) -> Dict[str, Any]:
+        """Saved AI prep for one round, or empty values if none was saved yet."""
+        existing = await self.interview_repo.get_by_id(interview_id)
+        if not existing:
+            raise NotFoundError("Interview not found.")
+        prep = existing.get("ai_prep") or {}
+        return {
+            "interview_id": interview_id,
+            "questions": prep.get("questions"),
+            "transcript": prep.get("transcript"),
+            "evaluations": prep.get("evaluations") or {},
+            "updated_at": prep.get("updated_at"),
+            "updated_by": prep.get("updated_by"),
+        }
+
+    async def save_ai_prep(self, interview_id: str, payload: InterviewAiPrepRequest, updated_by: Optional[str] = None) -> Dict[str, Any]:
+        """Replace the AI prep saved with a round. Only the ai_prep field is written."""
+        existing = await self.interview_repo.get_by_id(interview_id)
+        if not existing:
+            raise NotFoundError("Interview not found.")
+        prep = {
+            "questions": payload.questions,
+            "transcript": payload.transcript,
+            "evaluations": payload.evaluations or {},
+            "updated_at": utc_now().isoformat(),
+            "updated_by": updated_by,
+        }
+        await self.interview_repo.update(interview_id, {"ai_prep": prep})
+        logger.info(f"Saved AI prep for interview ID '{interview_id}'")
+        return {"interview_id": interview_id, **prep}
 
     async def cancel_interview(
         self,

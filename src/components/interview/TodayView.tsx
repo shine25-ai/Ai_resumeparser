@@ -46,6 +46,8 @@ export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: Toda
   const [error, setError] = useState<string | null>(null);
   const [upcoming, setUpcoming] = useState<InterviewItem[]>([]);
   const [needsFeedback, setNeedsFeedback] = useState<InterviewItem[]>([]);
+  // Summary counts (the old Interview Dashboard's stat cards)
+  const [totals, setTotals] = useState<{ all: number; completed: number; selected: number }>({ all: 0, completed: 0, selected: 0 });
   const today = todayIso();
 
   useEffect(() => {
@@ -53,6 +55,14 @@ export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: Toda
     setLoading(true);
     setError(null);
     const listOf = (data: any): InterviewItem[] => (Array.isArray(data) ? data : data?.interviews || data?.data?.interviews || []);
+    const totalOf = (data: any): number => data?.total ?? data?.data?.total ?? 0;
+    Promise.all([
+      getInterviews({ limit: 1 }),
+      getInterviews({ status: "COMPLETED", limit: 1 }),
+      getInterviews({ verdict: "Selected", limit: 1 }),
+    ])
+      .then(([all, completed, selected]) => !cancelled && setTotals({ all: totalOf(all), completed: totalOf(completed), selected: totalOf(selected) }))
+      .catch(() => undefined);
     Promise.all([
       // Next 14 days
       getInterviews({ date_from: today, date_to: shiftDays(today, 14), limit: 200 }),
@@ -62,7 +72,10 @@ export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: Toda
       .then(([next, past]) => {
         if (cancelled) return;
         setUpcoming(listOf(next).filter((i) => getInterviewPhase(i, today) === "upcoming").sort(byDateTime));
-        setNeedsFeedback(listOf(past).filter((i) => getInterviewPhase(i, today) === "needs-feedback").sort(byDateTime).reverse());
+        // Includes today's interviews whose start time has passed
+        setNeedsFeedback(
+          [...listOf(past), ...listOf(next)].filter((i) => getInterviewPhase(i, today) === "needs-feedback").sort(byDateTime).reverse()
+        );
       })
       .catch((err) => !cancelled && setError(err?.message || "Could not load interviews."))
       .finally(() => !cancelled && setLoading(false));
@@ -110,8 +123,27 @@ export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: Toda
       </a>
     ) : null;
 
+  const todayCount = upcoming.filter((i) => i.scheduled_date === today).length + needsFeedback.filter((i) => i.scheduled_date === today).length;
+  const stats = [
+    { label: "All interviews", value: totals.all },
+    { label: "Today", value: todayCount },
+    { label: "Next 14 days", value: upcoming.length },
+    { label: "Needs feedback", value: needsFeedback.length },
+    { label: "Completed", value: totals.completed },
+    { label: "Selected", value: totals.selected },
+  ];
+
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+        {stats.map((st) => (
+          <div key={st.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <div className="text-xs font-semibold text-slate-500">{st.label}</div>
+            <div className="text-xl font-extrabold text-slate-900">{st.value}</div>
+          </div>
+        ))}
+      </div>
+
       {Object.keys(groups).length === 0 && (
         <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-4">Nothing booked for the next two weeks.</p>
       )}

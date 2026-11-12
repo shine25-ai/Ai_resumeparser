@@ -8,9 +8,12 @@ import {
   sendInterviewEmail, getInterviewTypes, MAIL_TEMPLATES_URL,
   type InterviewItem, type UserProfile, type InterviewTypeItem, apiFetch } from "../utils/Api";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
+import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { InterviewForm, type InterviewFormMode, type CandidatePrefill } from "../components/interview/InterviewForm";
 import { getInterviewPhase, hasFeedback, VERDICTS, INTERVIEW_STAGES, getVerdictBadge } from "../utils/interviewState";
 import { TodayView } from "../components/interview/TodayView";
+import { ShareSummaryDialog } from "../components/interview/ShareSummaryDialog";
+import { RECOMMENDATION_OPTIONS } from "../types/interview";
 import { useFeedback } from "../components/ui/Feedback";
 
 const formatTimeTo12Hour = (timeStr?: string) => {
@@ -250,6 +253,9 @@ export default function InterviewManagement() {
 
   // "View candidate" opens the one candidate profile page
   const navigate = useNavigate();
+  const [shareOpen, setShareOpen] = useState(false);
+  // "Interview history": every round with all its captured details
+  const [historyFor, setHistoryFor] = useState<InterviewItem | null>(null);
   const handleOpenDetails = (item: InterviewItem) => {
     const id = item.resume_id || item.candidate_id;
     if (id) navigate(`/candidates/${id}`);
@@ -282,7 +288,9 @@ export default function InterviewManagement() {
         scheduled_date: targetDate.trim() || undefined,
         interview_type: activeType,
         status: activeStatus,
-        verdict: activeRecommendation,
+        // "rec:<value>" = an exact old outcome value; anything else is a Verdict
+        verdict: activeRecommendation && !activeRecommendation.startsWith("rec:") ? activeRecommendation : undefined,
+        recommendation: activeRecommendation?.startsWith("rec:") ? activeRecommendation.slice(4) : undefined,
         stage: stageFilter !== "All" ? stageFilter : undefined,
       };
 
@@ -369,7 +377,12 @@ export default function InterviewManagement() {
   // Filtered interviews showing current round only per candidate
   const latestCandidateInterviews = getLatestInterviewsPerCandidate(interviews);
 
-  const filteredInterviews = latestCandidateInterviews;
+  // "Highest score first" (the old Interview Dashboard's score sort), on the rows shown
+  const [sortByScore, setSortByScore] = useState(false);
+  const scoreOf = (i: InterviewItem) => i.ai_score ?? ((i.rating ?? 0) > 0 ? (i.rating as number) * 20 : -1);
+  const filteredInterviews = sortByScore
+    ? [...latestCandidateInterviews].sort((a, b) => scoreOf(b) - scoreOf(a))
+    : latestCandidateInterviews;
 
   // Keep totalCount state in sync with current filtered candidate rows
   useEffect(() => {
@@ -572,6 +585,7 @@ export default function InterviewManagement() {
   const rowActions = (row: InterviewItem) => {
     const phase = getInterviewPhase(row);
     const view = { label: "View candidate", icon: <Eye size={14} />, run: () => handleOpenDetails(row) };
+    const history = { label: "Interview history", icon: <Layers size={14} />, run: () => setHistoryFor(row) };
     const email = { label: "Send email", icon: <Mail size={14} />, run: () => handleOpenSendMail(row) };
     const feedback = { label: hasFeedback(row) ? "Update feedback" : "Give feedback", icon: <Star size={14} />, run: () => handleOpenFeedback(row) };
     const nextRound = { label: "Schedule next round", icon: <Layers size={14} />, run: () => setInterviewForm({ mode: "next-round", interview: row }) };
@@ -589,11 +603,15 @@ export default function InterviewManagement() {
           candidate: { candidate_id: row.candidate_id, candidate_name: row.candidate_name, candidate_email: row.candidate_email, resume_id: row.resume_id, job_title: row.job_title },
         }),
     };
-    const list: { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean }[] =
-      phase === "upcoming" ? [view, edit, reschedule, email, cancel]
-      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, reschedule, view, email, cancel]
-      : phase === "done" ? [{ ...nextRound, primary: true }, feedback, view, email]
-      : [again, view];
+    type RowAction = { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean };
+    // Most useful first for the interview's state; every action from the old menu stays available
+    const first: RowAction[] =
+      phase === "upcoming" ? [view, history, edit, reschedule]
+      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, nextRound, reschedule]
+      : phase === "done" ? [{ ...nextRound, primary: true }, feedback]
+      : [again];
+    const all: RowAction[] = [feedback, nextRound, view, history, edit, reschedule, email, ...(row.status === "CANCELLED" ? [] : [cancel])];
+    const list: RowAction[] = [...first, ...all.filter((a) => !first.some((f) => f.label === a.label))];
     return isAdmin ? [...list, remove as (typeof list)[number]] : list;
   };
 
@@ -672,6 +690,10 @@ export default function InterviewManagement() {
 
             {/* Clear Filters Button */}
             <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
+                <input type="checkbox" checked={sortByScore} onChange={(e) => setSortByScore(e.target.checked)} className="w-4 h-4" />
+                Highest score first
+              </label>
               {activeFilterCount > 0 && (
                 <button
                   onClick={() => {
@@ -762,6 +784,11 @@ export default function InterviewManagement() {
                 {VERDICTS.map((v) => (
                   <option key={v} value={v}>{v}</option>
                 ))}
+                <optgroup label="Exact outcome">
+                  {RECOMMENDATION_OPTIONS.map((r) => (
+                    <option key={r} value={`rec:${r}`}>{r}</option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 
@@ -795,6 +822,14 @@ export default function InterviewManagement() {
               <Sparkles size={16} />
               Bulk Feedback Update ({selectedInterviewIds.length})
             </button>
+            {/* Was "Email Interview Status" on the old Interview Dashboard */}
+            <button
+              onClick={() => setShareOpen(true)}
+              className="ml-2 flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Mail size={16} />
+              Email summary ({selectedInterviewIds.length})
+            </button>
           </div>
         )}
 
@@ -819,7 +854,8 @@ export default function InterviewManagement() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm min-h-[340px]">
+          <div className={`overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm min-h-[340px] ${openActionMenuId ? "pb-96" : ""}`}>
+            {/* pb-96 while a row menu is open, so this scroll container doesn't clip the menu */}
             <table className="w-full text-left border-collapse min-w-[1150px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
@@ -1254,6 +1290,22 @@ export default function InterviewManagement() {
       {/* CANDIDATE FULL DETAILS MODAL */}
 
       {/* BULK CANDIDATE FEEDBACK UPDATE MODAL */}
+      {shareOpen && (
+        <ShareSummaryDialog
+          interviewIds={selectedInterviewIds}
+          onClose={() => setShareOpen(false)}
+          onSent={() => setSelectedInterviewIds([])}
+        />
+      )}
+
+      <CandidateDetailsModal
+        isOpen={historyFor !== null}
+        onClose={() => setHistoryFor(null)}
+        candidateId={historyFor?.candidate_id || null}
+        candidateName={historyFor?.candidate_name || ""}
+        fallbackInterview={historyFor}
+      />
+
       {/* One feedback panel, for a single interview or several selected ones */}
       <BulkFeedbackModal
         isOpen={feedbackTargets !== null}

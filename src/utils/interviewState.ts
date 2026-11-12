@@ -23,10 +23,17 @@ export function hasFeedback(item: InterviewItem): boolean {
   return (item.interviewers || []).some((i) => (i.rating ?? 0) > 0 || !!i.feedback);
 }
 
-export function getInterviewPhase(item: InterviewItem, today: string = todayIso()): InterviewPhase {
+const nowTime = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+export function getInterviewPhase(item: InterviewItem, today: string = todayIso(), now: string = nowTime()): InterviewPhase {
   if (CLOSED_STATUSES.includes(item.status) || CLOSED_OUTCOMES.includes(item.recommendation || "")) return "closed";
   if (item.status === "COMPLETED" || hasFeedback(item)) return "done";
-  if ((item.scheduled_date || "") >= today) return "upcoming";
+  const date = item.scheduled_date || "";
+  // Later today still counts as upcoming; once its start time has passed it can take feedback
+  if (date > today || (date === today && (item.scheduled_time || "00:00") > now)) return "upcoming";
   return "needs-feedback";
 }
 
