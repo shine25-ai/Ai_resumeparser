@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, Clock, Plus, Trash2, X, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Calendar, Clock, Plus, Trash2, X, CheckCircle2, AlertTriangle, Loader2, ChevronDown, ChevronRight, Paperclip } from "lucide-react";
 import {
-  createInterview, batchCreateInterviews, updateInterview, rescheduleInterview, sendInterviewEmail,
+  createInterview, batchCreateInterviews, updateInterview, rescheduleInterview, sendInterviewEmail, uploadInterviewDocument,
   checkInterviewConflict, checkCandidateActiveInterviewStatus, getNextRoundNumber,
   getResumes, getUsers, getInterviewTypes,
   type InterviewItem, type InterviewTypeEnum, type InterviewerItem, type ClientFeedbackItem,
@@ -14,8 +14,10 @@ import { useFeedback } from "../ui/Feedback";
  * The one form for booking an interview. It replaces the separate Schedule, Edit,
  * Reschedule, Next Round, Interview Dashboard and JD Match forms.
  *
- * It only asks for what is needed to book the interview. Salary, joining date and
- * the outcome are entered after the interview, in the feedback panel.
+ * The main section asks only for what is needed to book the interview. Every other
+ * detail the old forms captured (platform, location, HR call, candidate requests,
+ * expected salary, documents, status) is under "More details", so nothing is lost.
+ * The outcome and offer details are entered in the feedback panel.
  */
 
 export type InterviewFormMode = "schedule" | "edit" | "reschedule" | "next-round" | "bulk";
@@ -64,6 +66,12 @@ const BUILT_IN_TYPES = [
   { id: "", code: "CLIENT_ROUND", name: "Client round" },
   { id: "", code: "FINAL_ROUND", name: "Final round" },
 ];
+
+// Same choices the old forms offered
+const PLATFORMS = ["Google Meet", "Zoom", "Microsoft Teams", "In Person"];
+const JOB_TYPES = ["Full Time", "Part Time", "Contract", "Hybrid", "Remote"];
+const HR_CALL = ["Pending", "Verified", "Needs Followup", "Not Eligible"];
+const STATUSES = ["SCHEDULED", "COMPLETED", "RESCHEDULED", "CANCELLED", "NO_SHOW", "PENDING"];
 
 const today = () => new Date().toISOString().split("T")[0];
 
@@ -117,6 +125,20 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
   const [meetingLink, setMeetingLink] = useState("");
   const [notes, setNotes] = useState("");
   const [reason, setReason] = useState("");
+  // "More details" (optional)
+  const [showMore, setShowMore] = useState(false);
+  const [platform, setPlatform] = useState("Google Meet");
+  const [place, setPlace] = useState("");
+  const [hrCall, setHrCall] = useState("Pending");
+  const [jobLocation, setJobLocation] = useState("");
+  const [jobType, setJobType] = useState("Full Time");
+  const [reqDate, setReqDate] = useState("");
+  const [reqTime, setReqTime] = useState("");
+  const [reqRole, setReqRole] = useState("");
+  const [salaryRequested, setSalaryRequested] = useState("");
+  const [documents, setDocuments] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState("SCHEDULED");
   const [notify, setNotify] = useState(true);
 
   const [activeInterviewMessage, setActiveInterviewMessage] = useState<string | null>(null);
@@ -165,27 +187,40 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
     setNotes(mode === "edit" ? src?.notes || "" : "");
     setReason("");
     setNotify(true);
+    // Edit and next round keep what was captured before
+    const keep = mode === "edit" || mode === "next-round";
+    setPlatform((keep && src?.meeting_platform) || "Google Meet");
+    setPlace(keep ? src?.interview_location || src?.location || "" : "");
+    setHrCall((keep && src?.hr_call_verification) || "Pending");
+    setJobLocation(keep ? src?.job_location || "" : "");
+    setJobType((keep && src?.job_type) || "Full Time");
+    setReqDate(keep ? src?.candidate_requested_date || "" : "");
+    setReqTime(keep ? src?.candidate_requested_time || "" : "");
+    setReqRole(keep ? src?.candidate_requested_role || "" : "");
+    setSalaryRequested(keep ? src?.salary_requested || "" : "");
+    setDocuments(mode === "edit" ? src?.interview_document_files || [] : []);
+    setStatus(src?.status || "SCHEDULED");
+    setShowMore(false);
     setActiveInterviewMessage(null);
     setConflict({ state: "idle" });
   }, [isOpen, mode, interview, candidate, bulkJobTitle, isReschedule]);
 
-  // Default the interview type to the first configured one
-  useEffect(() => {
-    if (!isOpen || isReschedule || activeTypes.length === 0) return;
-    const match = typeCode ? activeTypes.find((t) => t.code === typeCode) : undefined;
-    if (!match) {
-      setTypeCode(activeTypes[0].code);
-      setTypeId(activeTypes[0].id);
-    }
-  }, [isOpen, isReschedule, activeTypes, typeCode, typeId]);
+  // A new interview defaults to the first configured type. An existing one keeps its own
+  // type, even if that type is no longer in the configured list (never silently changed).
+  const typeCodeUsed = typeCode || activeTypes[0]?.code || "";
+  const typeIdUsed = typeCode ? typeId : activeTypes[0]?.id || "";
+  const typeOptions =
+    typeCode && !activeTypes.some((t) => t.code === typeCode)
+      ? [...activeTypes, { id: typeId, code: typeCode, name: typeCode.toLowerCase().replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) }]
+      : activeTypes;
 
   // Next round: ask the server which round number comes next for this type
   useEffect(() => {
-    if (!isOpen || mode !== "next-round" || !candidateId || !typeCode) return;
-    getNextRoundNumber(candidateId, typeCode, typeId)
+    if (!isOpen || mode !== "next-round" || !candidateId || !typeCodeUsed) return;
+    getNextRoundNumber(candidateId, typeCodeUsed, typeIdUsed)
       .then((res) => res?.next_round_number && setRound(res.next_round_number))
       .catch(() => undefined);
-  }, [isOpen, mode, candidateId, typeCode, typeId]);
+  }, [isOpen, mode, candidateId, typeCodeUsed, typeIdUsed]);
 
   // Warn early if the chosen candidate already has an open interview
   useEffect(() => {
@@ -264,6 +299,23 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
   const clientsPayload = (): ClientFeedbackItem[] =>
     clients.filter((c) => c.name.trim()).map((c) => ({ client_id: c.id, client_name: c.name.trim(), client_email: c.email.trim() || undefined }));
 
+  const uploadDocs = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const res = await uploadInterviewDocument(file);
+        if (res?.s3_url) urls.push(res.s3_url);
+      }
+      setDocuments((prev) => Array.from(new Set([...prev, ...urls])));
+    } catch (err: any) {
+      toast(`Could not upload the document: ${err?.message || "upload error"}`, "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const interviewers = interviewersPayload();
@@ -279,8 +331,8 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
     }
 
     const slot = {
-      interview_type: typeCode as InterviewTypeEnum,
-      interview_type_id: typeId || undefined,
+      interview_type: typeCodeUsed as InterviewTypeEnum,
+      interview_type_id: typeIdUsed || undefined,
       round_number: Number(round),
       scheduled_date: date,
       scheduled_time: time,
@@ -295,6 +347,19 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
       clients: clientList,
       meeting_link: meetingLink.trim() || undefined,
       notes: notes.trim() || undefined,
+      // "More details"
+      meeting_platform: platform,
+      location: place.trim() || undefined,
+      interview_location: place.trim() || undefined,
+      hr_call_verification: hrCall,
+      job_location: jobLocation.trim() || undefined,
+      job_type: jobType,
+      candidate_requested_date: reqDate || undefined,
+      candidate_requested_time: reqTime || undefined,
+      candidate_requested_date_time: reqDate ? `${reqDate} ${reqTime}`.trim() : undefined,
+      candidate_requested_role: reqRole.trim() || undefined,
+      salary_requested: salaryRequested.trim() || undefined,
+      interview_document_files: documents,
     };
 
     try {
@@ -314,7 +379,7 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
         }
         toast(`Rescheduled ${interview.candidate_name} to ${date}, ${to12Hour(time)}.`, "success");
       } else if (mode === "edit" && interview) {
-        await updateInterview(interview.id, { ...slot, candidate_name: candidateName, job_title: jobTitle.trim() });
+        await updateInterview(interview.id, { ...slot, candidate_name: candidateName, job_title: jobTitle.trim(), status: status as InterviewItem["status"] });
         toast("Interview updated.", "success");
       } else if (mode === "bulk") {
         const busyIds = new Set(busyCandidates.map((b) => b.id));
@@ -340,10 +405,6 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
           resume_id: resumeId || undefined,
           job_id: interview?.job_id,
           job_title: jobTitle.trim(),
-          job_location: interview?.job_location,
-          job_type: interview?.job_type,
-          candidate_requested_role: interview?.candidate_requested_role,
-          salary_requested: interview?.salary_requested,
           final_fit_salary: interview?.final_fit_salary,
           joining_date: interview?.joining_date,
           recommendation: "Pending",
@@ -452,15 +513,15 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
                 <label htmlFor="if-type" className={labelClass}>Interview type</label>
                 <select
                   id="if-type"
-                  value={typeCode}
+                  value={typeCodeUsed}
                   onChange={(e) => {
-                    const t = activeTypes.find((x) => x.code === e.target.value);
+                    const t = typeOptions.find((x) => x.code === e.target.value);
                     setTypeCode(t?.code || e.target.value);
                     setTypeId(t?.id || "");
                   }}
                   className={inputClass}
                 >
-                  {activeTypes.map((t) => (
+                  {typeOptions.map((t) => (
                     <option key={t.code} value={t.code}>{t.name}</option>
                   ))}
                 </select>
@@ -555,6 +616,92 @@ export function InterviewForm({ mode, isOpen, onClose, onSaved, interview, candi
               <div>
                 <label htmlFor="if-notes" className={labelClass}>Notes for the panel</label>
                 <textarea id="if-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Focus areas, documents to read" className={inputClass} />
+              </div>
+
+              {/* Everything else the old forms captured, kept but out of the way */}
+              <div className="border border-slate-200 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setShowMore((v) => !v)}
+                  aria-expanded={showMore}
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-slate-700 cursor-pointer"
+                >
+                  <span>More details (optional)</span>
+                  {showMore ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </button>
+                {showMore && (
+                  <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="if-platform" className={labelClass}>Meeting platform</label>
+                      <select id="if-platform" value={platform} onChange={(e) => setPlatform(e.target.value)} className={inputClass}>
+                        {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="if-place" className={labelClass}>Interview location (in person)</label>
+                      <input id="if-place" value={place} onChange={(e) => setPlace(e.target.value)} placeholder="e.g. Conference room A, Coimbatore" className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="if-hrcall" className={labelClass}>HR call verification</label>
+                      <select id="if-hrcall" value={hrCall} onChange={(e) => setHrCall(e.target.value)} className={inputClass}>
+                        {HR_CALL.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                    {mode === "edit" && (
+                      <div>
+                        <label htmlFor="if-status" className={labelClass}>Interview status</label>
+                        <select id="if-status" value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
+                          {STATUSES.map((st) => <option key={st} value={st}>{st.replace("_", " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="if-joblocation" className={labelClass}>Job location</label>
+                      <input id="if-joblocation" value={jobLocation} onChange={(e) => setJobLocation(e.target.value)} placeholder="e.g. Chennai / Remote" className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="if-jobtype" className={labelClass}>Job type</label>
+                      <select id="if-jobtype" value={jobType} onChange={(e) => setJobType(e.target.value)} className={inputClass}>
+                        {JOB_TYPES.map((j) => <option key={j} value={j}>{j}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="if-reqdate" className={labelClass}>Candidate's requested date</label>
+                      <input id="if-reqdate" type="date" value={reqDate} onChange={(e) => setReqDate(e.target.value)} className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="if-reqtime" className={labelClass}>Candidate's requested time</label>
+                      <input id="if-reqtime" type="time" value={reqTime} onChange={(e) => setReqTime(e.target.value)} className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="if-reqrole" className={labelClass}>Candidate's requested role</label>
+                      <input id="if-reqrole" value={reqRole} onChange={(e) => setReqRole(e.target.value)} placeholder="e.g. Team Lead" className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="if-salary" className={labelClass}>Salary requested</label>
+                      <input id="if-salary" value={salaryRequested} onChange={(e) => setSalaryRequested(e.target.value)} placeholder="e.g. 12 LPA" className={inputClass} />
+                    </div>
+                    <div className="sm:col-span-2 space-y-2">
+                      <label className={`${labelClass} flex items-center gap-2 cursor-pointer w-fit`}>
+                        <Paperclip size={14} /> Attach documents for the panel
+                        <input type="file" multiple className="sr-only" onChange={(e) => uploadDocs(e.target.files)} />
+                        {uploading && <Loader2 size={14} className="animate-spin" />}
+                      </label>
+                      {documents.length > 0 && (
+                        <ul className="space-y-1">
+                          {documents.map((d) => (
+                            <li key={d} className="flex items-center justify-between gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+                              <a href={d} target="_blank" rel="noreferrer" className="truncate hover:underline">{decodeURIComponent(d.split("/").pop() || d)}</a>
+                              <button type="button" onClick={() => setDocuments(documents.filter((x) => x !== d))} aria-label="Remove document" className="text-slate-400 hover:text-rose-600 cursor-pointer">
+                                <X size={14} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

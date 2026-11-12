@@ -95,6 +95,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
   const [formsData, setFormsData] = useState<SingleCandidateFeedbackForm[]>([]);
   // Verdicts the evaluator chose by hand, per candidate ("0:top", "0:int:1", ...)
   const pickedVerdictsRef = useRef<Set<string>>(new Set());
+  // Candidates whose offer details were opened by hand before a Selected verdict
+  const [offerOpened, setOfferOpened] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
@@ -245,6 +247,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       });
       setFormsData(initialForms);
       pickedVerdictsRef.current = new Set();
+      setOfferOpened(new Set());
       setActiveCandidateIndex(0);
     }
   }, [selectedInterviews, isOpen]);
@@ -265,7 +268,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
     !!currentForm &&
     (OFFER_VERDICTS.includes(currentForm.recommendation) ||
       OFFER_VERDICTS.includes(currentForm.client_recommendation) ||
-      !!(currentForm.salary_requested || currentForm.final_fit_salary || currentForm.joining_date));
+      offerOpened.has(activeCandidateIndex) ||
+      !!(currentForm.salary_requested || currentForm.final_fit_salary || currentForm.joining_date ||
+        currentForm.candidate_requested_date || currentForm.candidate_requested_role));
 
   // A rating suggests a verdict, but never overwrites one the evaluator picked by hand
   const pickedVerdicts = pickedVerdictsRef.current;
@@ -1295,7 +1300,17 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                   />
                 </div>
 
-                {/* Offer details only appear once the verdict is Selected (or they were already filled) */}
+                {/* Offer details open by themselves after a Selected verdict (or when already filled),
+                    and can always be opened by hand so nothing is out of reach */}
+                {!showOfferDetails && (
+                  <button
+                    type="button"
+                    onClick={() => setOfferOpened((prev) => new Set(prev).add(activeCandidateIndex))}
+                    className="w-full text-left px-4 py-3 rounded-2xl border border-dashed border-slate-300 text-sm font-semibold text-slate-600 hover:bg-white cursor-pointer"
+                  >
+                    + Add offer and candidate request details (salary, joining date, requested slot and role)
+                  </button>
+                )}
                 {showOfferDetails && (
                 <div id="sec-compensation" className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
@@ -1316,6 +1331,27 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                         placeholder="e.g. 50000"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-extrabold text-amber-700 focus:bg-white focus:outline-none"
                       />
+                    </div>
+
+                    {/* Candidate's requested interview slot (was in the old single-interview form) */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-slate-700">Candidate's requested date and time</span>
+                      <div className="flex gap-2">
+                        <input
+                          type="date"
+                          aria-label="Candidate's requested date"
+                          value={currentForm.candidate_requested_date}
+                          onChange={(e) => handleCurrentFormChange("candidate_requested_date", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:bg-white focus:outline-none"
+                        />
+                        <input
+                          type="time"
+                          aria-label="Candidate's requested time"
+                          value={currentForm.candidate_requested_time}
+                          onChange={(e) => handleCurrentFormChange("candidate_requested_time", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:bg-white focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     {/* KPI Card 2: Final Fit Salary */}
