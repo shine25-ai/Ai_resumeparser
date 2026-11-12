@@ -191,7 +191,7 @@ The old Client Feedback page was a mock (hard-coded candidate; Save stored nothi
 
 - **Each round is its own interview** with a `round_number`, linked to the candidate. Nothing is overwritten when a new round is added.
 - **Round number is filled in.** The next round = the highest round of the **same interview type** + 1. A new type starts at 1 (Technical R1, Technical R2, then HR R1). It can be changed by hand.
-- **One open round per candidate.** A new round can't be booked while the candidate has a Scheduled or Rescheduled interview. Feedback on that round completes it first, which the server checks for single and bulk scheduling.
+- **One open round per candidate.** A new round can't be booked while the candidate has an interview that isn't Completed or Cancelled. Giving feedback completes it. The server enforces this for single and bulk scheduling.
 - **Where rounds show up:**
   - The **All** list shows each candidate's latest round.
   - **Interview history** shows every round with all its details.
