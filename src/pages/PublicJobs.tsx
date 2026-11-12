@@ -1,159 +1,69 @@
-import { useEffect, useState } from "react";
-import { Briefcase, CheckCircle2, Loader2, MapPin, Upload, X } from "lucide-react";
-import {
-  confirmApplicantCode,
-  fetchPublicJobs,
-  requestApplicantCode,
-  submitApplication,
-  type PublicJob,
-} from "../utils/jobsApi";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Briefcase, CalendarDays, ChevronDown, Clock3, Loader2, MapPin, Search } from "lucide-react";
+import { fetchPublicJobs, type PublicJob } from "../utils/jobsApi";
+import { ApplyModal, CareersHeader, Meta, Pill, openingsLabel, postedAgo } from "../components/careers/CareersShared";
 
-const ACCEPTED = ".pdf,.doc,.docx";
-const MAX_BYTES = 10 * 1024 * 1024;
+const uniqueValues = (jobs: PublicJob[], key: "department" | "location" | "employment_type") =>
+  Array.from(new Set(jobs.map((j) => (j[key] || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-type Step = "email" | "code" | "resume" | "done";
+// ── Page ────────────────────────────────────────────────────────────────────
 
-function ApplyModal({ job, onClose }: { job: PublicJob; onClose: () => void }) {
-  const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [token, setToken] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sendCode = () =>
-    run(async () => {
-      await requestApplicantCode(email.trim());
-      setStep("code");
-    });
-
-  const verifyCode = () =>
-    run(async () => {
-      const result = await confirmApplicantCode(email.trim(), code.trim());
-      setToken(result.applicant_token);
-      setStep("resume");
-    });
-
-  const pickFile = (picked: File | null) => {
-    setError("");
-    if (!picked) return setFile(null);
-    if (picked.size > MAX_BYTES) return setError("The file is larger than 10 MB.");
-    if (!/\.(pdf|docx?)$/i.test(picked.name)) return setError("Upload a PDF, DOC or DOCX file.");
-    setFile(picked);
-  };
-
-  const send = () => {
-    if (!file) return;
-    run(async () => {
-      await submitApplication(job.id, token, file);
-      setStep("done");
-    });
-  };
-
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Apply: {job.title}</h2>
-            <p className="text-sm text-slate-500">
-              {step === "email" && "Enter your email. We will send a verification code."}
-              {step === "code" && `Enter the 6-digit code sent to ${email.trim()}.`}
-              {step === "resume" && "Upload your resume to finish."}
-              {step === "done" && "Your application is in."}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">
-            <X size={20} />
-          </button>
-        </div>
-
-        {step === "email" && (
-          <div className="space-y-4">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none"
-            />
-            <button
-              disabled={busy || !email.trim()}
-              onClick={sendCode}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
-            >
-              {busy && <Loader2 size={16} className="animate-spin" />} Send code
-            </button>
-          </div>
-        )}
-
-        {step === "code" && (
-          <div className="space-y-4">
-            <input
-              inputMode="numeric"
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="123456"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-center text-2xl tracking-[0.5em] focus:border-indigo-500 focus:outline-none"
-            />
-            <button
-              disabled={busy || code.length !== 6}
-              onClick={verifyCode}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
-            >
-              {busy && <Loader2 size={16} className="animate-spin" />} Verify
-            </button>
-            <button onClick={sendCode} disabled={busy} className="w-full text-sm text-slate-500 hover:text-slate-700">
-              Resend code
-            </button>
-          </div>
-        )}
-
-        {step === "resume" && (
-          <div className="space-y-4">
-            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 p-6 text-center hover:border-indigo-400">
-              <Upload className="text-indigo-500" size={28} />
-              <span className="text-sm text-slate-700">{file ? file.name : "Choose your resume (PDF, DOC, DOCX, max 10 MB)"}</span>
-              <input type="file" accept={ACCEPTED} className="hidden" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
-            </label>
-            <button
-              disabled={busy || !file}
-              onClick={send}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
-            >
-              {busy && <Loader2 size={16} className="animate-spin" />} Submit application
-            </button>
-          </div>
-        )}
-
-        {step === "done" && (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <CheckCircle2 className="text-emerald-500" size={48} />
-            <p className="font-medium text-slate-900">Application submitted successfully</p>
-            <p className="text-sm text-slate-500">Your resume is being processed. Thank you for applying.</p>
-            <button onClick={onClose} className="mt-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">
-              Close
-            </button>
-          </div>
-        )}
-
-        {error && <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      </div>
+    <div className="relative">
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 w-full appearance-none rounded-lg border border-slate-300 bg-white pl-3 pr-9 text-sm text-slate-700 focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
+      >
+        <option value="">{label}</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
     </div>
+  );
+}
+
+function JobCard({ job, onApply }: { job: PublicJob; onApply: () => void }) {
+  const posted = postedAgo(job.created_at);
+  return (
+    <article className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 border-l-[3px] border-[#5B3EF0] pl-3">
+          <h3 className="truncate text-lg font-semibold text-slate-900">{job.title}</h3>
+          {job.department && <p className="truncate text-sm text-slate-600">{job.department}</p>}
+        </div>
+        <Pill>{openingsLabel(job.open_positions)}</Pill>
+      </div>
+
+      <div className="mb-5 mt-5 grid grid-cols-2 gap-x-4 gap-y-3">
+        {job.location && <Meta icon={<MapPin size={15} />}>{job.location}</Meta>}
+        {job.employment_type && <Meta icon={<Briefcase size={15} />}>{job.employment_type}</Meta>}
+        {job.experience && <Meta icon={<Clock3 size={15} />}>{job.experience}</Meta>}
+        {posted && <Meta icon={<CalendarDays size={15} />}>{posted}</Meta>}
+      </div>
+
+      <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+        <Link to={`/jobs/${job.id}`} className="rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-800 hover:bg-slate-50">
+          View Details
+        </Link>
+        <button onClick={onApply} className="rounded-lg bg-[#5B3EF0] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#4A2FD8]">
+          Apply Now
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -163,57 +73,129 @@ export default function PublicJobs() {
   const [error, setError] = useState("");
   const [applying, setApplying] = useState<PublicJob | null>(null);
 
+  // Draft filters change as the user types; applied filters change on "Search Jobs" (or Enter).
+  const emptyFilters = { query: "", department: "", location: "", employment_type: "" };
+  const [draft, setDraft] = useState(emptyFilters);
+  const [filters, setFilters] = useState(emptyFilters);
+
   const load = () => {
     setLoading(true);
     fetchPublicJobs()
-      .then(setJobs)
+      .then((data) => {
+        setJobs(data);
+        setError("");
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Could not load open roles."))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, []);
 
+  const departments = useMemo(() => uniqueValues(jobs, "department"), [jobs]);
+  const locations = useMemo(() => uniqueValues(jobs, "location"), [jobs]);
+  const types = useMemo(() => uniqueValues(jobs, "employment_type"), [jobs]);
+
+  const visible = useMemo(() => {
+    const q = filters.query.trim().toLowerCase();
+    return jobs.filter((j) => {
+      if (filters.department && j.department !== filters.department) return false;
+      if (filters.location && j.location !== filters.location) return false;
+      if (filters.employment_type && j.employment_type !== filters.employment_type) return false;
+      if (!q) return true;
+      return [j.title, j.department, j.description, j.location].some((v) => (v || "").toLowerCase().includes(q));
+    });
+  }, [jobs, filters]);
+
+  const filtered = Object.values(filters).some(Boolean);
+
+  // Select filters apply at once; the keyword applies on Search / Enter.
+  const setSelect = (key: "department" | "location" | "employment_type", value: string) => {
+    setDraft((d) => ({ ...d, [key]: value }));
+    setFilters((f) => ({ ...f, [key]: value }));
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-4xl px-4 py-6">
-          <h1 className="text-2xl font-bold">Open roles</h1>
-          <p className="mt-1 text-sm text-slate-500">Browse current openings and apply with your resume.</p>
+    <div className="min-h-screen bg-[#F4F4F8] text-slate-900">
+      <CareersHeader />
+
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#5B3EF0]">Careers at Shinelogics</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Find work that moves you forward.</h1>
+          <p className="mt-2 text-sm text-slate-600">Explore opportunities, build your skills and make an impact with us.</p>
+
+          <form
+            className="mt-6 grid gap-3 md:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto]"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setFilters(draft);
+            }}
+          >
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                aria-label="Search by job title or keyword"
+                value={draft.query}
+                onChange={(e) => setDraft({ ...draft, query: e.target.value })}
+                placeholder="Search by job title or keyword..."
+                className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
+              />
+            </div>
+            <FilterSelect label="Department" value={draft.department} options={departments} onChange={(v) => setSelect("department", v)} />
+            <FilterSelect label="Location" value={draft.location} options={locations} onChange={(v) => setSelect("location", v)} />
+            <FilterSelect label="Employment Type" value={draft.employment_type} options={types} onChange={(v) => setSelect("employment_type", v)} />
+            <button type="submit" className="h-10 rounded-lg bg-[#5B3EF0] px-6 text-sm font-medium text-white hover:bg-[#4A2FD8]">
+              Search Jobs
+            </button>
+          </form>
         </div>
-      </header>
+      </section>
 
-      <main className="mx-auto max-w-4xl px-4 py-8">
-        {loading && <p className="text-slate-500">Loading roles…</p>}
-        {!loading && error && <p className="text-rose-700">{error}</p>}
-        {!loading && !error && jobs.length === 0 && (
-          <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
-            There are no open roles right now. Please check back later.
-          </p>
-        )}
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Explore Open Positions</h2>
+            <p className="mt-1 text-sm text-slate-600">Find the right opportunity to grow your career with us.</p>
+          </div>
+          {!loading && !error && (
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{visible.length}</span> of {jobs.length} positions
+            </span>
+          )}
+        </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          {jobs.map((job) => (
-            <article key={job.id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="text-lg font-semibold">{job.title}</h2>
-                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                  {job.open_positions} open {job.open_positions === 1 ? "position" : "positions"}
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-500">
-                {job.department && <span className="inline-flex items-center gap-1"><Briefcase size={14} />{job.department}</span>}
-                {job.location && <span className="inline-flex items-center gap-1"><MapPin size={14} />{job.location}</span>}
-                {job.employment_type && <span>{job.employment_type}</span>}
-              </div>
-              {job.description && <p className="mt-3 line-clamp-3 text-sm text-slate-600">{job.description}</p>}
-              <button
-                onClick={() => setApplying(job)}
-                className="mt-4 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-              >
-                Apply
-              </button>
-            </article>
-          ))}
+        <div className="mt-6">
+          {loading && (
+            <p className="flex items-center gap-2 text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading roles…</p>
+          )}
+          {!loading && error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+          {!loading && !error && jobs.length === 0 && (
+            <p className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+              There are no open roles right now. Please check back later.
+            </p>
+          )}
+          {!loading && !error && jobs.length > 0 && visible.length === 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+              <p className="text-slate-600">No roles match your search.</p>
+              {filtered && (
+                <button
+                  onClick={() => {
+                    setDraft(emptyFilters);
+                    setFilters(emptyFilters);
+                  }}
+                  className="mt-3 text-sm font-medium text-[#5B3EF0] hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="grid gap-5 md:grid-cols-2">
+            {visible.map((job) => (
+              <JobCard key={job.id} job={job} onApply={() => setApplying(job)} />
+            ))}
+          </div>
         </div>
       </main>
 
@@ -229,3 +211,4 @@ export default function PublicJobs() {
     </div>
   );
 }
+

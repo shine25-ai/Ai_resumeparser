@@ -79,8 +79,10 @@ class JobOpeningService:
                 "department": o.get("department", ""),
                 "location": o.get("location", ""),
                 "employment_type": o.get("employment_type", ""),
+                "experience": o.get("experience", ""),
                 "description": o.get("description", ""),
                 "open_positions": o.get("open_positions", 0),
+                "created_at": o.get("created_at", ""),
             }
             for o in openings
         ]
@@ -252,6 +254,7 @@ class JobOpeningService:
             department=(data.get("department") or "").strip(),
             location=(data.get("location") or "").strip(),
             employment_type=(data.get("employment_type") or "").strip(),
+            experience=(data.get("experience") or "").strip(),
             description=(data.get("description") or "").strip(),
             open_positions=data.get("open_positions", 1),
         )

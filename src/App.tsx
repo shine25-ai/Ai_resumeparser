@@ -14,6 +14,7 @@ import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import ResumeTemplates from "./pages/ResumeTemplates";
 import PublicJobs from "./pages/PublicJobs";
+import PublicJobDetails from "./pages/PublicJobDetails";
 import JobOpenings from "./pages/JobOpenings";
 
 // Candidate profiles moved from /evaluation/:id to /candidates/:id
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         {/* Public careers page: no login needed */}
         <Route path="/jobs" element={<PublicJobs />} />
+        <Route path="/jobs/:jobId" element={<PublicJobDetails />} />
         <Route element={<ProtectedRoute />}>
           <Route
             path="/*"

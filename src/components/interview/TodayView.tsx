@@ -12,6 +12,7 @@ interface TodayViewProps {
   refreshKey: number;
   onFeedback: (item: InterviewItem) => void;
   onReschedule: (item: InterviewItem) => void;
+  onCancel: (item: InterviewItem) => void;
   onView: (item: InterviewItem) => void;
 }
 
@@ -41,7 +42,7 @@ const typeLabel = (code?: string) => {
 const panelNames = (item: InterviewItem) =>
   (item.interviewers?.length ? item.interviewers.map((i) => i.interviewer_name) : [item.interviewer_name]).filter(Boolean).join(", ");
 
-export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: TodayViewProps) {
+export function TodayView({ refreshKey, onFeedback, onReschedule, onCancel, onView }: TodayViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [upcoming, setUpcoming] = useState<InterviewItem[]>([]);
@@ -103,7 +104,7 @@ export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: Toda
   const row = (item: InterviewItem, action: React.ReactNode, when: string) => (
     <li
       key={item.id}
-      className="grid grid-cols-[auto_1fr] sm:grid-cols-[64px_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_170px] gap-x-4 gap-y-1 items-center rounded-xl border border-slate-200 bg-white px-4 py-3"
+      className="grid grid-cols-[auto_1fr] sm:grid-cols-[64px_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_220px] gap-x-4 gap-y-1 items-center rounded-xl border border-slate-200 bg-white px-4 py-3"
     >
       <span className="font-bold text-slate-900 text-sm">{when}</span>
       <button onClick={() => onView(item)} className="text-left font-semibold text-slate-900 text-sm hover:text-indigo-700 cursor-pointer truncate">
@@ -159,6 +160,9 @@ export function TodayView({ refreshKey, onFeedback, onReschedule, onView }: Toda
                   {join(item)}
                   <button onClick={() => onReschedule(item)} className="text-sm font-semibold text-slate-600 hover:text-slate-900 cursor-pointer">
                     Reschedule
+                  </button>
+                  <button onClick={() => onCancel(item)} className="text-sm font-semibold text-rose-600 hover:text-rose-800 cursor-pointer">
+                    Cancel
                   </button>
                 </>,
                 item.scheduled_time
