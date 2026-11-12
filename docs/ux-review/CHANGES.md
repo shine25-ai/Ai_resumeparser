@@ -213,7 +213,7 @@ The old Client Feedback page was a mock (hard-coded candidate; Save stored nothi
   - **Generate more questions** adds new ones without repeats.
 - **Video answer:** upload the candidate's recording; it is transcribed, then **Evaluate via video** scores the answer to each question.
 - **How it runs:** browser → backend `POST /api/resumes/{id}/generate-questions` → ai-parser `/api/generate-questions` → the AI model set in Settings → AI. The ai-parser service and the model must be running.
-- **Not saved:** questions and video scores are kept only while the panel is open. Closing it loses them (this was already the case before these changes).
+- **Saved with the round** (PR #60): questions, the video transcript and the scores are stored on that round and come back when the panel is opened again. A full **Re-generate** replaces the questions and clears their scores. Before PR #60 they were lost when the panel closed.
 - **On `development`:** the history pop-up that holds this panel was unreachable after the simplification. PR #60 brings it back.
 
 <img src="after/rounds/02-ai-questions.jpg" alt="AI interview questions for a round" width="560">
