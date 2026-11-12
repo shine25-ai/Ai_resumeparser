@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
   LayoutDashboard, UploadCloud, Users, Settings, Briefcase,
-  Calendar, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield
+  Calendar, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield, Megaphone
 } from "lucide-react";
 
 interface UserState {
@@ -44,6 +44,7 @@ export function Sidebar() {
     // Resume templates / export now open from the Candidates page
     { name: "Candidates", path: "/database", perm: "database", icon: <Users size={20} /> },
     { name: "JD Match", path: "/jd-match", perm: "jd-match", icon: <Briefcase size={20} /> },
+    { name: "Job Openings", path: "/job-openings", perm: "upload", icon: <Megaphone size={20} /> },
     { name: "Interviews", path: "/interviews", perm: "interviews", icon: <Calendar size={20} /> },
     { name: "Analytics", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
     // Interview types live under Settings
