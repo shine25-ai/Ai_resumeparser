@@ -13,6 +13,8 @@ import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import ResumeTemplates from "./pages/ResumeTemplates";
+import PublicJobs from "./pages/PublicJobs";
+import JobOpenings from "./pages/JobOpenings";
 
 // Candidate profiles moved from /evaluation/:id to /candidates/:id
 function RedirectToCandidate() {
@@ -26,6 +28,8 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
+        {/* Public careers page: no login needed */}
+        <Route path="/jobs" element={<PublicJobs />} />
         <Route element={<ProtectedRoute />}>
           <Route
             path="/*"
@@ -46,6 +50,7 @@ export default function App() {
                       <Route path="/evaluation/:id" element={<RedirectToCandidate />} />
                       <Route path="/evaluation" element={<Navigate to="/database" replace />} />
                       <Route path="/jd-match" element={<JDMatch />} />
+                      <Route path="/job-openings" element={<JobOpenings />} />
                       <Route path="/interviews" element={<InterviewManagement />} />
                       {/* The Interview Dashboard is now the Interviews page's "Today and Upcoming" view */}
                       <Route path="/interview-dashboard" element={<Navigate to="/interviews" replace />} />
