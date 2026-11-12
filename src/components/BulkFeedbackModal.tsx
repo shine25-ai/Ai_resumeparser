@@ -139,7 +139,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             interviewer_id: uId,
             interviewer_name: currentUser.full_name || item.interviewer_name || "Interviewer 1",
             interviewer_email: currentUser.email || item.interviewer_email || "",
-            rating: item.rating || 4,
+            rating: item.rating ?? undefined,
             feedback: item.feedback || "",
             recommendation: item.recommendation || "Pending",
             strengths: item.strengths || [],
@@ -152,7 +152,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                 {
                   interviewer_name: item.interviewer_name || "Interviewer 1",
                   interviewer_email: item.interviewer_email || "",
-                  rating: item.rating || 4,
+                  rating: item.rating ?? undefined,
                   feedback: item.feedback || "",
                   recommendation: item.recommendation || "Pending",
                   strengths: item.strengths || [],
@@ -174,7 +174,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             client_id: uId,
             client_name: currentUser.full_name || item.client_name || "Client Evaluator 1",
             client_email: currentUser.email || item.client_email || "",
-            client_rating: item.client_rating || 4,
+            client_rating: item.client_rating ?? undefined,
             client_feedback: item.client_feedback || "",
             client_recommendation: item.client_recommendation || "Pending",
             client_notes: item.client_notes || "",
@@ -185,7 +185,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
             : [
                 {
                   client_name: item.client_name || "Client Evaluator 1",
-                  client_rating: item.client_rating || 4,
+                  client_rating: item.client_rating ?? undefined,
                   client_feedback: item.client_feedback || "",
                   client_recommendation: item.client_recommendation || "Pending",
                   client_notes: item.client_notes || "",
@@ -212,7 +212,8 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
           feedbackTab: isClientUser ? "CLIENT" : "INTERVIEWER",
           
-          rating: item.rating !== undefined && item.rating !== null ? item.rating : 1,
+          // 0 = not rated yet; only real ratings are saved
+          rating: item.rating ?? 0,
           feedback: item.feedback || "",
           strengths: item.strengths ? item.strengths.join(", ") : "",
           weaknesses: item.weaknesses ? item.weaknesses.join(", ") : "",
@@ -220,7 +221,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
           interviewersList: initInterviewers,
 
           client_name: item.client_name || "",
-          client_rating: item.client_rating !== undefined && item.client_rating !== null ? item.client_rating : 1,
+          client_rating: item.client_rating ?? 0,
           client_feedback: item.client_feedback || "",
           client_strengths: item.client_strengths ? item.client_strengths.join(", ") : "",
           client_weaknesses: item.client_weaknesses ? item.client_weaknesses.join(", ") : "",
@@ -340,14 +341,14 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       if (form && form.interviewersList[intIdx]) {
         const item = { ...form.interviewersList[intIdx], [field]: val };
         if (field === "recommendation") pickedVerdicts.add(pickKey(`int:${intIdx}`));
-        if (field === "rating" && !pickedVerdicts.has(pickKey(`int:${intIdx}`))) {
+        if (field === "rating" && val !== undefined && !pickedVerdicts.has(pickKey(`int:${intIdx}`))) {
           const outcome = getAutoRatingOutcome(Number(val));
           item.recommendation = outcome.recommendation;
         }
         form.interviewersList[intIdx] = item;
 
         if (intIdx === 0) {
-          form.rating = Number(item.rating || 4);
+          form.rating = Number(item.rating ?? 0);
           form.recommendation = item.recommendation || "Selected";
         }
       }
@@ -391,14 +392,14 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
       if (form && form.clientsList[clientIdx]) {
         const item = { ...form.clientsList[clientIdx], [field]: val };
         if (field === "client_recommendation") pickedVerdicts.add(pickKey(`cli:${clientIdx}`));
-        if (field === "client_rating" && !pickedVerdicts.has(pickKey(`cli:${clientIdx}`))) {
+        if (field === "client_rating" && val !== undefined && !pickedVerdicts.has(pickKey(`cli:${clientIdx}`))) {
           const outcome = getAutoRatingOutcome(Number(val));
           item.client_recommendation = outcome.clientDecision;
         }
         form.clientsList[clientIdx] = item;
 
         if (clientIdx === 0) {
-          form.client_rating = Number(item.client_rating || 4);
+          form.client_rating = Number(item.client_rating ?? 0);
           form.client_name = item.client_name || "";
           form.client_recommendation = item.client_recommendation || "Selected";
         }
@@ -522,7 +523,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
 
         return {
           interview_id: f.interview_id,
-          rating: Number(f.rating),
+          rating: f.rating ? Number(f.rating) : undefined,
           feedback: f.feedback || undefined,
           strengths: f.strengths ? f.strengths.split(",").map((s) => s.trim()).filter(Boolean) : [],
           weaknesses: f.weaknesses ? f.weaknesses.split(",").map((s) => s.trim()).filter(Boolean) : [],
@@ -943,8 +944,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                                 step="0.5"
                                 min="1"
                                 max="5"
-                                value={interviewer.rating || 4}
-                                onChange={(e) => handleInterviewerItemChange(intIdx, "rating", Number(e.target.value))}
+                                value={interviewer.rating ?? ""}
+                                placeholder="Not rated"
+                                onChange={(e) => handleInterviewerItemChange(intIdx, "rating", e.target.value === "" ? undefined : Number(e.target.value))}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                               />
                             </div>
@@ -952,7 +954,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                             <div>
                               <label className="block text-xs font-bold text-slate-700 mb-1">Outcome Recommendation</label>
                               <select
-                                value={interviewer.recommendation || "Selected"}
+                                value={interviewer.recommendation || "Pending"}
                                 onChange={(e) => handleInterviewerItemChange(intIdx, "recommendation", e.target.value)}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-emerald-700 focus:bg-white focus:outline-none cursor-pointer"
                               >
@@ -1173,8 +1175,9 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                                 step="0.5"
                                 min="1"
                                 max="5"
-                                value={client.client_rating || 4}
-                                onChange={(e) => handleClientItemChange(clientIdx, "client_rating", Number(e.target.value))}
+                                value={client.client_rating ?? ""}
+                                placeholder="Not rated"
+                                onChange={(e) => handleClientItemChange(clientIdx, "client_rating", e.target.value === "" ? undefined : Number(e.target.value))}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 focus:bg-white focus:outline-none"
                               />
                             </div>
@@ -1182,7 +1185,7 @@ export const BulkFeedbackModal: React.FC<BulkFeedbackModalProps> = ({
                             <div>
                               <label className="block text-xs font-bold text-slate-700 mb-1">Client Recommendation</label>
                               <select
-                                value={client.client_recommendation || "Selected"}
+                                value={client.client_recommendation || "Pending"}
                                 onChange={(e) => handleClientItemChange(clientIdx, "client_recommendation", e.target.value)}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-bold text-teal-700 focus:bg-white focus:outline-none cursor-pointer"
                               >

@@ -30,8 +30,10 @@ export const ProtectedRoute: React.FC = () => {
       return <Outlet />;
     }
 
-    // The old Interview Dashboard permission now opens the Interviews page
-    if (user.permissions.includes("interview-dashboard") && !user.permissions.includes("interviews")) {
+    // The old Interview Dashboard and Client Feedback permissions now open the Interviews page,
+    // where interviews are tracked and client feedback is given
+    const grantsInterviews = ["interview-dashboard", "client-feedback"].some((p) => user.permissions.includes(p));
+    if (grantsInterviews && !user.permissions.includes("interviews")) {
       user.permissions = [...user.permissions, "interviews"];
     }
 

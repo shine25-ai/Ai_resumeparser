@@ -10,7 +10,7 @@ import {
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
 import { CandidateDetailsModal } from "../components/CandidateDetailsModal";
 import { InterviewForm, type InterviewFormMode, type CandidatePrefill } from "../components/interview/InterviewForm";
-import { getInterviewPhase, hasFeedback, VERDICTS, INTERVIEW_STAGES, getVerdictBadge } from "../utils/interviewState";
+import { getInterviewPhase, hasFeedback, todayIso, VERDICTS, INTERVIEW_STAGES, getVerdictBadge } from "../utils/interviewState";
 import { TodayView } from "../components/interview/TodayView";
 import { ShareSummaryDialog } from "../components/interview/ShareSummaryDialog";
 import { RECOMMENDATION_OPTIONS } from "../types/interview";
@@ -604,7 +604,8 @@ export default function InterviewManagement() {
         }),
     };
     const list: { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean }[] =
-      phase === "upcoming" ? [view, history, edit, reschedule, email, cancel]
+      // An interview later today can already take feedback (it may start early or run short)
+      phase === "upcoming" ? [...(row.scheduled_date === todayIso() ? [feedback] : []), view, history, edit, reschedule, email, cancel]
       : phase === "needs-feedback" ? [{ ...feedback, primary: true }, reschedule, edit, view, history, email, cancel]
       : phase === "done" ? [{ ...nextRound, primary: true }, feedback, edit, view, history, email]
       : [again, edit, view, history, email];
