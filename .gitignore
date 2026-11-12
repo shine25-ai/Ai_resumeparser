@@ -42,5 +42,3 @@ server-backend/*.db
 server-backend/app/uploads
 
 Resume Screening and Shortlisting agent
-# Standalone careers site build
-dist-careers
