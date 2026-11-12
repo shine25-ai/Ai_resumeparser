@@ -128,6 +128,55 @@ Bottom navigation bar and interview cards instead of a side rail and a 1,150 px 
 | --- | --- |
 | <img src="before/13-interviews-phone.jpg" alt="15. Phone layout (before)" width="420"> | <img src="after/15-phone.jpg" alt="15. Phone layout (after)" width="420"> |
 
+## Restored after review (PR #60)
+
+An audit of the old screens against the new ones found fields and features that were no longer reachable. [PR #60](https://github.com/shine25-ai/Ai_resumeparser/pull/60) restores all of them, so **nothing captured or offered before is missing**. The main interview form still shows the essentials first.
+
+### Fields restored
+| Field | Where it is now |
+| --- | --- |
+| Meeting platform, interview location, HR call verification | Interview form → More details |
+| Job location, job type | Interview form → More details |
+| Candidate's requested date / time / role, salary requested | Interview form → More details (also in the feedback panel's offer section) |
+| Documents attached when scheduling | Interview form → More details (upload) |
+| Interview status (manual change) | Interview form → More details, in Edit mode |
+| Final salary, joining date | Feedback panel → Offer details, openable any time (auto-opens after Selected) |
+
+| More details (optional) | Offer details |
+| --- | --- |
+| <img src="after/restored/01-more-details.jpg" alt="More details (optional)" width="420"> | <img src="after/restored/02-offer-details.jpg" alt="Offer details" width="420"> |
+
+### Features restored
+- **Interview history** pop-up (every round with all details), as a row action. Its resume button linked to a route that doesn't exist; it now opens the candidate profile.
+- **Email interview summary** for selected interviews, with an Excel/CSV attachment (was on the old Interview Dashboard).
+- **Summary counts** (old Interview Dashboard) on the Today and Upcoming view.
+- **Sort by score** and filtering by the **exact old outcome values** on the All view.
+- **Edit details** on finished and closed interviews.
+
+| Interview history | Row actions |
+| --- | --- |
+| <img src="after/restored/03-interview-history.jpg" alt="Interview history" width="420"> | <img src="after/restored/04-row-menu.jpg" alt="Row actions" width="420"> |
+
+| Email interview summary | Summary counts |
+| --- | --- |
+| <img src="after/restored/05-email-summary.jpg" alt="Email interview summary" width="420"> | <img src="after/restored/06-summary-counts.jpg" alt="Summary counts" width="420"> |
+
+### Client feedback
+The old Client Feedback page was a mock (hard-coded candidate; Save stored nothing), so no saved data was lost by removing it. Client feedback is entered in the feedback panel's **Client Evaluators** tab. A client user signs in, sees only their own interviews, and the panel opens on their own entry. Checked by signing in as a test client:
+- **Fixed (older bug):** the panel showed "4" and "Selected" for evaluators not yet rated but saved them empty, and saving without a rating wrote a rating of 1. Empty now shows as "Not rated" / Pending, and only entered ratings are saved.
+- Roles that had only the old **Client Feedback** permission now open the Interviews page instead of an empty app.
+
+| Client user's view | Client feedback |
+| --- | --- |
+| <img src="after/restored/08-client-user-view.jpg" alt="Client user's view" width="420"> | <img src="after/restored/09-client-feedback.jpg" alt="Client feedback" width="420"> |
+
+### Bugs fixed while restoring
+- Editing an interview reset its type to the first configured type; it now keeps its own type.
+- An interview earlier today couldn't get feedback until the next day; interviews scheduled today now offer **Give feedback**.
+
+### Walkthrough video
+[`docs/ux-review/walkthrough.mp4`](https://github.com/shine25-ai/Ai_resumeparser/blob/fix/restore-captured-fields/docs/ux-review/walkthrough.mp4): a 1 min 50 s captioned walkthrough of the full flow (test data).
+
 ## Testing
 - `tsc` clean; production build succeeds.
 - Backend: 134 passed, including new `test_route_auth.py` and `test_hiring_stage.py`. The 1 failure + 5 errors also fail before these changes (test setup).
