@@ -6,8 +6,10 @@ export interface PublicJob {
   department: string;
   location: string;
   employment_type: string;
+  experience: string;
   description: string;
   open_positions: number;
+  created_at: string;
 }
 
 export interface JobOpening extends PublicJob {
@@ -88,6 +90,8 @@ export const createJobOpening = async (payload: {
   department?: string;
   location?: string;
   employment_type?: string;
+  experience?: string;
+  description?: string;
   open_positions: number;
 }) =>
   readJson(

@@ -104,6 +104,7 @@ class JobOpeningCreate(BaseModel):
     department: Optional[str] = Field(default="", max_length=200)
     location: Optional[str] = Field(default="", max_length=200)
     employment_type: Optional[str] = Field(default="", max_length=100)
+    experience: Optional[str] = Field(default="", max_length=100)
     description: Optional[str] = Field(default="", max_length=5000)
     open_positions: int = Field(default=1, ge=0, le=10000)
 
@@ -113,6 +114,7 @@ class JobOpeningUpdate(BaseModel):
     department: Optional[str] = Field(default=None, max_length=200)
     location: Optional[str] = Field(default=None, max_length=200)
     employment_type: Optional[str] = Field(default=None, max_length=100)
+    experience: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = Field(default=None, max_length=5000)
     open_positions: Optional[int] = Field(default=None, ge=0, le=10000)
     status: Optional[str] = Field(default=None, pattern="^(OPEN|CLOSED)$")
@@ -152,7 +154,7 @@ async def list_applications(
     return success_response(data=data, message="Applications retrieved successfully.")
 
 
-@router.patch("/{opening_id}", summary="Update title, open positions, or status (staff)")
+@router.patch("/{opening_id}", summary="Update role details, open positions, or status (staff)")
 async def update_opening(
     opening_id: str,
     body: JobOpeningUpdate,

@@ -18,6 +18,7 @@ class JobOpeningDocument(BaseModel):
     department: Optional[str] = ""
     location: Optional[str] = ""
     employment_type: Optional[str] = ""
+    experience: Optional[str] = ""  # e.g. "2-4 years"
     description: Optional[str] = ""
     open_positions: int = 1
     status: str = JOB_STATUS_OPEN

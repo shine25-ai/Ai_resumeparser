@@ -606,11 +606,12 @@ export default function InterviewManagement() {
     type RowAction = { label: string; icon: React.ReactNode; run: () => void; danger?: boolean; primary?: boolean };
     // Most useful first for the interview's state; every action from the old menu stays available
     const first: RowAction[] =
-      phase === "upcoming" ? [view, history, edit, reschedule]
-      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, nextRound, reschedule]
+      phase === "upcoming" ? [view, history, edit, reschedule, cancel]
+      : phase === "needs-feedback" ? [{ ...feedback, primary: true }, nextRound, reschedule, cancel]
       : phase === "done" ? [{ ...nextRound, primary: true }, feedback]
       : [again];
-    const all: RowAction[] = [feedback, nextRound, view, history, edit, reschedule, email, ...(row.status === "CANCELLED" ? [] : [cancel])];
+    // Cancel sits right after Reschedule
+    const all: RowAction[] = [feedback, nextRound, view, history, edit, reschedule, ...(row.status === "CANCELLED" ? [] : [cancel]), email];
     const list: RowAction[] = [...first, ...all.filter((a) => !first.some((f) => f.label === a.label))];
     return isAdmin ? [...list, remove as (typeof list)[number]] : list;
   };
@@ -652,6 +653,7 @@ export default function InterviewManagement() {
           refreshKey={refreshKey}
           onFeedback={handleOpenFeedback}
           onReschedule={(item) => setInterviewForm({ mode: "reschedule", interview: item })}
+          onCancel={handleOpenCancelModal}
           onView={handleOpenDetails}
         />
       )}
