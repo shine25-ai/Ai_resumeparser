@@ -15,6 +15,9 @@ export interface JobApplicationRow {
   opening_title: string;
   applicant_email: string;
   submitted_at: string;
+  /** From the apply form: how they heard about the role, and their own note. */
+  heard_from: string | null;
+  note: string | null;
   resume_id: string;
   candidate_id: string | null;
   resume_status: string;

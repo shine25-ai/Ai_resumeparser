@@ -609,6 +609,39 @@ export const updateResume = async (resumeId: string, updateData: any) => {
   return resData.data || resData;
 };
 
+/** Suggested resume categories. Staff can also type their own. */
+export const DEFAULT_RESUME_CATEGORIES = [
+  "Frontend",
+  "Backend",
+  "Full stack",
+  "AI / ML",
+  "Data",
+  "QA / Testing",
+  "UI / UX",
+  "DevOps / Cloud",
+  "Mobile",
+  "Fresher",
+  "Intern",
+];
+
+/** The suggested categories plus every category already given to a resume. */
+export const getResumeCategories = async (): Promise<string[]> => {
+  let used: string[] = [];
+  try {
+    const response = await apiFetch(`${RESUME_LIST}/categories`);
+    if (response.ok) used = (await response.json()).data || [];
+  } catch {
+    // Suggestions only; the defaults are enough.
+  }
+  const seen = new Set<string>();
+  return [...DEFAULT_RESUME_CATEGORIES, ...used].filter((c) => {
+    const key = c.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 // INTERVIEW INTERFACES & API FUNCTIONS
 import { RECOMMENDATION_OPTIONS } from "../types/interview";
 import type {

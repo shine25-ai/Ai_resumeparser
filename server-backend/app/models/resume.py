@@ -35,6 +35,11 @@ class ResumeDocument(BaseModel):
     previous_upload_date: Optional[str] = None
     resume_source: Optional[str] = None
     resume_source_informer_name: Optional[str] = None
+    # Set by staff on the candidate profile, e.g. "Frontend" or "Fresher".
+    category: Optional[str] = None
+    # From the careers page apply form: how the applicant heard about the role, and their own note.
+    applicant_heard_from: Optional[str] = None
+    applicant_note: Optional[str] = None
     upload_date: str = Field(default_factory=lambda: utc_now().isoformat())
     status: ResumeStatus = ResumeStatus.PENDING
     interview_assigned: bool = False

@@ -211,3 +211,71 @@ async def test_page_settings_default_then_override_and_blank_restores_default():
 
     restored = await svc.update_page_settings({"hero_title": ""})
     assert restored["hero_title"] == CAREERS_PAGE_DEFAULTS["hero_title"]
+
+
+# ── Applying: how they heard about the role ─────────────────────────────────
+
+def _applicant_token(email="asha@example.com"):
+    now = utc_now()
+    return jwt.encode(
+        {"sub": email, "type": "applicant", "iat": now, "exp": now + timedelta(minutes=30)},
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+
+class FakeApplyRepos:
+    """Application and resume stores for apply()."""
+
+    def __init__(self):
+        self.applications = []
+        self.resume_updates = {}
+
+    async def find_one(self, query):
+        return next((a for a in self.applications if all(a.get(k) == v for k, v in query.items())), None)
+
+    async def create(self, data):
+        self.applications.append(dict(data))
+        return data
+
+    async def update(self, id_val, changes):
+        self.resume_updates.setdefault(id_val, {}).update(changes)
+        return changes
+
+
+@pytest.fixture
+def apply_service():
+    svc = JobOpeningService.__new__(JobOpeningService)
+    svc.opening_repo = FakeOpeningRepo()
+    svc.opening_repo.docs["job1"] = {"id": "job1", "title": "QA Engineer", "status": "OPEN", "open_positions": 1}
+    repos = FakeApplyRepos()
+    svc.application_repo = repos
+    svc.resume_repo = repos
+
+    async def _upload(**_):
+        return SimpleNamespace(id="resume1")
+
+    svc.resume_service = SimpleNamespace(upload_and_process_resume=_upload)
+    svc._repos = repos
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_apply_saves_how_they_heard_and_note_on_application_and_resume(apply_service):
+    await apply_service.apply(
+        "job1", _applicant_token(), file=None, background_tasks=None,
+        heard_from="  LinkedIn ", note=" Notice period: 30 days ",
+    )
+    application = apply_service._repos.applications[0]
+    assert application["heard_from"] == "LinkedIn"
+    assert application["note"] == "Notice period: 30 days"
+    resume = apply_service._repos.resume_updates["resume1"]
+    assert resume["applicant_heard_from"] == "LinkedIn"
+    assert resume["applicant_note"] == "Notice period: 30 days"
+
+
+@pytest.mark.asyncio
+async def test_apply_without_answers_stores_nothing_for_them(apply_service):
+    await apply_service.apply("job1", _applicant_token(), file=None, background_tasks=None, note="   ")
+    application = apply_service._repos.applications[0]
+    assert application["heard_from"] is None and application["note"] is None

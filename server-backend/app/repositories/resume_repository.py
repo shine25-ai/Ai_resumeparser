@@ -88,6 +88,7 @@ def _global_search_or(regex: Any) -> List[Dict[str, Any]]:
         {"original_filename": {"$regex": regex}},
         {"extracted_text": {"$regex": regex}},
         {"resume_source": {"$regex": regex}},
+        {"category": {"$regex": regex}},
     ]
 
 
@@ -409,6 +410,11 @@ class ResumeRepository(BaseRepository):
             logger.info(f"[FIND_BY_EMAIL] NO MATCH: No existing candidate document found in MongoDB for email '{email_clean}'")
 
         return result
+
+    async def distinct_categories(self) -> List[str]:
+        """Categories already given to resumes, for the profile's category picker."""
+        values = await self.collection.distinct("category")
+        return sorted({v.strip() for v in values if isinstance(v, str) and v.strip()}, key=str.lower)
 
     async def _drop_meaning_vector(self, resume_id: str, fields: Optional[Dict[str, Any]]) -> None:
         """JD Match phase 3: a changed resume gets a fresh meaning vector at its next prompt search."""

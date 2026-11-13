@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   X, Save, Edit3, User, Briefcase, Brain, Layers, Info
 } from "lucide-react";
-import { getResumeById, updateResume } from "../utils/Api";
+import { getResumeById, getResumeCategories, updateResume } from "../utils/Api";
 
 interface CandidateEditModalProps {
   isOpen: boolean;
@@ -20,6 +20,11 @@ export const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isOpen && categoryOptions.length === 0) getResumeCategories().then(setCategoryOptions);
+  }, [isOpen, categoryOptions.length]);
 
   // Full Model Form State covering all ResumeDocument schema fields (A to Z)
   const [form, setForm] = useState({
@@ -28,6 +33,7 @@ export const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
     status: "PARSED",
     resume_source: "",
     resume_source_informer_name: "",
+    category: "",
     original_filename: "",
     s3_url: "",
 
@@ -98,6 +104,7 @@ export const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
         status: data.status || "PARSED",
         resume_source: data.resume_source || "",
         resume_source_informer_name: data.resume_source_informer_name || "",
+        category: data.category || "",
         original_filename: data.original_filename || data.filename || "",
         s3_url: data.s3_url || "",
 
@@ -163,8 +170,10 @@ export const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
 
       const payload: any = {
         status: form.status,
-        resume_source: form.resume_source || undefined,
-        resume_source_informer_name: form.resume_source_informer_name || undefined,
+        // Empty strings clear the value on the server.
+        resume_source: form.resume_source,
+        resume_source_informer_name: form.resume_source_informer_name,
+        category: form.category,
         parsed_data: {
           full_name: form.full_name,
           name: form.full_name,
@@ -330,6 +339,24 @@ export const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
                     placeholder="e.g. John Doe (HR)"
                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
+                </div>
+
+                <div>
+                  <label className="text-slate-600 block mb-1">Category</label>
+                  <input
+                    type="text"
+                    list="candidate-edit-categories"
+                    maxLength={60}
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    placeholder="e.g. Frontend, AI / ML, Fresher"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="candidate-edit-categories">
+                    {categoryOptions.map((option) => (
+                      <option key={option} value={option} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div>

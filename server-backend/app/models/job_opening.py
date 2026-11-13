@@ -42,8 +42,8 @@ CAREERS_PAGE_DEFAULTS: Dict[str, str] = {
     "listing_title": "Explore Open Positions",
     "listing_subtitle": "Find the right opportunity to grow your career with us.",
     "empty_message": "There are no open roles right now. Please check back later.",
-    "success_title": "Application submitted successfully",
-    "success_message": "Your resume is being processed. Thank you for applying.",
+    "success_title": "Thank you! Your resume has been submitted successfully.",
+    "success_message": "We have received your details and resume. You will receive updates about relevant job opportunities through your registered email address.",
 }
 
 
@@ -55,6 +55,8 @@ class JobApplicationDocument(BaseModel):
     opening_title: str
     applicant_email: str
     resume_id: str
+    heard_from: Optional[str] = None
+    note: Optional[str] = None
     submitted_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
     def to_dict(self) -> Dict[str, Any]:

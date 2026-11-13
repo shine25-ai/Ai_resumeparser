@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import logoUrl from "./assets/shinelogics-logo.png";
 import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, MapPin, Pencil, Upload, Users, X } from "lucide-react";
-import { confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
+import { HEARD_FROM_OPTIONS, confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
 
 /** Building blocks of the public careers site: layout, the job details pop-up and the apply flow. */
 
 const ACCEPTED = ".pdf,.doc,.docx";
 const MAX_BYTES = 10 * 1024 * 1024;
 const RESEND_SECONDS = 60; // matches the server's resend cooldown
+const NOTE_LIMIT = 1000; // matches the server's limit
 
 export const primaryBtn =
   "flex w-full items-center justify-center gap-2 rounded-lg bg-[#5B3EF0] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#4A2FD8] disabled:cursor-not-allowed disabled:bg-[#5B3EF0]/30";
@@ -235,6 +236,8 @@ export function ApplyModal({
   const [code, setCode] = useState("");
   const [token, setToken] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [heardFrom, setHeardFrom] = useState("");
+  const [note, setNote] = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -299,9 +302,9 @@ export function ApplyModal({
   };
 
   const send = () => {
-    if (!file) return;
+    if (!file || !heardFrom) return;
     run(async () => {
-      await submitApplication(job.id, token, file);
+      await submitApplication(job.id, token, file, { heardFrom, note });
       setStep("done");
     });
   };
@@ -459,19 +462,61 @@ export function ApplyModal({
               </div>
             )}
 
-            <button disabled={busy || !file} onClick={send} className={primaryBtn}>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">How did you hear about this role?</span>
+              <select
+                value={heardFrom}
+                onChange={(e) => setHeardFrom(e.target.value)}
+                className={`mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20 ${
+                  heardFrom ? "text-slate-900" : "text-slate-400"
+                }`}
+              >
+                <option value="" disabled>Select an option</option>
+                {HEARD_FROM_OPTIONS.map((option) => (
+                  <option key={option} value={option} className="text-slate-900">{option}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">
+                Anything else you'd like us to know? <span className="font-normal text-slate-400">(optional)</span>
+              </span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value.slice(0, NOTE_LIMIT))}
+                rows={3}
+                placeholder={
+                  heardFrom.startsWith("Referred")
+                    ? "Who referred you? You can also add your notice period or anything else."
+                    : "For example: your notice period, preferred location, or a portfolio link."
+                }
+                className="mt-1.5 w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
+              />
+              <span className="mt-1 block text-right text-[11px] text-slate-400">{note.length}/{NOTE_LIMIT}</span>
+            </label>
+
+            <button disabled={busy || !file || !heardFrom} onClick={send} className={primaryBtn}>
               {busy && <Loader2 size={16} className="animate-spin" />} Submit Application
             </button>
-            {!file && <p className="text-center text-xs text-slate-500">Upload your resume to enable submission.</p>}
+            {(!file || !heardFrom) && (
+              <p className="text-center text-xs text-slate-500">
+                {!file ? "Upload your resume" : "Tell us how you heard about this role"} to enable submission.
+              </p>
+            )}
           </div>
         )}
 
         {step === "done" && (
-          <div className="mt-6 flex flex-col items-center gap-3 py-2 text-center">
-            <CheckCircle2 className="text-emerald-500" size={48} />
-            <p className="text-lg font-semibold text-slate-900">{successTitle}</p>
-            <p className="text-sm text-slate-500">{successMessage}</p>
-            <button onClick={onClose} className={`${primaryBtn} mt-2`}>Close</button>
+          <div className="mt-6 space-y-4">
+            <div role="status" className="flex flex-col items-center gap-3 rounded-xl border border-emerald-600/60 px-5 py-6 text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-700 text-white">
+                <Check size={24} strokeWidth={3} />
+              </span>
+              <p className="text-base font-semibold text-slate-900">{successTitle}</p>
+              <p className="text-sm leading-relaxed text-slate-500">{successMessage}</p>
+            </div>
+            <button onClick={onClose} className={primaryBtn}>Close</button>
           </div>
         )}
 

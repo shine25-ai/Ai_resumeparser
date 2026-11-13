@@ -1,7 +1,8 @@
 # Careers page (embeddable)
 
 The public careers page: the open roles list, the **View Details** pop-up and the apply flow
-(email code, then resume upload). It builds into **one JavaScript file** that can be added to
+(email code, then resume upload with "How did you hear about this role?" and an optional note).
+Staff see the answer and note on the candidate profile and in the Job openings applications list. It builds into **one JavaScript file** that can be added to
 any website or project, or into **one HTML file** that can be hosted on its own.
 
 - **Fixed parts:** the Shinelogics header (logo, Careers, About Us) and footer. Both can be hidden.
@@ -29,6 +30,18 @@ To bake the API address into the build, set `VITE_CAREERS_API_BASE_URL` first, e
 `https://api.example.com/api/v1`. It can also be set per page with `data-api` (below).
 
 For local work: `npm run dev:careers` (http://localhost:5190).
+
+## Share the single file
+
+`careers.html` works uploaded to any website or opened straight from disk. Options go in the link:
+
+| Link | Shows |
+| --- | --- |
+| `careers.html` | Header, roles and footer |
+| `careers.html?header=false` | No Shinelogics header (for a site that has its own) |
+| `careers.html?footer=false` | No Shinelogics footer |
+| `careers.html?header=false&footer=false` | Only the roles |
+| `careers.html?api=https://api.example.com/api/v1` | Roles from another resume portal |
 
 ## Add it to any site
 
@@ -64,8 +77,9 @@ const careers = window.ShinelogicsCareers.mount(document.getElementById("careers
 
 ## Hosting notes
 
-- **The API must accept the site's origin.** The backend's CORS setting currently allows any
-  origin, so no change is needed today. If it is tightened later, add each site that embeds the page.
+- **Any site can call the careers endpoints.** `/api/v1/public/...` answers every origin with `*`
+  (no cookies), including a page opened from disk, which sends `Origin: null`. Logged-in
+  endpoints keep the main CORS rules.
 - The single `careers.html` needs no special server setup; any static host works.
 
 ## In the resume portal
@@ -81,4 +95,4 @@ Old links like `/jobs/<id>` redirect to `/jobs?job=<id>`.
 | GET | `/public/jobs/page` | Careers page text |
 | POST | `/public/jobs/verification/request` | Email a 6-digit code |
 | POST | `/public/jobs/verification/confirm` | Check the code, returns an applicant token |
-| POST | `/public/jobs/{id}/apply` | Upload the resume (`X-Applicant-Token` header) |
+| POST | `/public/jobs/{id}/apply` | Upload the resume (`X-Applicant-Token` header), with `heard_from` (how they found the role) and an optional `note` |

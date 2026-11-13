@@ -31,6 +31,10 @@ class ResumeUpdateRequest(BaseModel):
     parsed_data: Optional[Dict[str, Any]] = None
     status: Optional[ResumeStatus] = None
     hr_update: Optional[HRUpdateSchema] = None
+    # Profile details; an empty string clears the value.
+    resume_source: Optional[str] = Field(None, max_length=100)
+    resume_source_informer_name: Optional[str] = Field(None, max_length=100)
+    category: Optional[str] = Field(None, max_length=60)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,6 +62,9 @@ class ResumeResponse(BaseModel):
     previous_upload_date: Optional[str] = None
     resume_source: Optional[str] = None
     resume_source_informer_name: Optional[str] = None
+    category: Optional[str] = None
+    applicant_heard_from: Optional[str] = None
+    applicant_note: Optional[str] = None
     upload_date: str
     status: ResumeStatus
     parse_error: Optional[str] = None  # why parsing failed, shown on the upload page

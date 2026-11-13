@@ -13,6 +13,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.lifespan import lifespan
 from app.middleware.request_logger import RequestLoggerMiddleware
 from app.middleware.integration_logger import IntegrationLoggerMiddleware
+from app.middleware.public_cors import PublicCorsMiddleware
 from app.routes import auth, health, interview, resume, users, dashboard, roles, analytics
 from app.routes import settings as settings_router
 from app.routes import templates
@@ -60,6 +61,8 @@ def create_application() -> FastAPI:
     # Enable Request Duration Logger Middleware
     app.add_middleware(RequestLoggerMiddleware)
     app.add_middleware(IntegrationLoggerMiddleware)
+    # Outermost: the public careers endpoints allow any origin (the page can be opened from a file).
+    app.add_middleware(PublicCorsMiddleware)
 
     # Register Exception Handlers
     register_exception_handlers(app)
