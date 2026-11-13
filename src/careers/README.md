@@ -31,6 +31,18 @@ To bake the API address into the build, set `VITE_CAREERS_API_BASE_URL` first, e
 
 For local work: `npm run dev:careers` (http://localhost:5190).
 
+## Share the single file
+
+`careers.html` works uploaded to any website or opened straight from disk. Options go in the link:
+
+| Link | Shows |
+| --- | --- |
+| `careers.html` | Header, roles and footer |
+| `careers.html?header=false` | No Shinelogics header (for a site that has its own) |
+| `careers.html?footer=false` | No Shinelogics footer |
+| `careers.html?header=false&footer=false` | Only the roles |
+| `careers.html?api=https://api.example.com/api/v1` | Roles from another resume portal |
+
 ## Add it to any site
 
 ```html
@@ -65,8 +77,9 @@ const careers = window.ShinelogicsCareers.mount(document.getElementById("careers
 
 ## Hosting notes
 
-- **The API must accept the site's origin.** The backend's CORS setting currently allows any
-  origin, so no change is needed today. If it is tightened later, add each site that embeds the page.
+- **Any site can call the careers endpoints.** `/api/v1/public/...` answers every origin with `*`
+  (no cookies), including a page opened from disk, which sends `Origin: null`. Logged-in
+  endpoints keep the main CORS rules.
 - The single `careers.html` needs no special server setup; any static host works.
 
 ## In the resume portal
