@@ -104,8 +104,7 @@ export function Modal({ onClose, children, wide = false, label }: { onClose: () 
 
 export function ModalHeader({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex items-center justify-between px-6 pt-5">
-      <Logo className="h-9" />
+    <div className="flex items-center justify-end px-6 pt-5">
       <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
         <X size={18} />
       </button>
