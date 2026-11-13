@@ -206,6 +206,8 @@ export interface CandidateQueryParams {
   sort_by?: SortOption;
   /** Hiring stage: Screening, Interviewing, Offer, Hired, Closed */
   stage?: string;
+  /** Company applied to from its careers page; "none" for resumes with no company */
+  company_id?: string;
 }
 
 export type SortOption = "latest" | "oldest" | "ai_score" | "experience_desc" | "experience_asc" | "name";
@@ -259,6 +261,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   let experience: number | undefined = undefined;
   let sortBy: SortOption | undefined = undefined;
   let stage = "";
+  let companyId = "";
 
   if (typeof params === "object" && params !== null) {
     page = params.page || 1;
@@ -270,6 +273,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
     experience = params.experience;
     sortBy = params.sort_by;
     stage = params.stage || "";
+    companyId = params.company_id || "";
   } else if (typeof params === "number") {
     page = params;
   }
@@ -285,6 +289,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   if (experience !== undefined) queryParts.push(`experience=${experience}`);
   if (sortBy) queryParts.push(`sort_by=${sortBy}`);
   if (stage && stage !== "All") queryParts.push(`stage=${encodeURIComponent(stage)}`);
+  if (companyId) queryParts.push(`company_id=${encodeURIComponent(companyId)}`);
 
   const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
 
@@ -337,6 +342,8 @@ export interface MatchFilterParams {
   sort_by?: SortOption;
   page?: number;
   limit?: number;
+  /** Company applied to from its careers page; "none" for resumes with no company */
+  company_id?: string;
 }
 
 export const matchResumes = async (params: MatchFilterParams = {}) => {
@@ -377,6 +384,7 @@ export const matchResumes = async (params: MatchFilterParams = {}) => {
   }
 
   if (params.skill_mode) queryParts.push(`skill_mode=${params.skill_mode}`);
+  if (params.company_id) queryParts.push(`company_id=${encodeURIComponent(params.company_id)}`);
   if (params.sort_by) queryParts.push(`sort_by=${params.sort_by}`);
   if (params.page) queryParts.push(`page=${params.page}`);
   if (params.limit) queryParts.push(`limit=${params.limit}`);
@@ -453,7 +461,7 @@ export interface PromptMatchResponse {
 }
 
 /** JD Match prompt mode: send a written request (the AI reads it once) or an edited plan (no AI call). */
-export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number; rerank?: boolean; meaning?: boolean }): Promise<PromptMatchResponse> => {
+export const promptMatch = async (body: { prompt?: string; plan?: SearchPlan; page?: number; limit?: number; rerank?: boolean; meaning?: boolean; company_id?: string }): Promise<PromptMatchResponse> => {
   const token = localStorage.getItem("access_token") || "";
   const response = await fetch(RESUME_PROMPT_MATCH, {
     method: "POST",

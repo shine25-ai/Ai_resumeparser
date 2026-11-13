@@ -40,6 +40,14 @@ class ResumeDocument(BaseModel):
     # From the careers page apply form: how the applicant heard about the role, and their own note.
     applicant_heard_from: Optional[str] = None
     applicant_note: Optional[str] = None
+    # From the careers page: the company and role applied for. The latest is on top; applied_jobs
+    # lists every one ({company_id, company_name, job_id, job_title, applied_at}), and company_ids is for filters.
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
+    job_opening_id: Optional[str] = None
+    job_title: Optional[str] = None
+    company_ids: List[str] = Field(default_factory=list)
+    applied_jobs: List[Dict[str, Any]] = Field(default_factory=list)
     upload_date: str = Field(default_factory=lambda: utc_now().isoformat())
     status: ResumeStatus = ResumeStatus.PENDING
     interview_assigned: bool = False

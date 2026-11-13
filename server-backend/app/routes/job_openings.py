@@ -2,7 +2,10 @@
 Job openings routes.
 
 Public (no login): list open roles, request and confirm an email code, apply with a resume.
-Staff (login): manage openings and open positions, and review applications.
+Staff (login): manage companies, their openings and open positions, and review applications.
+
+Each company has its own roles and careers page text. The public endpoints take ?company=<slug>;
+with no company they show the default company, so careers links shared before companies existed keep working.
 """
 
 from typing import Any, Dict, List, Optional
@@ -15,6 +18,7 @@ from typing_extensions import Annotated
 from app.core.database import get_database
 from app.core.dependencies import get_current_active_user, is_admin_or_staff_user
 from app.core.exceptions import AuthorizationError
+from app.repositories.company_repository import CompanyRepository
 from app.repositories.job_repository import (
     ApplicantVerificationRepository,
     CareersPageSettingsRepository,
@@ -30,6 +34,9 @@ from app.utils.response import success_response
 
 public_router = APIRouter(prefix="/api/v1/public/jobs", tags=["Public Jobs"])
 router = APIRouter(prefix="/api/v1/job-openings", tags=["Job Openings"])
+companies_router = APIRouter(prefix="/api/v1/companies", tags=["Companies"])
+
+CompanyParam = Query(None, max_length=60, description="Company page address (slug). Leave out for the default company.")
 
 
 def get_job_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> JobOpeningService:
@@ -42,6 +49,7 @@ def get_job_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> JobOpen
         resume_repo=resume_repo,
         resume_service=resume_service,
         page_settings_repo=CareersPageSettingsRepository(db),
+        company_repo=CompanyRepository(db),
     )
 
 
@@ -61,15 +69,21 @@ class CodeConfirmRequest(BaseModel):
     code: str = Field(..., pattern=r"^\d{6}$")
 
 
-@public_router.get("", summary="List open roles with open positions")
-async def list_public_openings(service: JobOpeningService = Depends(get_job_service)):
-    data = await service.list_public_openings()
+@public_router.get("", summary="List a company's open roles with open positions")
+async def list_public_openings(
+    company: Optional[str] = CompanyParam,
+    service: JobOpeningService = Depends(get_job_service),
+):
+    data = await service.list_public_openings(company)
     return success_response(data=data, message="Open roles retrieved successfully.")
 
 
-@public_router.get("/page", summary="Text for the public careers page")
-async def get_public_page_settings(service: JobOpeningService = Depends(get_job_service)):
-    data = await service.get_page_settings()
+@public_router.get("/page", summary="Text for a company's public careers page, with the company name")
+async def get_public_page_settings(
+    company: Optional[str] = CompanyParam,
+    service: JobOpeningService = Depends(get_job_service),
+):
+    data = await service.get_public_page(company)
     return success_response(data=data, message="Careers page settings retrieved successfully.")
 
 
@@ -121,6 +135,7 @@ DetailLine = Annotated[str, StringConstraints(max_length=300)]
 
 class JobOpeningCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
+    company_id: Optional[str] = Field(default=None, max_length=64, description="Leave out for the default company")
     department: Optional[str] = Field(default="", max_length=200)
     location: Optional[str] = Field(default="", max_length=200)
     employment_type: Optional[str] = Field(default="", max_length=100)
@@ -135,6 +150,7 @@ class JobOpeningCreate(BaseModel):
 
 class JobOpeningUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    company_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
     department: Optional[str] = Field(default=None, max_length=200)
     location: Optional[str] = Field(default=None, max_length=200)
     employment_type: Optional[str] = Field(default=None, max_length=100)
@@ -148,13 +164,14 @@ class JobOpeningUpdate(BaseModel):
     status: Optional[str] = Field(default=None, pattern="^(OPEN|CLOSED)$")
 
 
-@router.get("", summary="List job openings with application counts (staff)")
+@router.get("", summary="List job openings with application counts, optionally for one company (staff)")
 async def list_openings(
+    company_id: Optional[str] = Query(None, max_length=64),
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
     _require_staff(current_user)
-    data = await service.list_openings()
+    data = await service.list_openings(company_id)
     return success_response(data=data, message="Job openings retrieved successfully.")
 
 
@@ -181,37 +198,44 @@ class CareersPageSettingsUpdate(BaseModel):
     success_message: Optional[str] = Field(default=None, max_length=300)
 
 
-@router.get("/page-settings", summary="Careers page text (staff)")
+@router.get("/page-settings", summary="A company's careers page text (staff)")
 async def get_page_settings(
+    company_id: Optional[str] = Query(None, max_length=64),
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
     _require_staff(current_user)
-    data = await service.get_page_settings()
+    company = await service.company_by_id(company_id)
+    data = await service.get_page_settings(company)
     return success_response(data=data, message="Careers page settings retrieved successfully.")
 
 
 @router.put("/page-settings", summary="Change careers page text (staff); a blank value restores the default")
 async def update_page_settings(
     body: CareersPageSettingsUpdate,
+    company_id: Optional[str] = Query(None, max_length=64),
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
     _require_staff(current_user)
-    data = await service.update_page_settings(body.model_dump(exclude_unset=True))
+    company = await service.company_by_id(company_id)
+    data = await service.update_page_settings(body.model_dump(exclude_unset=True), company)
     return success_response(data=data, message="Careers page updated.")
 
 
 @router.get("/applications", summary="List applications, optionally for one opening (staff)")
 async def list_applications(
     opening_id: Optional[str] = Query(None),
+    company_id: Optional[str] = Query(None, max_length=64),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=200),
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
     _require_staff(current_user)
-    data = await service.list_applications(opening_id, skip=(page - 1) * limit, limit=limit)
+    data = await service.list_applications(
+        opening_id, skip=(page - 1) * limit, limit=limit, company_id=company_id
+    )
     return success_response(data=data, message="Applications retrieved successfully.")
 
 
@@ -226,3 +250,52 @@ async def update_opening(
     changes: Dict[str, Any] = body.model_dump(exclude_unset=True)
     data = await service.update_opening(opening_id, changes)
     return success_response(data=data, message="Job opening updated.")
+
+
+# ── Companies (staff) ─────────────────────────────────────────────────────────
+
+Slug = Annotated[str, StringConstraints(max_length=60)]
+
+
+class CompanyCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    slug: Optional[Slug] = Field(default=None, description="Careers page address; made from the name when left out")
+
+
+class CompanyUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    slug: Optional[Slug] = None
+    status: Optional[str] = Field(default=None, pattern="^(ACTIVE|INACTIVE)$")
+
+
+@companies_router.get("", summary="List companies with role counts (staff)")
+async def list_companies(
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+):
+    _require_staff(current_user)
+    data = await service.list_companies()
+    return success_response(data=data, message="Companies retrieved successfully.")
+
+
+@companies_router.post("", status_code=status.HTTP_201_CREATED, summary="Add a company (staff)")
+async def create_company(
+    body: CompanyCreate,
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+):
+    _require_staff(current_user)
+    data = await service.create_company(body.model_dump())
+    return success_response(data=data, message="Company added.", status_code=status.HTTP_201_CREATED)
+
+
+@companies_router.patch("/{company_id}", summary="Rename a company, change its page address, or turn its page off (staff)")
+async def update_company(
+    company_id: str,
+    body: CompanyUpdate,
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+):
+    _require_staff(current_user)
+    data = await service.update_company(company_id, body.model_dump(exclude_unset=True))
+    return success_response(data=data, message="Company updated.")

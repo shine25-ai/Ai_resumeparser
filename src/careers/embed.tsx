@@ -6,6 +6,8 @@
  *
  * Options (data attributes, or ShinelogicsCareers.mount(element, options)):
  *   data-api           resume portal API address (apiBaseUrl)
+ *   data-company       company page address from the resume portal, e.g. "acme" (company);
+ *                      left out: ?company=<address> in the page address, else the default company
  *   data-header        "false" hides the Shinelogics header (showHeader)
  *   data-footer        "false" hides the Shinelogics footer (showFooter)
  *   data-manage-title  "true" sets the browser tab title to the open role (manageTitle)
@@ -105,6 +107,7 @@ function optionsFrom(el: HTMLElement): CareersEmbedOptions {
   const d = el.dataset;
   return {
     apiBaseUrl: d.api || undefined,
+    company: d.company || undefined,
     showHeader: flag(d.header, true),
     showFooter: flag(d.footer, true),
     manageTitle: flag(d.manageTitle, false),

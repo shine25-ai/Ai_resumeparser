@@ -65,6 +65,12 @@ class ResumeResponse(BaseModel):
     category: Optional[str] = None
     applicant_heard_from: Optional[str] = None
     applicant_note: Optional[str] = None
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
+    job_opening_id: Optional[str] = None
+    job_title: Optional[str] = None
+    company_ids: Optional[List[str]] = None
+    applied_jobs: Optional[List[Dict[str, Any]]] = None
     upload_date: str
     status: ResumeStatus
     parse_error: Optional[str] = None  # why parsing failed, shown on the upload page

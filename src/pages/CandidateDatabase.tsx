@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { CompanyFilter, CompanyPills, appliedCompanies, useCompanies } from "../components/CompanyTags";
 import { getResumes, exportResumesApi, type CandidateQueryParams, type SortOption, SORT_OPTION_LABELS } from "../utils/Api";
 import { getCandidateRole, formatExperience } from "../utils/candidateFields";
 import { CANDIDATE_STAGES } from "../utils/interviewState";
@@ -29,6 +30,8 @@ export default function CandidateDatabase() {
   const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") || "");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
   const [stageFilter, setStageFilter] = useState<string>("All");
+  const companies = useCompanies();
+  const [companyFilter, setCompanyFilter] = useState<string>(() => searchParams.get("company") || "");
 
   // Advanced Specific Field Filters State
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
@@ -59,7 +62,7 @@ export default function CandidateDatabase() {
 
   useEffect(() => {
     fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-  }, [page, limit, sortBy, stageFilter]);
+  }, [page, limit, sortBy, stageFilter, companyFilter]);
 
   // Debounced search on typing
   useEffect(() => {
@@ -91,6 +94,7 @@ export default function CandidateDatabase() {
         experience: expVal ? Number(expVal) : undefined,
         sort_by: sortBy,
         stage: stageFilter,
+        company_id: companyFilter,
       };
 
       const resData = await getResumes(params);
@@ -106,6 +110,7 @@ export default function CandidateDatabase() {
         targetRole: getCandidateRole(item.parsed_data, "N/A"),
         source: item.resume_source || "N/A",
         category: item.category || "",
+        companies: appliedCompanies(item),
         uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
         experience: formatExperience(item.parsed_data),
         match: typeof item.ai_evaluation?.ai_technical_score === "number"
@@ -229,6 +234,14 @@ export default function CandidateDatabase() {
           </div>
 
           <div className="flex items-center gap-3 self-end sm:self-auto">
+            <CompanyFilter
+              companies={companies}
+              value={companyFilter}
+              onChange={(value) => {
+                setPage(1);
+                setCompanyFilter(value);
+              }}
+            />
             <select
               value={sortBy}
               onChange={(e) => {
@@ -421,6 +434,7 @@ export default function CandidateDatabase() {
                       <div className="flex flex-col gap-1">
                         <span className="text-slate-800 font-bold">{row.role}</span>
                         <div className="flex flex-wrap gap-1 items-center">
+                          <CompanyPills companies={row.companies} />
                           {row.category && (
                             <span className="inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5 w-fit font-semibold">
                               {row.category}

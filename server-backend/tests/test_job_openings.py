@@ -153,6 +153,7 @@ def opening_service():
     svc = JobOpeningService.__new__(JobOpeningService)
     svc.opening_repo = FakeOpeningRepo()
     svc.application_repo = FakeApplicationRepo()
+    svc.company_repo = None  # roles without a company belong to the default company
     return svc
 
 
@@ -189,10 +190,10 @@ class FakePageSettingsRepo:
     def __init__(self):
         self.doc = {}
 
-    async def get_settings(self):
+    async def get_settings(self, company_id="default"):
         return dict(self.doc)
 
-    async def save_settings(self, data):
+    async def save_settings(self, data, company_id="default"):
         self.doc.update(data)
 
 
@@ -202,6 +203,7 @@ async def test_page_settings_default_then_override_and_blank_restores_default():
 
     svc = JobOpeningService.__new__(JobOpeningService)
     svc.page_settings_repo = FakePageSettingsRepo()
+    svc.company_repo = None
 
     assert await svc.get_page_settings() == CAREERS_PAGE_DEFAULTS
 
@@ -224,12 +226,22 @@ def _applicant_token(email="asha@example.com"):
     )
 
 
+class FakeResumeCollection:
+    def __init__(self):
+        self.calls = []
+
+    async def update_one(self, query, update):
+        self.calls.append((query, update))
+
+
 class FakeApplyRepos:
     """Application and resume stores for apply()."""
 
     def __init__(self):
         self.applications = []
         self.resume_updates = {}
+        self.resumes = FakeResumeCollection()
+        self.db = {"resumes": self.resumes}
 
     async def find_one(self, query):
         return next((a for a in self.applications if all(a.get(k) == v for k, v in query.items())), None)
@@ -251,6 +263,7 @@ def apply_service():
     repos = FakeApplyRepos()
     svc.application_repo = repos
     svc.resume_repo = repos
+    svc.company_repo = None
 
     async def _upload(**_):
         return SimpleNamespace(id="resume1")
@@ -279,3 +292,17 @@ async def test_apply_without_answers_stores_nothing_for_them(apply_service):
     await apply_service.apply("job1", _applicant_token(), file=None, background_tasks=None, note="   ")
     application = apply_service._repos.applications[0]
     assert application["heard_from"] is None and application["note"] is None
+
+
+@pytest.mark.asyncio
+async def test_apply_records_company_and_role_on_resume_and_application(apply_service):
+    result = await apply_service.apply("job1", _applicant_token(), file=None, background_tasks=None)
+    application = apply_service._repos.applications[0]
+    assert application["company_id"] == "default" and application["company_name"] == "Shinelogics"
+    query, update = apply_service._repos.resumes.calls[0]
+    assert query == {"id": "resume1"}
+    assert update["$set"]["company_name"] == "Shinelogics"
+    assert update["$set"]["job_title"] == "QA Engineer"
+    assert update["$addToSet"] == {"company_ids": "default"}
+    assert update["$push"]["applied_jobs"]["job_id"] == "job1"
+    assert result["company_name"] == "Shinelogics"

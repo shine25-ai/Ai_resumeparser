@@ -1,20 +1,29 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { Pencil, Plus, RefreshCw, X } from "lucide-react";
 import CareersPageSettingsPanel from "../components/jobs/CareersPageSettingsPanel";
+import CompanyBar from "../components/jobs/CompanyBar";
 import {
   createJobOpening,
+  fetchCompanies,
   fetchJobApplications,
   fetchJobOpenings,
   updateJobOpening,
+  type Company,
   type JobApplicationRow,
   type JobOpening,
 } from "../utils/jobsApi";
 
 const PAGE_SIZE = 20;
+const COMPANY_KEY = "jobOpenings.companyId";
 
-// Where the public careers site lives. Defaults to /jobs in this app until it moves to its own site.
-const CAREERS_SITE_URL: string = import.meta.env.VITE_CAREERS_SITE_URL || "";
+const readSavedCompany = () => {
+  try {
+    return localStorage.getItem(COMPANY_KEY) || "";
+  } catch {
+    return "";
+  }
+};
 
 // Role sections shown in the careers "View Details" pop-up. Typed one item per line.
 const SECTIONS = [
@@ -46,6 +55,9 @@ function Field({ label, hint, className = "", children }: { label: string; hint?
 }
 
 export default function JobOpenings() {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyId, setCompanyId] = useState<string>(readSavedCompany);
+  const company = companies.find((c) => c.id === companyId) ?? companies[0];
   const [openings, setOpenings] = useState<JobOpening[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -62,10 +74,32 @@ export default function JobOpenings() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const loadCompanies = async () => {
+    try {
+      setCompanies(await fetchCompanies());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load companies.");
+    }
+  };
+
+  const selectCompany = (id: string) => {
+    setCompanyId(id);
+    setSelectedId("");
+    setPage(1);
+    setEditingId(null);
+    setForm(emptyForm);
+    try {
+      localStorage.setItem(COMPANY_KEY, id);
+    } catch {
+      // Remembering the company is only a convenience.
+    }
+  };
+
   const loadOpenings = async () => {
+    if (!company) return;
     setLoading(true);
     try {
-      setOpenings(await fetchJobOpenings());
+      setOpenings(await fetchJobOpenings(company.id));
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load job openings.");
@@ -75,8 +109,9 @@ export default function JobOpenings() {
   };
 
   const loadApplications = async () => {
+    if (!company) return;
     try {
-      const data = await fetchJobApplications(selectedId, page, PAGE_SIZE);
+      const data = await fetchJobApplications(selectedId, page, PAGE_SIZE, company.id);
       setApplications(data.items);
       setTotal(data.total);
     } catch (e) {
@@ -85,12 +120,16 @@ export default function JobOpenings() {
   };
 
   useEffect(() => {
-    loadOpenings();
+    loadCompanies();
   }, []);
 
   useEffect(() => {
+    loadOpenings();
+  }, [company?.id]);
+
+  useEffect(() => {
     loadApplications();
-  }, [selectedId, page]);
+  }, [selectedId, page, company?.id]);
 
   const savePositions = async (opening: JobOpening) => {
     const value = Number(draft[opening.id] ?? opening.open_positions);
@@ -161,11 +200,11 @@ export default function JobOpenings() {
     };
     try {
       if (editingId) await updateJobOpening(editingId, payload);
-      else await createJobOpening(payload);
+      else await createJobOpening({ ...payload, company_id: company?.id });
       setEditingId(null);
       setForm(emptyForm);
       setError("");
-      await loadOpenings();
+      await Promise.all([loadOpenings(), loadCompanies()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : editingId ? "Could not update the opening." : "Could not create the opening.");
     } finally {
@@ -180,29 +219,34 @@ export default function JobOpenings() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Job openings</h1>
-          <p className="text-sm text-slate-500">
-            Careers site:{" "}
-            {CAREERS_SITE_URL ? (
-              <a href={CAREERS_SITE_URL} className="inline-flex items-center gap-1 text-indigo-600 hover:underline" target="_blank" rel="noreferrer">
-                {CAREERS_SITE_URL} <ExternalLink size={12} />
-              </a>
-            ) : (
-              <Link to="/jobs" className="inline-flex items-center gap-1 text-indigo-600 hover:underline" target="_blank">
-                /jobs <ExternalLink size={12} />
-              </Link>
-            )}
-          </p>
+          <p className="text-sm text-slate-500">Each company has its own roles, careers page text and careers page link.</p>
         </div>
-        <button onClick={loadOpenings} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+        <button onClick={() => Promise.all([loadCompanies(), loadOpenings(), loadApplications()])} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
           <RefreshCw size={16} /> Refresh
         </button>
       </div>
 
       {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
 
+      <CompanyBar
+        companies={companies}
+        selected={company}
+        onSelect={selectCompany}
+        onChanged={(changed) => {
+          setCompanies((list) =>
+            list.some((c) => c.id === changed.id)
+              ? list.map((c) => (c.id === changed.id ? { ...c, ...changed } : c))
+              : [...list, changed]
+          );
+          // A rename shows on the roles and applications too.
+          loadOpenings();
+          loadApplications();
+        }}
+      />
+
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="font-semibold">{editingId ? `Edit role: ${openings.find((o) => o.id === editingId)?.title ?? ""}` : "Add a role"}</h2>
+          <h2 className="font-semibold">{editingId ? `Edit role: ${openings.find((o) => o.id === editingId)?.title ?? ""}` : `Add a role${company ? ` at ${company.name}` : ""}`}</h2>
           {editingId && (
             <button type="button" onClick={cancelEdit} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
               <X size={14} /> Cancel edit
@@ -271,7 +315,7 @@ export default function JobOpenings() {
         </form>
       </section>
 
-      <CareersPageSettingsPanel />
+      {company && <CareersPageSettingsPanel key={company.id} companyId={company.id} companyName={company.name} />}
 
       <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[900px] text-sm">
@@ -337,7 +381,7 @@ export default function JobOpenings() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
           <h2 className="font-semibold">
-            Applications {selectedId ? `for ${openings.find((o) => o.id === selectedId)?.title ?? "selected role"}` : "(all roles)"}
+            Applications {selectedId ? `for ${openings.find((o) => o.id === selectedId)?.title ?? "selected role"}` : `(all ${company?.name ?? ""} roles)`}
           </h2>
           <div className="flex items-center gap-2">
             {selectedId && (

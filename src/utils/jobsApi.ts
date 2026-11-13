@@ -7,12 +7,29 @@ export type { CareersPageSettings, PublicJob };
 export interface JobOpening extends PublicJob {
   status: "OPEN" | "CLOSED";
   applications_count: number;
+  company_id: string;
+  company_name?: string | null;
+}
+
+/** A company with its own roles, careers page text and careers page address. */
+export interface Company {
+  id: string;
+  name: string;
+  /** Careers page address: /careers/<slug> or ?company=<slug> */
+  slug: string;
+  status: "ACTIVE" | "INACTIVE";
+  roles_count: number;
+  open_roles_count: number;
+  /** Roles and links from before companies existed belong to it; its page needs no ?company. */
+  is_default: boolean;
 }
 
 export interface JobApplicationRow {
   id: string;
   opening_id: string;
   opening_title: string;
+  company_id: string;
+  company_name: string | null;
   applicant_email: string;
   submitted_at: string;
   /** From the apply form: how they heard about the role, and their own note. */
@@ -26,14 +43,41 @@ export interface JobApplicationRow {
 }
 
 const JOB_OPENINGS = `${BASE_URL}/job-openings`;
+const COMPANIES = `${BASE_URL}/companies`;
+
+const withCompany = (companyId?: string) => (companyId ? `?company_id=${encodeURIComponent(companyId)}` : "");
 
 // ── Staff (login) ───────────────────────────────────────────────────────────
 
-export const fetchJobOpenings = async (): Promise<JobOpening[]> =>
-  readJson(await apiFetch(JOB_OPENINGS));
+export const fetchCompanies = async (): Promise<Company[]> => readJson(await apiFetch(COMPANIES));
+
+export const createCompany = async (payload: { name: string; slug?: string }): Promise<Company> =>
+  readJson(
+    await apiFetch(COMPANIES, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  );
+
+export const updateCompany = async (
+  id: string,
+  payload: Partial<Pick<Company, "name" | "slug" | "status">>
+): Promise<Company> =>
+  readJson(
+    await apiFetch(`${COMPANIES}/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  );
+
+export const fetchJobOpenings = async (companyId?: string): Promise<JobOpening[]> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}${withCompany(companyId)}`));
 
 export const createJobOpening = async (payload: {
   title: string;
+  company_id?: string;
   department?: string;
   location?: string;
   employment_type?: string;
@@ -65,19 +109,24 @@ export const updateJobOpening = async (id: string, payload: Partial<JobOpening>)
 export const fetchJobApplications = async (
   openingId: string | "",
   page = 1,
-  limit = 20
+  limit = 20,
+  companyId?: string
 ): Promise<{ items: JobApplicationRow[]; total: number }> => {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (openingId) params.set("opening_id", openingId);
+  if (companyId) params.set("company_id", companyId);
   return readJson(await apiFetch(`${JOB_OPENINGS}/applications?${params.toString()}`));
 };
 
-export const fetchCareersPageSettings = async (): Promise<CareersPageSettings> =>
-  readJson(await apiFetch(`${JOB_OPENINGS}/page-settings`));
+export const fetchCareersPageSettings = async (companyId?: string): Promise<CareersPageSettings> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/page-settings${withCompany(companyId)}`));
 
-export const updateCareersPageSettings = async (changes: Partial<CareersPageSettings>): Promise<CareersPageSettings> =>
+export const updateCareersPageSettings = async (
+  changes: Partial<CareersPageSettings>,
+  companyId?: string
+): Promise<CareersPageSettings> =>
   readJson(
-    await apiFetch(`${JOB_OPENINGS}/page-settings`, {
+    await apiFetch(`${JOB_OPENINGS}/page-settings${withCompany(companyId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(changes),
