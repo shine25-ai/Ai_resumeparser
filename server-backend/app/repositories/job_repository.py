@@ -41,15 +41,15 @@ class ApplicantVerificationRepository(BaseRepository):
 
 
 class CareersPageSettingsRepository(BaseRepository):
-    """One document (id "default") holding the editable text of the public careers page."""
+    """One document per company (id = company id) holding the editable text of its careers page."""
 
-    DOC_ID = "default"
+    DOC_ID = "default"  # the default company's id; its text was saved under this id before companies existed
 
     def __init__(self, db: AsyncIOMotorDatabase):
         super().__init__(db, CAREERS_PAGE_SETTINGS_COLLECTION)
 
-    async def get_settings(self) -> Dict[str, Any]:
-        return await self.get_by_id(self.DOC_ID) or {}
+    async def get_settings(self, company_id: str = DOC_ID) -> Dict[str, Any]:
+        return await self.get_by_id(company_id) or {}
 
-    async def save_settings(self, data: Dict[str, Any]) -> None:
-        await self.collection.update_one({"id": self.DOC_ID}, {"$set": {**data, "id": self.DOC_ID}}, upsert=True)
+    async def save_settings(self, data: Dict[str, Any], company_id: str = DOC_ID) -> None:
+        await self.collection.update_one({"id": company_id}, {"$set": {**data, "id": company_id}}, upsert=True)

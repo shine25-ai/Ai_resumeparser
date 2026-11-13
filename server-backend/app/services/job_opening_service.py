@@ -20,6 +20,15 @@ from loguru import logger
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BadRequestError, ConflictError, NotFoundError
 from app.core.security import decode_jwt_token
+from app.models.company import (
+    COMPANY_STATUS_ACTIVE,
+    COMPANY_STATUS_INACTIVE,
+    DEFAULT_COMPANY_ID,
+    CompanyDocument,
+    company_ref,
+    default_company_doc,
+    slugify,
+)
 from app.models.job_opening import (
     CAREERS_PAGE_DEFAULTS,
     JOB_STATUS_CLOSED,
@@ -28,6 +37,7 @@ from app.models.job_opening import (
     JobApplicationDocument,
     JobOpeningDocument,
 )
+from app.repositories.company_repository import CompanyRepository, add_application_to_resume
 from app.repositories.job_repository import (
     ApplicantVerificationRepository,
     CareersPageSettingsRepository,
@@ -70,6 +80,7 @@ class JobOpeningService:
         resume_repo: ResumeRepository,
         resume_service: ResumeService,
         page_settings_repo: Optional[CareersPageSettingsRepository] = None,
+        company_repo: Optional[CompanyRepository] = None,
     ):
         self.opening_repo = opening_repo
         self.application_repo = application_repo
@@ -78,26 +89,140 @@ class JobOpeningService:
         self.resume_service = resume_service
         self.settings_repo = SettingsRepository()
         self.page_settings_repo = page_settings_repo
+        self.company_repo = company_repo
+
+    # ── Companies ─────────────────────────────────────────────────────────────
+
+    async def company_by_id(self, company_id: Optional[str]) -> Dict[str, Any]:
+        """A company for staff screens. No id means the default company."""
+        company_id = (company_id or "").strip() or DEFAULT_COMPANY_ID
+        company = await self.company_repo.get_by_id(company_id) if self.company_repo else None
+        if company:
+            return company
+        if company_id == DEFAULT_COMPANY_ID:
+            return default_company_doc()
+        raise NotFoundError("Company not found.")
+
+    async def public_company(self, slug: Optional[str]) -> Dict[str, Any]:
+        """The company whose careers page is open (?company=<slug>). No slug means the default company."""
+        slug = (slug or "").strip().lower()
+        if not slug:
+            return await self.company_by_id(DEFAULT_COMPANY_ID)
+        company = await self.company_repo.get_by_slug(slug) if self.company_repo else None
+        if not company or company.get("status") == COMPANY_STATUS_INACTIVE:
+            raise NotFoundError("This careers page was not found.")
+        return company
+
+    @staticmethod
+    def _company_query(company_id: str) -> Dict[str, Any]:
+        # Roles from before companies existed have no company_id and belong to the default company.
+        if company_id == DEFAULT_COMPANY_ID:
+            return {"$or": [{"company_id": company_id}, {"company_id": {"$exists": False}}]}
+        return {"company_id": company_id}
+
+    async def list_companies(self) -> List[Dict[str, Any]]:
+        await self.company_repo.ensure_default()
+        companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500)
+        roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=10000)
+        for c in companies:
+            mine = [r for r in roles if (r.get("company_id") or DEFAULT_COMPANY_ID) == c["id"]]
+            c["roles_count"] = len(mine)
+            c["open_roles_count"] = sum(1 for r in mine if r.get("status") == JOB_STATUS_OPEN)
+            c["is_default"] = c["id"] == DEFAULT_COMPANY_ID
+        # The default company first, then in the order they were added.
+        return sorted(companies, key=lambda c: not c["is_default"])
+
+    async def _clean_slug(self, value: str, own_id: Optional[str] = None) -> str:
+        slug = slugify(value)
+        if not slug:
+            raise BadRequestError("The page address needs at least one letter or number.")
+        taken = await self.company_repo.get_by_slug(slug)
+        if taken and taken["id"] != own_id:
+            raise ConflictError(f"The page address '{slug}' is already used by {taken['name']}.")
+        return slug
+
+    async def create_company(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise BadRequestError("Company name is required.")
+        doc = CompanyDocument(name=name, slug=await self._clean_slug(data.get("slug") or name))
+        created = await self.company_repo.create(doc.to_dict())
+        return {**created, "roles_count": 0, "open_roles_count": 0, "is_default": False}
+
+    async def update_company(self, company_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
+        existing = await self.company_repo.get_by_id(company_id)
+        if not existing:
+            raise NotFoundError("Company not found.")
+        clean: Dict[str, Any] = {}
+        if "name" in changes:
+            clean["name"] = (changes["name"] or "").strip()
+            if not clean["name"]:
+                raise BadRequestError("Company name is required.")
+        if "slug" in changes:
+            clean["slug"] = await self._clean_slug(changes["slug"] or "", own_id=company_id)
+        if "status" in changes:
+            if changes["status"] not in (COMPANY_STATUS_ACTIVE, COMPANY_STATUS_INACTIVE):
+                raise BadRequestError("Status must be ACTIVE or INACTIVE.")
+            if company_id == DEFAULT_COMPANY_ID and changes["status"] == COMPANY_STATUS_INACTIVE:
+                raise BadRequestError("The default company's careers page cannot be turned off.")
+            clean["status"] = changes["status"]
+        if not clean:
+            return existing
+        clean["updated_at"] = utc_now().isoformat()
+        updated = await self.company_repo.update(company_id, clean)
+        if clean.get("name") and clean["name"] != existing["name"]:
+            await self._rename_company_everywhere(company_id, clean["name"])
+        return updated
+
+    async def _rename_company_everywhere(self, company_id: str, name: str) -> None:
+        """Roles, applications and resumes keep a copy of the company name for lists and filters."""
+        await self.opening_repo.collection.update_many({"company_id": company_id}, {"$set": {"company_name": name}})
+        await self.application_repo.collection.update_many({"company_id": company_id}, {"$set": {"company_name": name}})
+        resumes = self.resume_repo.collection
+        await resumes.update_many({"company_id": company_id}, {"$set": {"company_name": name}})
+        await resumes.update_many(
+            {"applied_jobs.company_id": company_id},
+            {"$set": {"applied_jobs.$[j].company_name": name}},
+            array_filters=[{"j.company_id": company_id}],
+        )
 
     # ── Careers page text ─────────────────────────────────────────────────────
 
-    async def get_page_settings(self) -> Dict[str, str]:
-        """Saved page text over the defaults; a blank saved value falls back to the default."""
-        saved = await self.page_settings_repo.get_settings() if self.page_settings_repo else {}
-        return {key: (saved.get(key) or "").strip() or default for key, default in CAREERS_PAGE_DEFAULTS.items()}
+    @staticmethod
+    def page_defaults(company: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        name = (company or {}).get("name")
+        defaults = dict(CAREERS_PAGE_DEFAULTS)
+        if name:
+            defaults["hero_eyebrow"] = f"Careers at {name}"
+        return defaults
 
-    async def update_page_settings(self, changes: Dict[str, Any]) -> Dict[str, str]:
+    async def get_page_settings(self, company: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """Saved page text over the defaults; a blank saved value falls back to the default."""
+        company_id = (company or {}).get("id") or DEFAULT_COMPANY_ID
+        saved = await self.page_settings_repo.get_settings(company_id) if self.page_settings_repo else {}
+        return {key: (saved.get(key) or "").strip() or default for key, default in self.page_defaults(company).items()}
+
+    async def get_public_page(self, slug: Optional[str]) -> Dict[str, Any]:
+        company = await self.public_company(slug)
+        return {
+            **await self.get_page_settings(company),
+            "company": {"id": company["id"], "name": company["name"], "slug": company["slug"]},
+        }
+
+    async def update_page_settings(self, changes: Dict[str, Any], company: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
         clean = {k: (v or "").strip() for k, v in changes.items() if k in CAREERS_PAGE_DEFAULTS}
         if clean:
-            await self.page_settings_repo.save_settings({**clean, "updated_at": utc_now().isoformat()})
-        return await self.get_page_settings()
+            company_id = (company or {}).get("id") or DEFAULT_COMPANY_ID
+            await self.page_settings_repo.save_settings({**clean, "updated_at": utc_now().isoformat()}, company_id)
+        return await self.get_page_settings(company)
 
     # ── Public: listing ───────────────────────────────────────────────────────
 
-    async def list_public_openings(self) -> List[Dict[str, Any]]:
-        """Roles that are open and still have positions left."""
+    async def list_public_openings(self, slug: Optional[str] = None) -> List[Dict[str, Any]]:
+        """A company's roles that are open and still have positions left."""
+        company = await self.public_company(slug)
         openings = await self.opening_repo.find_many(
-            query={"status": JOB_STATUS_OPEN, "open_positions": {"$gt": 0}},
+            query={"status": JOB_STATUS_OPEN, "open_positions": {"$gt": 0}, **self._company_query(company["id"])},
             sort_by="created_at",
             descending=False,
             limit=500,
@@ -244,6 +369,10 @@ class JobOpeningService:
         opening = await self.opening_repo.get_by_id(opening_id)
         if not opening or opening.get("status") != JOB_STATUS_OPEN or opening.get("open_positions", 0) <= 0:
             raise BadRequestError("This role is no longer accepting applications.")
+        company = await self.company_by_id(opening.get("company_id"))
+        if company.get("status") == COMPANY_STATUS_INACTIVE:
+            raise BadRequestError("This role is no longer accepting applications.")
+        ref = company_ref(company)
 
         already = await self.application_repo.find_one({"opening_id": opening_id, "applicant_email": email})
         if already:
@@ -259,16 +388,11 @@ class JobOpeningService:
         )
         await self.resume_repo.update(
             resume.id,
-            {
-                "job_opening_id": opening_id,
-                "job_title": opening["title"],
-                "applicant_email": email,
-                "applicant_heard_from": heard_from,
-                "applicant_note": note,
-            },
+            {"applicant_email": email, "applicant_heard_from": heard_from, "applicant_note": note},
         )
 
         application = JobApplicationDocument(
+            **ref,
             opening_id=opening_id,
             opening_title=opening["title"],
             applicant_email=email,
@@ -276,23 +400,37 @@ class JobOpeningService:
             heard_from=heard_from,
             note=note,
         )
+        # The company and role go on the resume; if the parser later merges it into an existing profile,
+        # they are added to that profile's list.
+        await add_application_to_resume(
+            self.resume_repo.db, resume.id, ref, opening_id, opening["title"], application.submitted_at
+        )
         await self.application_repo.create(application.to_dict())
-        return {"application_id": application.id, "resume_id": resume.id, "opening_title": opening["title"]}
+        return {
+            "application_id": application.id,
+            "resume_id": resume.id,
+            "opening_title": opening["title"],
+            "company_name": company["name"],
+        }
 
     # ── Admin ─────────────────────────────────────────────────────────────────
 
-    async def list_openings(self) -> List[Dict[str, Any]]:
-        openings = await self.opening_repo.find_many(sort_by="created_at", descending=False, limit=500)
+    async def list_openings(self, company_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = self._company_query(company_id) if company_id else None
+        openings = await self.opening_repo.find_many(query=query, sort_by="created_at", descending=False, limit=500)
         counts = await self.application_repo.count_by_opening()
         for o in openings:
             o["applications_count"] = counts.get(o["id"], 0)
+            o.setdefault("company_id", DEFAULT_COMPANY_ID)
         return openings
 
     async def create_opening(self, data: Dict[str, Any]) -> Dict[str, Any]:
         title = (data.get("title") or "").strip()
         if not title:
             raise BadRequestError("Job title is required.")
+        company = await self.company_by_id(data.get("company_id"))
         doc = JobOpeningDocument(
+            **company_ref(company),
             title=title,
             department=(data.get("department") or "").strip(),
             location=(data.get("location") or "").strip(),
@@ -319,14 +457,20 @@ class JobOpeningService:
         for field in LIST_FIELDS:
             if field in changes:
                 changes[field] = clean_lines(changes[field])
+        if "company_id" in changes:
+            changes.update(company_ref(await self.company_by_id(changes["company_id"])))
         changes["updated_at"] = utc_now().isoformat()
         updated = await self.opening_repo.update(opening_id, changes)
         counts = await self.application_repo.count_by_opening()
         updated["applications_count"] = counts.get(opening_id, 0)
         return updated
 
-    async def list_applications(self, opening_id: Optional[str], skip: int, limit: int) -> Dict[str, Any]:
+    async def list_applications(
+        self, opening_id: Optional[str], skip: int, limit: int, company_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         query: Dict[str, Any] = {"opening_id": opening_id} if opening_id else {}
+        if company_id:
+            query.update(self._company_query(company_id))
         total = await self.application_repo.count(query)
         applications = await self.application_repo.find_many(
             query=query, skip=skip, limit=limit, sort_by="submitted_at", descending=True
@@ -348,6 +492,8 @@ class JobOpeningService:
                 "id": a["id"],
                 "opening_id": a["opening_id"],
                 "opening_title": a["opening_title"],
+                "company_id": a.get("company_id") or DEFAULT_COMPANY_ID,
+                "company_name": a.get("company_name"),
                 "applicant_email": a["applicant_email"],
                 "submitted_at": a["submitted_at"],
                 "heard_from": a.get("heard_from"),

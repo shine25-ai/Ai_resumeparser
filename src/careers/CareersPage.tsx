@@ -11,8 +11,10 @@ import { ApplyModal, CareersFooter, CareersHeader, JobDetailsModal, Meta, Pill, 
  */
 
 const JOB_PARAM = "job";
+const COMPANY_PARAM = "company";
 
 const jobFromUrl = () => new URLSearchParams(window.location.search).get(JOB_PARAM);
+const companyFromUrl = () => new URLSearchParams(window.location.search).get(COMPANY_PARAM) || "";
 
 /** The current page address with ?job set to id, or removed when id is null. */
 const urlWithJob = (id: string | null) => {
@@ -29,6 +31,11 @@ export interface CareersPageProps {
   showFooter?: boolean;
   /** Set the browser tab title to the open role. Off when embedded, so the host page keeps its title. */
   manageTitle?: boolean;
+  /**
+   * Whose roles to show: the company's page address in the resume portal (Job openings → Companies), e.g. "acme".
+   * When left out, ?company=<address> in the page address is used, else the default company.
+   */
+  company?: string;
 }
 
 const uniqueValues = (jobs: PublicJob[], key: "department" | "location" | "employment_type") =>
@@ -101,7 +108,8 @@ function JobCard({ job, onDetails, onApply }: { job: PublicJob; onDetails: () =>
   );
 }
 
-export default function CareersPage({ showHeader = true, showFooter = true, manageTitle = false }: CareersPageProps) {
+export default function CareersPage({ showHeader = true, showFooter = true, manageTitle = false, company: companyProp }: CareersPageProps) {
+  const company = (companyProp || companyFromUrl()).trim().toLowerCase();
   const [jobId, setJobId] = useState<string | null>(jobFromUrl);
   const [page, setPage] = useState<CareersPageSettings>(DEFAULT_PAGE_SETTINGS);
   const [jobs, setJobs] = useState<PublicJob[]>([]);
@@ -116,7 +124,7 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
 
   const load = () => {
     setLoading(true);
-    fetchPublicJobs()
+    fetchPublicJobs(company)
       .then((data) => {
         setJobs(data);
         setError("");
@@ -125,12 +133,12 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [company]);
 
   useEffect(() => {
     // The defaults stay on screen if the saved text cannot be loaded.
-    fetchPageSettings().then(setPage).catch(() => undefined);
-  }, []);
+    fetchPageSettings(company).then(setPage).catch(() => undefined);
+  }, [company]);
 
   // Back / forward buttons open and close roles.
   useEffect(() => {
@@ -299,6 +307,7 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
           job={applying}
           successTitle={page.success_title}
           successMessage={page.success_message}
+          companyName={page.company?.name}
           onClose={() => {
             setApplying(null);
             load();

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import logoUrl from "./assets/shinelogics-logo.png";
 import { OverlayContext } from "./overlay";
 import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, MapPin, Pencil, Upload, Users, X } from "lucide-react";
-import { HEARD_FROM_OPTIONS, confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
+import { heardFromOptions, confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
 
 /** Building blocks of the public careers site: layout, the job details pop-up and the apply flow. */
 
@@ -228,11 +228,14 @@ export function ApplyModal({
   onClose,
   successTitle,
   successMessage,
+  companyName,
 }: {
   job: PublicJob;
   onClose: () => void;
   successTitle: string;
   successMessage: string;
+  /** For the "<company> website" answer to how they heard about the role. */
+  companyName?: string;
 }) {
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
@@ -475,7 +478,7 @@ export function ApplyModal({
                 }`}
               >
                 <option value="" disabled>Select an option</option>
-                {HEARD_FROM_OPTIONS.map((option) => (
+                {heardFromOptions(companyName).map((option) => (
                   <option key={option} value={option} className="text-slate-900">{option}</option>
                 ))}
               </select>

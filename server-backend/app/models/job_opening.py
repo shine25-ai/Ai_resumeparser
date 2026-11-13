@@ -15,6 +15,8 @@ class JobOpeningDocument(BaseModel):
 
     id: str = Field(default_factory=generate_uuid)
     title: str
+    company_id: str = "default"
+    company_name: Optional[str] = None
     department: Optional[str] = ""
     location: Optional[str] = ""
     employment_type: Optional[str] = ""
@@ -53,6 +55,8 @@ class JobApplicationDocument(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     opening_id: str
     opening_title: str
+    company_id: str = "default"
+    company_name: Optional[str] = None
     applicant_email: str
     resume_id: str
     heard_from: Optional[str] = None

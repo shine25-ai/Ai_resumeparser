@@ -37,7 +37,8 @@ For local work: `npm run dev:careers` (http://localhost:5190).
 
 | Link | Shows |
 | --- | --- |
-| `careers.html` | Header, roles and footer |
+| `careers.html` | Header, roles and footer of the default company (Shinelogics) |
+| `careers.html?company=acme` | That company's roles and page text (its page address from Job openings → company bar) |
 | `careers.html?header=false` | No Shinelogics header (for a site that has its own) |
 | `careers.html?footer=false` | No Shinelogics footer |
 | `careers.html?header=false&footer=false` | Only the roles |
@@ -53,6 +54,7 @@ For local work: `npm run dev:careers` (http://localhost:5190).
 | Attribute | Default | Meaning |
 | --- | --- | --- |
 | `data-api` | value baked in at build | Resume portal API address |
+| `data-company` | `?company=` in the page address, else the default company | Company page address, e.g. `acme` |
 | `data-header` | `true` | `false` hides the Shinelogics header (when the site has its own) |
 | `data-footer` | `true` | `false` hides the Shinelogics footer |
 | `data-manage-title` | `false` | `true` sets the browser tab title to the open role |
@@ -91,8 +93,19 @@ Old links like `/jobs/<id>` redirect to `/jobs?job=<id>`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/public/jobs` | Open roles with all their sections |
-| GET | `/public/jobs/page` | Careers page text |
+| GET | `/public/jobs?company=<address>` | A company's open roles with all their sections (default company when left out) |
+| GET | `/public/jobs/page?company=<address>` | A company's careers page text, with `company: {id, name, slug}` |
 | POST | `/public/jobs/verification/request` | Email a 6-digit code |
 | POST | `/public/jobs/verification/confirm` | Check the code, returns an applicant token |
 | POST | `/public/jobs/{id}/apply` | Upload the resume (`X-Applicant-Token` header), with `heard_from` (how they found the role) and an optional `note` |
+
+## Companies
+
+Each company in the resume portal has its own roles, careers page text and page address (slug).
+Pick a company, or add one, in the bar at the top of **Job openings**; it shows the company's link to share.
+
+- In this app: `/careers/<address>` or `/jobs?company=<address>`. `/jobs` alone is the default company, so older links still work.
+- Single file: `careers.html?company=<address>`. Embed: `data-company="<address>"`, or `mount(el, { company: "<address>" })`.
+- An unknown address, or a company whose page is turned off, shows "This careers page was not found."
+- An application records the company and role on the candidate's resume (`company_id`, `company_name`, `job_title`,
+  and every application in `applied_jobs`). Candidate lists can be filtered by company and show a company pill.

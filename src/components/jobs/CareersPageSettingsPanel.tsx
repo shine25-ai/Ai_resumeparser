@@ -4,7 +4,7 @@ import { DEFAULT_PAGE_SETTINGS, type CareersPageSettings } from "../../careers/a
 import { fetchCareersPageSettings, updateCareersPageSettings } from "../../utils/jobsApi";
 
 /** Text on the public careers page. The header and footer are fixed; everything listed here can be changed. */
-const FIELDS: { key: keyof CareersPageSettings; label: string; group: string; long?: boolean }[] = [
+const FIELDS: { key: Exclude<keyof CareersPageSettings, "company">; label: string; group: string; long?: boolean }[] = [
   { key: "hero_eyebrow", label: "Small heading above the title", group: "Top of the page" },
   { key: "hero_title", label: "Title", group: "Top of the page" },
   { key: "hero_subtitle", label: "Subtitle", group: "Top of the page", long: true },
@@ -18,22 +18,27 @@ const FIELDS: { key: keyof CareersPageSettings; label: string; group: string; lo
 
 const GROUPS = Array.from(new Set(FIELDS.map((f) => f.group)));
 
-export default function CareersPageSettingsPanel() {
+/** Text of one company's careers page. Give it key={companyId} so switching company loads that company's text. */
+export default function CareersPageSettingsPanel({ companyId, companyName }: { companyId?: string; companyName?: string }) {
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<CareersPageSettings | null>(null);
-  const [form, setForm] = useState<CareersPageSettings>(DEFAULT_PAGE_SETTINGS);
+  // The small heading defaults to "Careers at <company>".
+  const defaults: CareersPageSettings = companyName
+    ? { ...DEFAULT_PAGE_SETTINGS, hero_eyebrow: `Careers at ${companyName}` }
+    : DEFAULT_PAGE_SETTINGS;
+  const [form, setForm] = useState<CareersPageSettings>(defaults);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     if (!open || saved) return;
-    fetchCareersPageSettings()
+    fetchCareersPageSettings(companyId)
       .then((data) => {
         setSaved(data);
         setForm(data);
       })
       .catch((e) => setMessage({ kind: "error", text: e instanceof Error ? e.message : "Could not load the careers page text." }));
-  }, [open, saved]);
+  }, [open, saved, companyId]);
 
   const changed = saved ? FIELDS.filter((f) => form[f.key] !== saved[f.key]) : [];
 
@@ -42,7 +47,7 @@ export default function CareersPageSettingsPanel() {
     setMessage(null);
     try {
       const changes = Object.fromEntries(changed.map((f) => [f.key, form[f.key]]));
-      const data = await updateCareersPageSettings(changes);
+      const data = await updateCareersPageSettings(changes, companyId);
       setSaved(data);
       setForm(data);
       setMessage({ kind: "ok", text: "Saved. The careers page shows the new text now." });
@@ -62,7 +67,7 @@ export default function CareersPageSettingsPanel() {
         className="flex w-full items-center justify-between gap-3 p-5 text-left"
       >
         <div>
-          <h2 className="font-semibold">Careers page text</h2>
+          <h2 className="font-semibold">Careers page text{companyName ? ` · ${companyName}` : ""}</h2>
           <p className="text-sm text-slate-500">Headings and messages on the public careers page. The header and footer stay the same.</p>
         </div>
         <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`} />
@@ -82,10 +87,10 @@ export default function CareersPageSettingsPanel() {
                     <label key={f.key} className={`flex flex-col gap-1 ${f.long ? "md:col-span-2" : ""}`}>
                       <span className="flex items-center justify-between text-xs font-medium text-slate-600">
                         {f.label}
-                        {form[f.key] !== DEFAULT_PAGE_SETTINGS[f.key] && (
+                        {form[f.key] !== defaults[f.key] && (
                           <button
                             type="button"
-                            onClick={() => setForm({ ...form, [f.key]: DEFAULT_PAGE_SETTINGS[f.key] })}
+                            onClick={() => setForm({ ...form, [f.key]: defaults[f.key] })}
                             className="font-normal text-indigo-600 hover:underline"
                           >
                             Use default
@@ -95,7 +100,7 @@ export default function CareersPageSettingsPanel() {
                       <input
                         value={form[f.key]}
                         maxLength={f.long ? 300 : 150}
-                        placeholder={DEFAULT_PAGE_SETTINGS[f.key]}
+                        placeholder={defaults[f.key]}
                         onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                         className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
                       />

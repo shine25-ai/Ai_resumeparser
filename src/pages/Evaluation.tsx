@@ -8,6 +8,7 @@ import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFI
 import { formatExperience, getAllSkills } from "../utils/candidateFields";
 import { useFeedback } from "../components/ui/Feedback";
 import ResumeCategoryPicker from "../components/ResumeCategoryPicker";
+import { CompanyPills, appliedCompanies } from "../components/CompanyTags";
 
 export default function Evaluation() {
   const { toast, confirm } = useFeedback();
@@ -590,9 +591,24 @@ export default function Evaluation() {
               />
             </div>
 
-            {(candidate.applicant_heard_from || candidate.applicant_note) && (
+            {(candidate.applicant_heard_from || candidate.applicant_note || appliedCompanies(candidate).length > 0) && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-left space-y-1">
                 <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">From the careers page application</span>
+                {(candidate.applied_jobs || []).length > 0 ? (
+                  <ul className="space-y-1">
+                    {[...(candidate.applied_jobs || [])].reverse().map((job: any, i: number) => (
+                      <li key={`${job.company_id}-${job.job_id}-${i}`} className="flex flex-wrap items-center gap-1.5">
+                        <CompanyPills companies={[{ id: job.company_id, name: job.company_name || "Company", roles: [] }]} size="md" />
+                        <span className="font-bold text-slate-800">{job.job_title}</span>
+                        {job.applied_at && (
+                          <span className="text-slate-400">· {new Date(job.applied_at).toLocaleDateString()}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5"><CompanyPills companies={appliedCompanies(candidate)} size="md" /></div>
+                )}
                 {candidate.applicant_heard_from && (
                   <p>
                     <span className="text-slate-500 font-medium">How they heard about the role: </span>

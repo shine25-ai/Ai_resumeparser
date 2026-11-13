@@ -8,6 +8,7 @@ from loguru import logger
 from app.core.bootstrap import bootstrap_default_admin
 from app.core.database import db_manager
 from app.core.logging import setup_logging
+from app.repositories.company_repository import bootstrap_companies
 from app.repositories.integration_repository import IntegrationRepository
 from datetime import timedelta
 from app.core.config import settings
@@ -53,6 +54,11 @@ async def lifespan(app: FastAPI):
         await IntegrationRepository(db).ensure_indexes()
     except Exception as e:
         logger.warning(f"Could not create integration API indexes: {e}")
+
+    try:
+        await bootstrap_companies(db)
+    except Exception as e:
+        logger.warning(f"Could not set up companies: {e}")
 
     try:
         await fail_interrupted_parses(db)

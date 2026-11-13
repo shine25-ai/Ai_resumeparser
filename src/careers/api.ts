@@ -16,6 +16,18 @@ export const setCareersApiBaseUrl = (url: string) => {
 
 const publicJobsUrl = () => `${apiBaseUrl}/public/jobs`;
 
+/** Page address of a company in the resume portal, e.g. "acme". Empty shows the default company. */
+const companyQuery = (company?: string) => {
+  const slug = (company || "").trim().toLowerCase();
+  return slug ? `?company=${encodeURIComponent(slug)}` : "";
+};
+
+export interface PublicCompany {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface PublicJob {
   id: string;
   title: string;
@@ -44,6 +56,8 @@ export interface CareersPageSettings {
   empty_message: string;
   success_title: string;
   success_message: string;
+  /** Whose careers page this is. Sent by the public page endpoint only. */
+  company?: PublicCompany;
 }
 
 /** Shown while the saved text loads, or if it cannot be loaded. Matches the server defaults. */
@@ -84,12 +98,12 @@ const normalizeJob = (job: Partial<PublicJob> & { id: string; title: string }): 
   preferred_skills: job.preferred_skills ?? [],
 });
 
-export const fetchPublicJobs = async (): Promise<PublicJob[]> =>
-  ((await readJson(await fetch(publicJobsUrl()))) as PublicJob[]).map(normalizeJob);
+export const fetchPublicJobs = async (company?: string): Promise<PublicJob[]> =>
+  ((await readJson(await fetch(`${publicJobsUrl()}${companyQuery(company)}`))) as PublicJob[]).map(normalizeJob);
 
-export const fetchPageSettings = async (): Promise<CareersPageSettings> => ({
+export const fetchPageSettings = async (company?: string): Promise<CareersPageSettings> => ({
   ...DEFAULT_PAGE_SETTINGS,
-  ...(await readJson(await fetch(`${publicJobsUrl()}/page`))),
+  ...(await readJson(await fetch(`${publicJobsUrl()}/page${companyQuery(company)}`))),
 });
 
 export const requestApplicantCode = async (email: string) =>
@@ -114,15 +128,16 @@ export const confirmApplicantCode = async (
   );
 
 /** Choices for "How did you hear about this role?" on the apply form. */
-export const HEARD_FROM_OPTIONS = [
+export const heardFromOptions = (companyName = "Shinelogics") => [
   "LinkedIn",
   "Job portal (Naukri, Indeed, etc.)",
-  "Shinelogics website",
+  `${companyName} website`,
   "Referred by a friend or employee",
   "Social media",
   "College or campus drive",
   "Other",
-] as const;
+];
+export const HEARD_FROM_OPTIONS = heardFromOptions();
 
 export const submitApplication = async (
   jobId: string,

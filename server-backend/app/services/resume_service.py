@@ -33,6 +33,30 @@ from app.utils.validators import validate_profile_picture, validate_uploaded_fil
 from app.utils.hiring_stage import candidate_stage
 
 
+def company_conditions(company_id: Optional[str]) -> List[Dict[str, Any]]:
+    """Resumes sent to a company from its careers page. 'none' means resumes not sent to any company."""
+    company_id = (company_id or "").strip()
+    if not company_id:
+        return []
+    if company_id.lower() == "none":
+        return [{"$or": [{"company_ids": {"$exists": False}}, {"company_ids": {"$size": 0}}]}]
+    return [{"company_ids": company_id}]
+
+
+def carry_applied_jobs(existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
+    """When a new upload is merged into an existing profile, keep every company and role from both."""
+    jobs = list(existing.get("applied_jobs") or [])
+    seen = {(j.get("company_id"), j.get("job_id")) for j in jobs}
+    jobs += [j for j in new.get("applied_jobs") or [] if (j.get("company_id"), j.get("job_id")) not in seen]
+    company_ids = list(dict.fromkeys([*(existing.get("company_ids") or []), *(new.get("company_ids") or [])]))
+    latest = new if new.get("company_id") else existing
+    return {
+        "applied_jobs": jobs,
+        "company_ids": company_ids,
+        **{k: latest.get(k) for k in ("company_id", "company_name", "job_opening_id", "job_title")},
+    }
+
+
 class ResumeService:
     """Service handling resume processing, text extraction, S3 upload, and parsing."""
 
@@ -298,6 +322,7 @@ class ResumeService:
                     "category": existing_doc.get("category") or temp_doc.get("category"),
                     "applicant_heard_from": temp_doc.get("applicant_heard_from") or existing_doc.get("applicant_heard_from"),
                     "applicant_note": temp_doc.get("applicant_note") or existing_doc.get("applicant_note"),
+                    **carry_applied_jobs(existing_doc, temp_doc),
                 }
                 await self.resume_repo.update(existing_doc["id"], updated_existing_fields)
                 logger.info(f"[EXISTING_EMAIL_FLOW] Step 2/3: Updated existing candidate document '{existing_doc['id']}' in 'resumes' collection with new parsed values.")
@@ -622,10 +647,12 @@ class ResumeService:
         skill_mode: Optional[str] = "any",
         sort_by: Optional[str] = None,
         stage: Optional[str] = None,
+        company_id: Optional[str] = None,
     ) -> ResumeListResponse:
         """Filter resumes matching criteria with backend pagination and total_pages calculation."""
         import math
         extra_conditions = await self._stage_conditions(stage) if stage and stage.strip().upper() != "ALL" else []
+        extra_conditions += company_conditions(company_id)
         res_dict = await self.resume_repo.filter_resumes(
             extra_conditions=extra_conditions,
             user_id=user_id,
@@ -857,6 +884,7 @@ class ResumeService:
         update_fields["file_path"] = new_resume.get("file_path")
         update_fields["s3_url"] = new_resume.get("s3_url")
         update_fields["file_hash"] = new_resume.get("file_hash")
+        update_fields.update(carry_applied_jobs(existing_resume, new_resume))
         
         # Add HR update
         hr_update = {

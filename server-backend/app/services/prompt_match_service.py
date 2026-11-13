@@ -422,6 +422,12 @@ def candidate_summary(resume: Dict[str, Any], match: Dict[str, Any]) -> Dict[str
     }
 
 
+def in_company(resume: Dict[str, Any], company_id: str) -> bool:
+    """Same rule as the company filter: a company id, or 'none' for resumes not sent to any company."""
+    ids = resume.get("company_ids") or []
+    return not ids if company_id.lower() == "none" else company_id in ids
+
+
 def blend_scores(code_score: int, ai_score: int) -> int:
     return round((1 - RERANK_AI_WEIGHT) * code_score + RERANK_AI_WEIGHT * ai_score)
 
@@ -620,12 +626,15 @@ class PromptMatchService:
         pending = sum(1 for i in ids if i not in vectors)
         return {rid: similarity(query_vector, v) for rid, v in vectors.items()}, pending
 
-    async def _pool(self, plan: Dict[str, Any], user_id: str, is_admin: bool) -> Tuple[List[Dict[str, Any]], List[str]]:
+    async def _pool(self, plan: Dict[str, Any], user_id: str, is_admin: bool,
+                    company_id: Optional[str] = None) -> Tuple[List[Dict[str, Any]], List[str]]:
         """Candidates worth scoring. Loose on purpose: any listed skill, years widened by 1 on each side.
         Widened further, with a note, when that finds too few."""
         skills = plan["must_have_skills"] + plan["nice_to_have_skills"]
         lo, hi = plan["min_experience"], plan["max_experience"]
-        base = dict(user_id=user_id, is_admin=is_admin, skip=0, limit=POOL_LIMIT, sort_by="ai_score")
+        from app.services.resume_service import company_conditions
+        base = dict(user_id=user_id, is_admin=is_admin, skip=0, limit=POOL_LIMIT, sort_by="ai_score",
+                    extra_conditions=company_conditions(company_id))
         titles = None if skills else (plan["role_titles"] or None)
         keywords = None if (skills or titles) else (plan["keywords"] or None)
         exp = dict(min_experience=max(lo - 1, 0) if lo is not None else None,
@@ -652,7 +661,8 @@ class PromptMatchService:
         return list(pool.values()), notes
 
     async def search(self, prompt: Optional[str], plan: Optional[Dict[str, Any]], user_id: str, is_admin: bool,
-                     page: int = 1, limit: int = 25, rerank: bool = False, meaning: bool = True) -> Dict[str, Any]:
+                     page: int = 1, limit: int = 25, rerank: bool = False, meaning: bool = True,
+                     company_id: Optional[str] = None) -> Dict[str, Any]:
         """`meaning` is the recruiter's per-search choice; it only applies when the admin switch is on."""
         cached = False
         if plan is None:
@@ -665,7 +675,7 @@ class PromptMatchService:
         if plan_is_empty(plan):
             raise BadRequestError("No skills, role, experience or location could be found in the request. Add more detail, or use Filters.")
 
-        pool, notes = await self._pool(plan, user_id, is_admin)
+        pool, notes = await self._pool(plan, user_id, is_admin, company_id)
 
         meaning_available = await self.meaning_enabled()
         use_meaning = meaning and meaning_available
@@ -686,7 +696,12 @@ class PromptMatchService:
             extra = [rid for rid, pts in sorted(meaning.items(), key=lambda kv: kv[1], reverse=True)
                      if pts >= MEANING_POOL_MIN and rid not in in_pool][:MEANING_POOL]
             if extra:
-                pool += await self.resume_repo.get_many_by_ids(extra)
+                found = await self.resume_repo.get_many_by_ids(extra)
+                if company_id:
+                    found = [r for r in found if in_company(r, company_id)]
+                    extra = [r["id"] for r in found]
+                pool += found
+            if extra:
                 notes.append(f"{len(extra)} candidate{'s were' if len(extra) > 1 else ' was'} added because "
                              f"{'their resumes match' if len(extra) > 1 else 'the resume matches'} the request by meaning.")
         ranked = rank_candidates(pool, plan, meaning)

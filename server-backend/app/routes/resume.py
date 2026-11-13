@@ -4,7 +4,7 @@ Resume processing routes for uploading PDF/DOC/DOCX files, listing resumes, text
 
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status, BackgroundTasks, Body
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.resume_controller import ResumeController
 from app.core.database import get_database
@@ -121,6 +121,7 @@ async def match_resumes(
     skill_mode: str = Query("any", pattern="^(any|all)$", description="'all' = candidate must have every skill; 'any' = at least one"),
     sort_by: Optional[str] = Query(None, description="Sort order: latest, oldest, ai_score, experience_desc, experience_asc, name"),
     stage: Optional[str] = Query(None, description="Hiring stage: Screening, Interviewing, Offer, Hired, Closed"),
+    company_id: Optional[str] = Query(None, max_length=64, description="Company applied to from the careers page; 'none' for resumes with no company"),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
@@ -148,6 +149,7 @@ async def match_resumes(
         skill_mode=skill_mode,
         sort_by=sort_by,
         stage=stage,
+        company_id=company_id,
     )
 
 
@@ -158,6 +160,7 @@ class PromptMatchRequest(BaseModel):
     limit: int = 25
     rerank: bool = False
     meaning: bool = True    # phase 3, per search; only used when the admin switch is on
+    company_id: Optional[str] = Field(default=None, max_length=64)  # company applied to; "none" for no company
 
 
 @router.post(
@@ -186,7 +189,7 @@ async def prompt_match(
     data = await service.search(
         prompt=body.prompt, plan=body.plan, user_id=current_user["id"], is_admin=is_admin_or_staff(current_user),
         page=max(1, body.page), limit=min(max(1, body.limit), 100), rerank=body.rerank,
-        meaning=body.meaning,
+        meaning=body.meaning, company_id=body.company_id,
     )
     return success_response(data=data, message="Matched candidates retrieved successfully.")
 

@@ -1,6 +1,6 @@
 // After `vite build --config vite.careers.config.ts`: writes the two HTML pages next to the script.
 //   careers.html  everything in one file (script inlined) - open it or upload it anywhere;
-//                 ?header=false&footer=false in the link hides the header / footer
+//                 ?company=acme shows that company's roles; ?header=false&footer=false hides the header / footer
 //   index.html    an example of embedding the script on an existing page
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,6 +24,7 @@ ${body}
 `;
 
 // The single file reads its options from the link, so one file serves every case:
+//   careers.html?company=acme   that company's roles and page text (page address from Job openings → Companies)
 //   careers.html?header=false&footer=false   hide the Shinelogics header / footer
 //   careers.html?api=https://api.example.com/api/v1   use another resume portal API
 const linkOptions = `(function () {
@@ -48,6 +49,7 @@ writeFileSync(
     <!-- Options (all optional):
          data-header="false"         hide the Shinelogics header (when your site has its own)
          data-footer="false"         hide the Shinelogics footer
+         data-company="acme"         company page address from the resume portal (default company when left out)
          data-api="https://..."      resume portal API, if not baked in at build time
          data-manage-title="true"    set the browser tab title to the open role -->
     <div data-shinelogics-careers data-header="true" data-footer="true" data-manage-title="true"></div>

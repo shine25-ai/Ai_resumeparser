@@ -6,6 +6,7 @@ import { matchResumes, promptMatch, type SearchPlan, type CandidateMatch, getPar
 import { getCandidateRole, formatExperience, getAllSkills } from "../utils/candidateFields";
 import { InterviewForm } from "../components/interview/InterviewForm";
 import { useFeedback } from "../components/ui/Feedback";
+import { CompanyFilter, CompanyPills, appliedCompanies, useCompanies } from "../components/CompanyTags";
 import type { CandidateInterviewItem } from "../types/interview";
 
 type FilterCategory = "Job Title" | "Location" | "Skill" | "Year of Passing" | "Min Exp" | "Max Exp" | "Keyword";
@@ -57,6 +58,8 @@ export default function JDMatch() {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [sortBy, setSortBy] = useState<SortOption>("ai_score");
+  const companies = useCompanies();
+  const [companyFilter, setCompanyFilter] = useState<string>("");
   const [skillMode, setSkillMode] = useState<"all" | "any">("all");
   const [showFilters, setShowFilters] = useState(true);
 
@@ -123,7 +126,7 @@ export default function JDMatch() {
 
   // Fetch matched resumes whenever search button is clicked or initial load
   const fetchMatchedCandidates = async (
-    opts: { page?: number; limit?: number; sort?: SortOption; mode?: "all" | "any" } = {}
+    opts: { page?: number; limit?: number; sort?: SortOption; mode?: "all" | "any"; company?: string } = {}
   ) => {
     const targetPage = opts.page ?? 1;
     const targetLimit = opts.limit ?? pageSize;
@@ -143,6 +146,7 @@ export default function JDMatch() {
         sort_by: opts.sort ?? sortBy,
         page: targetPage,
         limit: targetLimit,
+        company_id: opts.company ?? companyFilter,
       };
 
       const res = await matchResumes(params);
@@ -161,7 +165,7 @@ export default function JDMatch() {
   };
 
   // Prompt mode search. With `plan` the edited plan is searched again and the AI is not called.
-  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan; explain?: boolean; meaning?: boolean } = {}) => {
+  const runPromptSearch = async (opts: { page?: number; limit?: number; plan?: SearchPlan; explain?: boolean; meaning?: boolean; company?: string } = {}) => {
     const targetPage = opts.page ?? 1;
     const targetLimit = opts.limit ?? pageSize;
     // A new request starts without explanations; paging and chip edits keep the current choice.
@@ -175,10 +179,11 @@ export default function JDMatch() {
     setExplainWaiting(explain);
     setPromptError(null);
     try {
+      const company_id = (opts.company ?? companyFilter) || undefined;
       const res = await promptMatch(
         opts.plan
-          ? { plan: opts.plan, prompt: promptText.trim() || undefined, page: targetPage, limit: targetLimit, rerank: explain, meaning }
-          : { prompt: promptText, page: targetPage, limit: targetLimit, rerank: explain, meaning }
+          ? { plan: opts.plan, prompt: promptText.trim() || undefined, page: targetPage, limit: targetLimit, rerank: explain, meaning, company_id }
+          : { prompt: promptText, page: targetPage, limit: targetLimit, rerank: explain, meaning, company_id }
       );
       setExplainOn(explain);
       setReranked(!!res.reranked);
@@ -700,6 +705,15 @@ export default function JDMatch() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <CompanyFilter
+              companies={companies}
+              value={companyFilter}
+              onChange={(value) => {
+                setCompanyFilter(value);
+                if (searchMode !== "prompt") fetchMatchedCandidates({ page: 1, company: value });
+                else if (plan) runPromptSearch({ plan, company: value });
+              }}
+            />
             {searchMode === "prompt" ? (
               <span className="text-[11px] font-semibold text-slate-500">Sorted by best match</span>
             ) : (
@@ -853,10 +867,11 @@ export default function JDMatch() {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex flex-wrap items-center gap-1">
                             <span className="bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-[11px] px-2 py-0.5 rounded-md inline-block">
                               {role}
                             </span>
+                            <CompanyPills companies={appliedCompanies(row)} />
                           </div>
                         </div>
                       </td>

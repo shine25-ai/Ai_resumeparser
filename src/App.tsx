@@ -22,6 +22,12 @@ function RedirectToJob() {
   return <Navigate to={`/jobs?job=${encodeURIComponent(jobId ?? "")}`} replace />;
 }
 
+// A company's careers page: /careers/<page address>, same as /jobs?company=<page address>
+function CompanyCareersPage() {
+  const { company } = useParams();
+  return <CareersPage manageTitle company={company} key={company} />;
+}
+
 // Candidate profiles moved from /evaluation/:id to /candidates/:id
 function RedirectToCandidate() {
   const { id } = useParams();
@@ -37,6 +43,8 @@ export default function App() {
         {/* Public careers page: no login needed */}
         <Route path="/jobs" element={<CareersPage manageTitle />} />
         <Route path="/jobs/:jobId" element={<RedirectToJob />} />
+        <Route path="/careers" element={<CareersPage manageTitle />} />
+        <Route path="/careers/:company" element={<CompanyCareersPage />} />
         <Route element={<ProtectedRoute />}>
           <Route
             path="/*"
