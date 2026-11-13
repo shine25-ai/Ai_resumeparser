@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import logoUrl from "./assets/shinelogics-logo.png";
+import { OverlayContext } from "./overlay";
 import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, MapPin, Pencil, Upload, Users, X } from "lucide-react";
 import { HEARD_FROM_OPTIONS, confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
 
@@ -85,7 +87,8 @@ export function Modal({ onClose, children, wide = false, label }: { onClose: () 
     };
   }, [onClose]);
 
-  return (
+  const overlay = useContext(OverlayContext);
+  const dialog = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
@@ -100,12 +103,12 @@ export function Modal({ onClose, children, wide = false, label }: { onClose: () 
       </div>
     </div>
   );
+  return overlay ? createPortal(dialog, overlay) : dialog;
 }
 
 export function ModalHeader({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex items-center justify-between px-6 pt-5">
-      <Logo className="h-9" />
+    <div className="flex items-center justify-end px-6 pt-5">
       <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
         <X size={18} />
       </button>

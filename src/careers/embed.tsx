@@ -11,13 +11,15 @@
  *   data-manage-title  "true" sets the browser tab title to the open role (manageTitle)
  *
  * The page renders inside a shadow root, so its styles and the host site's styles cannot
- * affect each other. An open role is kept in the address as ?job=<id>.
+ * affect each other. Pop-ups render in a separate layer on <body> with the highest z-index, so
+ * the host site's headers and stacking rules cannot cover them. An open role is kept in the address as ?job=<id>.
  */
 import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import styles from "./careers.css?inline";
 import CareersPage, { type CareersPageProps } from "./CareersPage";
 import { setCareersApiBaseUrl } from "./api";
+import { OverlayContext } from "./overlay";
 
 export interface CareersEmbedOptions extends CareersPageProps {
   apiBaseUrl?: string;
@@ -63,10 +65,24 @@ export function mount(target: Element | string, options: CareersEmbedOptions = {
   container.className = "careers-root";
   shadow.replaceChildren(style, container);
 
+  // Pop-ups go in their own layer on <body>, above everything on the host page.
+  const layer = document.createElement("div");
+  layer.setAttribute("data-shinelogics-careers-overlay", "");
+  layer.style.cssText = "position: relative; z-index: 2147483647;";
+  const layerShadow = layer.attachShadow({ mode: "open" });
+  const layerStyle = document.createElement("style");
+  layerStyle.textContent = styles;
+  const overlay = document.createElement("div");
+  overlay.className = "careers-root careers-overlay";
+  layerShadow.replaceChildren(layerStyle, overlay);
+  document.body.appendChild(layer);
+
   const root: Root = createRoot(container);
   root.render(
     <StrictMode>
-      <CareersPage {...pageProps} />
+      <OverlayContext.Provider value={overlay}>
+        <CareersPage {...pageProps} />
+      </OverlayContext.Provider>
     </StrictMode>
   );
 
@@ -74,6 +90,7 @@ export function mount(target: Element | string, options: CareersEmbedOptions = {
     unmount: () => {
       root.unmount();
       shadow.replaceChildren();
+      layer.remove();
       mounted.delete(host);
     },
   };
