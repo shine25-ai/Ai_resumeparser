@@ -27,4 +27,10 @@
     -webkit-text-size-adjust: 100%;
     @apply bg-[#F4F4F8] text-slate-900 antialiased;
   }
+
+  /* The pop-up layer on <body>: holds only fixed pop-ups, so it takes no space and shows nothing. */
+  .careers-overlay {
+    background: transparent;
+    height: 0;
+  }
 }
