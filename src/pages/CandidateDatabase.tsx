@@ -105,6 +105,7 @@ export default function CandidateDatabase() {
         role: getCandidateRole(item.parsed_data, "Role not specified"),
         targetRole: getCandidateRole(item.parsed_data, "N/A"),
         source: item.resume_source || "N/A",
+        category: item.category || "",
         uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
         experience: formatExperience(item.parsed_data),
         match: typeof item.ai_evaluation?.ai_technical_score === "number"
@@ -420,6 +421,11 @@ export default function CandidateDatabase() {
                       <div className="flex flex-col gap-1">
                         <span className="text-slate-800 font-bold">{row.role}</span>
                         <div className="flex flex-wrap gap-1 items-center">
+                          {row.category && (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5 w-fit font-semibold">
+                              {row.category}
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
                             Source: {row.source}
                           </span>

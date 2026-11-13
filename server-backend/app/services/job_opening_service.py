@@ -234,8 +234,12 @@ class JobOpeningService:
         applicant_token: str,
         file: UploadFile,
         background_tasks: BackgroundTasks,
+        heard_from: Optional[str] = None,
+        note: Optional[str] = None,
     ) -> Dict[str, Any]:
         email = self._email_from_token(applicant_token)
+        heard_from = (heard_from or "").strip() or None
+        note = (note or "").strip() or None
 
         opening = await self.opening_repo.get_by_id(opening_id)
         if not opening or opening.get("status") != JOB_STATUS_OPEN or opening.get("open_positions", 0) <= 0:
@@ -255,7 +259,13 @@ class JobOpeningService:
         )
         await self.resume_repo.update(
             resume.id,
-            {"job_opening_id": opening_id, "job_title": opening["title"], "applicant_email": email},
+            {
+                "job_opening_id": opening_id,
+                "job_title": opening["title"],
+                "applicant_email": email,
+                "applicant_heard_from": heard_from,
+                "applicant_note": note,
+            },
         )
 
         application = JobApplicationDocument(
@@ -263,6 +273,8 @@ class JobOpeningService:
             opening_title=opening["title"],
             applicant_email=email,
             resume_id=resume.id,
+            heard_from=heard_from,
+            note=note,
         )
         await self.application_repo.create(application.to_dict())
         return {"application_id": application.id, "resume_id": resume.id, "opening_title": opening["title"]}
@@ -338,6 +350,8 @@ class JobOpeningService:
                 "opening_title": a["opening_title"],
                 "applicant_email": a["applicant_email"],
                 "submitted_at": a["submitted_at"],
+                "heard_from": a.get("heard_from"),
+                "note": a.get("note"),
                 "resume_id": a["resume_id"],
                 # The resume is gone when the parser merged it into an existing candidate profile.
                 "candidate_id": (resume or {}).get("candidate_id"),

@@ -7,6 +7,7 @@ import {
 import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFILE_PICTURE, apiFetch } from "../utils/Api";
 import { formatExperience, getAllSkills } from "../utils/candidateFields";
 import { useFeedback } from "../components/ui/Feedback";
+import ResumeCategoryPicker from "../components/ResumeCategoryPicker";
 
 export default function Evaluation() {
   const { toast, confirm } = useFeedback();
@@ -582,7 +583,30 @@ export default function Evaluation() {
                   {resumeSourceInformerName}
                 </span>
               </div>
+              <ResumeCategoryPicker
+                resumeId={candidate.id}
+                value={candidate.category}
+                onSaved={(updated) => setCandidate((prev: any) => ({ ...prev, ...updated }))}
+              />
             </div>
+
+            {(candidate.applicant_heard_from || candidate.applicant_note) && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-left space-y-1">
+                <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">From the careers page application</span>
+                {candidate.applicant_heard_from && (
+                  <p>
+                    <span className="text-slate-500 font-medium">How they heard about the role: </span>
+                    <span className="font-bold text-slate-800">{candidate.applicant_heard_from}</span>
+                  </p>
+                )}
+                {candidate.applicant_note && (
+                  <p className="text-slate-700 whitespace-pre-line">
+                    <span className="text-slate-500 font-medium">Their note: </span>
+                    {candidate.applicant_note}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

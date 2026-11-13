@@ -55,8 +55,8 @@ export const DEFAULT_PAGE_SETTINGS: CareersPageSettings = {
   listing_title: "Explore Open Positions",
   listing_subtitle: "Find the right opportunity to grow your career with us.",
   empty_message: "There are no open roles right now. Please check back later.",
-  success_title: "Application submitted successfully",
-  success_message: "Your resume is being processed. Thank you for applying.",
+  success_title: "Thank you! Your resume has been submitted successfully.",
+  success_message: "We have received your details and resume. You will receive updates about relevant job opportunities through your registered email address.",
 };
 
 export const readJson = async (response: Response) => {
@@ -113,9 +113,27 @@ export const confirmApplicantCode = async (
     })
   );
 
-export const submitApplication = async (jobId: string, applicantToken: string, file: File) => {
+/** Choices for "How did you hear about this role?" on the apply form. */
+export const HEARD_FROM_OPTIONS = [
+  "LinkedIn",
+  "Job portal (Naukri, Indeed, etc.)",
+  "Shinelogics website",
+  "Referred by a friend or employee",
+  "Social media",
+  "College or campus drive",
+  "Other",
+] as const;
+
+export const submitApplication = async (
+  jobId: string,
+  applicantToken: string,
+  file: File,
+  details: { heardFrom?: string; note?: string } = {}
+) => {
   const form = new FormData();
   form.append("file", file);
+  if (details.heardFrom) form.append("heard_from", details.heardFrom);
+  if (details.note?.trim()) form.append("note", details.note.trim());
   return readJson(
     await fetch(`${publicJobsUrl()}/${jobId}/apply`, {
       method: "POST",

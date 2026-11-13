@@ -274,7 +274,7 @@ export default function JobOpenings() {
       <CareersPageSettingsPanel />
 
       <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-slate-50 text-left text-slate-500">
             <tr>
               <th className="px-4 py-3">Role</th>
@@ -353,12 +353,13 @@ export default function JobOpenings() {
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Submitted</th>
+                <th className="px-4 py-3">How they heard</th>
                 <th className="px-4 py-3">Resume</th>
               </tr>
             </thead>
             <tbody>
               {applications.length === 0 && (
-                <tr><td className="px-4 py-6 text-slate-500" colSpan={5}>No applications yet.</td></tr>
+                <tr><td className="px-4 py-6 text-slate-500" colSpan={6}>No applications yet.</td></tr>
               )}
               {applications.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100">
@@ -366,6 +367,12 @@ export default function JobOpenings() {
                   <td className="px-4 py-3">{a.applicant_email}</td>
                   <td className="px-4 py-3">{a.opening_title}</td>
                   <td className="px-4 py-3">{new Date(a.submitted_at).toLocaleString()}</td>
+                  <td className="max-w-[240px] px-4 py-3">
+                    {a.heard_from || <span className="text-slate-400">—</span>}
+                    {a.note && (
+                      <div className="mt-0.5 line-clamp-2 text-xs text-slate-500" title={a.note}>“{a.note}”</div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {a.candidate_id ? (
                       <Link to={`/candidates/${a.resume_id}`} className="text-indigo-600 hover:underline">

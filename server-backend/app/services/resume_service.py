@@ -295,6 +295,9 @@ class ResumeService:
                     "previous_upload_date": existing_doc.get("upload_date") or existing_doc.get("created_at"),
                     "resume_source": temp_doc.get("resume_source") or existing_doc.get("resume_source"),
                     "resume_source_informer_name": temp_doc.get("resume_source_informer_name") or existing_doc.get("resume_source_informer_name"),
+                    "category": existing_doc.get("category") or temp_doc.get("category"),
+                    "applicant_heard_from": temp_doc.get("applicant_heard_from") or existing_doc.get("applicant_heard_from"),
+                    "applicant_note": temp_doc.get("applicant_note") or existing_doc.get("applicant_note"),
                 }
                 await self.resume_repo.update(existing_doc["id"], updated_existing_fields)
                 logger.info(f"[EXISTING_EMAIL_FLOW] Step 2/3: Updated existing candidate document '{existing_doc['id']}' in 'resumes' collection with new parsed values.")
@@ -560,6 +563,11 @@ class ResumeService:
 
         if update_payload.status is not None:
             update_fields["status"] = update_payload.status.value
+
+        for field in ("resume_source", "resume_source_informer_name", "category"):
+            value = getattr(update_payload, field)
+            if value is not None:
+                update_fields[field] = value.strip() or None
 
         hr_update_dict: Optional[Dict[str, Any]] = None
         if update_payload.hr_update is not None:

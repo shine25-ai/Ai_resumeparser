@@ -1,7 +1,8 @@
 # Careers page (embeddable)
 
 The public careers page: the open roles list, the **View Details** pop-up and the apply flow
-(email code, then resume upload). It builds into **one JavaScript file** that can be added to
+(email code, then resume upload with "How did you hear about this role?" and an optional note).
+Staff see the answer and note on the candidate profile and in the Job openings applications list. It builds into **one JavaScript file** that can be added to
 any website or project, or into **one HTML file** that can be hosted on its own.
 
 - **Fixed parts:** the Shinelogics header (logo, Careers, About Us) and footer. Both can be hidden.
@@ -81,4 +82,4 @@ Old links like `/jobs/<id>` redirect to `/jobs?job=<id>`.
 | GET | `/public/jobs/page` | Careers page text |
 | POST | `/public/jobs/verification/request` | Email a 6-digit code |
 | POST | `/public/jobs/verification/confirm` | Check the code, returns an applicant token |
-| POST | `/public/jobs/{id}/apply` | Upload the resume (`X-Applicant-Token` header) |
+| POST | `/public/jobs/{id}/apply` | Upload the resume (`X-Applicant-Token` header), with `heard_from` (how they found the role) and an optional `note` |

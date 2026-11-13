@@ -80,6 +80,22 @@ async def list_resumes(
 
 
 @router.get(
+    "/categories",
+    status_code=status.HTTP_200_OK,
+    summary="Categories already given to resumes",
+    description="Distinct resume categories, used to suggest values when categorising a profile.",
+)
+async def list_resume_categories(
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    from app.utils.response import success_response
+
+    data = await ResumeRepository(db).distinct_categories()
+    return success_response(data=data, message="Categories retrieved successfully.")
+
+
+@router.get(
     "/match",
     status_code=status.HTTP_200_OK,
     summary="Match and filter resumes by criteria",

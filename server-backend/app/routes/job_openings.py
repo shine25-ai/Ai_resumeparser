@@ -7,7 +7,7 @@ Staff (login): manage openings and open positions, and review applications.
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Query, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
@@ -89,16 +89,23 @@ async def confirm_verification_code(body: CodeConfirmRequest, service: JobOpenin
     "/{opening_id}/apply",
     status_code=status.HTTP_201_CREATED,
     summary="Submit a resume for an open role",
-    description="Send the resume file with the applicant token from the verification step in the X-Applicant-Token header.",
+    description=(
+        "Send the resume file with the applicant token from the verification step in the X-Applicant-Token header. "
+        "heard_from (how they found the role) and note (anything else they want to tell us) are optional form fields."
+    ),
 )
 async def apply_for_role(
     opening_id: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    heard_from: Optional[str] = Form(None, max_length=100),
+    note: Optional[str] = Form(None, max_length=1000),
     x_applicant_token: str = Header(..., alias="X-Applicant-Token"),
     service: JobOpeningService = Depends(get_job_service),
 ):
-    data = await service.apply(opening_id, x_applicant_token, file, background_tasks)
+    data = await service.apply(
+        opening_id, x_applicant_token, file, background_tasks, heard_from=heard_from, note=note
+    )
     return success_response(
         data=data,
         message="Application submitted successfully. Your resume is being processed.",
