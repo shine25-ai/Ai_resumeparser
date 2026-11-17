@@ -62,10 +62,10 @@ jobs:
             PM2="/root/.nvm/versions/node/v20.20.2/bin/pm2"
 
             # Move to project directory
-            cd ~/ai_resume/Ai_resumeparser/ai-parser || exit 1
+            cd ~/stagin_ai_resume/Ai_resumeparser/ai-parser || exit 1
 
             echo "Pulling latest code..."
-            git pull origin development || exit 1
+            git pull origin staging || exit 1
 
             echo "Creating virtual environment..."
             if [ ! -d "venv" ]; then
