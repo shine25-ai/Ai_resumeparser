@@ -54,7 +54,7 @@ jobs:
             APP_DIR="/root/stagin_ai_resume/Ai_resumeparser/server-backend"
             VENV="$APP_DIR/venv"
             ENV_FILE="$APP_DIR/.env"
-            APP_NAME="python-app"
+            APP_NAME="python-staging-app"
             PORT="8020"
 
             # ==========================================
@@ -64,7 +64,7 @@ jobs:
             # the old scp step copied files to /root/stagin_ai_resume/Ai_resumeparser/app instead of server-backend/app.
             REPO_DIR="/root/stagin_ai_resume/Ai_resumeparser"
             DEPLOY_SHA="${{ github.sha }}"
-            git -C "$REPO_DIR" pull origin development
+            git -C "$REPO_DIR" pull origin staging
             if ! git -C "$REPO_DIR" merge-base --is-ancestor "$DEPLOY_SHA" HEAD; then
               echo "ERROR: server checkout does not contain $DEPLOY_SHA after pulling."
               exit 1
