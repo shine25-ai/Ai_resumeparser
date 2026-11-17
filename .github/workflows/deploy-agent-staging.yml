@@ -1,0 +1,95 @@
+name: Build & Deploy AI Agents
+
+on:
+  push:
+    branches:
+      - staging
+
+# Shares the server checkout with the backend deploy, so the two run one at a time.
+concurrency:
+  group: resumeparser-server-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout source code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Install required Linux dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libcairo2-dev \
+            pkg-config \
+            python3-dev \
+            build-essential
+
+      # Install Python dependencies
+      - name: Install dependencies
+        working-directory: ai-parser
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+
+      # Verify Python files
+      - name: Verify Python Syntax
+        working-directory: ai-parser
+        run: |
+          python -m compileall .
+
+      # Deploy application to VPS
+      - name: Deploy & Restart via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST1 }}
+          username: ${{ secrets.SERVER_USER1 }}
+          key: ${{ secrets.SERVER_SSH_KEY1 }}
+          script: |
+            echo "===== DEPLOY START ====="
+
+            # PM2 full path
+            PM2="/root/.nvm/versions/node/v20.20.2/bin/pm2"
+
+            # Move to project directory
+            cd ~/stagin_ai_resume/Ai_resumeparser/ai-parser || exit 1
+
+            echo "Pulling latest code..."
+            git pull origin staging || exit 1
+
+            echo "Creating virtual environment..."
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
+
+            echo "Activating virtual environment..."
+            source venv/bin/activate
+
+            echo "Installing Python dependencies..."
+            pip install --upgrade pip setuptools wheel
+            pip install -r requirements.txt || exit 1
+
+            echo "Restarting PM2 process..."
+
+            $PM2 restart ai-backend-staging || \
+            $PM2 start main.py \
+              --name ai-backend-staging \
+              --interpreter ./venv/bin/python
+
+            echo "Saving PM2..."
+            $PM2 save
+
+            echo "PM2 Status:"
+            $PM2 list
+
+            echo "===== DEPLOY SUCCESS ====="

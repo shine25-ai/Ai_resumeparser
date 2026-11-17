@@ -1,0 +1,73 @@
+
+name: Deploy Resume Parser Frontend - Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Frontend
+        env:
+          VITE_API_BASE_URL: ${{ secrets.STAGING_VITE_API_BASE_URL }}
+        run: |
+          echo "Building staging frontend..."
+          npm run build
+
+      - name: Verify Build
+        run: |
+          echo "===== BUILD FILES ====="
+          ls -lah dist
+          find dist -maxdepth 2 -type f
+
+      - name: Deploy Frontend
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_SERVER_HOST }}
+          username: ${{ secrets.STAGING_SERVER_USER }}
+          key: ${{ secrets.STAGING_SERVER_SSH_KEY }}
+          port: 22
+          source: "dist/*"
+          target: "/var/www/resumeparser-staging"
+          strip_components: 1
+          overwrite: true
+
+      - name: Verify Server Files
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SERVER_HOST }}
+          username: ${{ secrets.STAGING_SERVER_USER }}
+          key: ${{ secrets.STAGING_SERVER_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            echo "===== STAGING DIRECTORY ====="
+            ls -lah /var/www/resumeparser-staging
+
+            echo "===== INDEX FILE ====="
+            ls -lah /var/www/resumeparser-staging/index.html
+
+            echo "===== NGINX TEST ====="
+            sudo nginx -t
+
+            echo "===== RELOADING NGINX ====="
+            sudo systemctl reload nginx
+
+            echo "===== STAGING DEPLOYMENT COMPLETED ====="
