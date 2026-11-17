@@ -51,7 +51,7 @@ jobs:
             # Backend Directory
             # ==========================================
 
-            APP_DIR="/root/ai_resume/Ai_resumeparser/server-backend"
+            APP_DIR="/root/stagin_ai_resume/Ai_resumeparser/server-backend"
             VENV="$APP_DIR/venv"
             ENV_FILE="$APP_DIR/.env"
             APP_NAME="python-app"
@@ -61,8 +61,8 @@ jobs:
             # Update Code
             # ==========================================
             # The server runs from a git checkout of this repo. Pulling it is what updates the backend:
-            # the old scp step copied files to /root/ai_resume/Ai_resumeparser/app instead of server-backend/app.
-            REPO_DIR="/root/ai_resume/Ai_resumeparser"
+            # the old scp step copied files to /root/stagin_ai_resume/Ai_resumeparser/app instead of server-backend/app.
+            REPO_DIR="/root/stagin_ai_resume/Ai_resumeparser"
             DEPLOY_SHA="${{ github.sha }}"
             git -C "$REPO_DIR" pull origin development
             if ! git -C "$REPO_DIR" merge-base --is-ancestor "$DEPLOY_SHA" HEAD; then
@@ -319,7 +319,7 @@ jobs:
             import os
             import sys
 
-            load_dotenv('/root/ai_resume/Ai_resumeparser/server-backend/.env')
+            load_dotenv('/root/stagin_ai_resume/Ai_resumeparser/server-backend/.env')
 
             database_url = os.getenv('DATABASE_URL')
 
@@ -368,7 +368,7 @@ jobs:
             python -c "
             from dotenv import load_dotenv
 
-            load_dotenv('/root/ai_resume/Ai_resumeparser/server-backend/.env')
+            load_dotenv('/root/stagin_ai_resume/Ai_resumeparser/server-backend/.env')
 
             from app.main import app
 
