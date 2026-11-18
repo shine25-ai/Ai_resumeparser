@@ -270,7 +270,7 @@ export function ApplyModal({
 
   const sendCode = () =>
     run(async () => {
-      await requestApplicantCode(email.trim());
+      await requestApplicantCode(email.trim(), job.id);
       setCode("");
       setCooldown(RESEND_SECONDS);
       setStep("code");

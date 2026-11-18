@@ -15,6 +15,9 @@ class UserResponse(BaseModel):
     role: str
     permissions: Optional[List[str]] = Field(default_factory=list)
     is_active: bool
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
+    is_superadmin: bool = False
     created_at: str
     updated_at: str
 

@@ -12,11 +12,11 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Query, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, EmailStr, Field, StringConstraints
 from typing_extensions import Annotated
 
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, is_admin_or_staff_user
+from app.core.dependencies import get_current_active_user, is_admin_or_staff_user, is_company_admin
 from app.core.exceptions import AuthorizationError
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.job_repository import (
@@ -62,6 +62,8 @@ def _require_staff(user: dict) -> None:
 
 class EmailRequest(BaseModel):
     email: str = Field(..., max_length=254)
+    opening_id: Optional[str] = Field(default=None, max_length=64, description="The role being applied for; decides the company")
+    company: Optional[str] = Field(default=None, max_length=60, description="Careers page address (slug), when no role is given")
 
 
 class CodeConfirmRequest(BaseModel):
@@ -89,7 +91,7 @@ async def get_public_page_settings(
 
 @public_router.post("/verification/request", summary="Email a verification code to the applicant")
 async def request_verification_code(body: EmailRequest, service: JobOpeningService = Depends(get_job_service)):
-    data = await service.request_code(body.email)
+    data = await service.request_code(body.email, body.company, opening_id=body.opening_id)
     return success_response(data=data, message="A verification code has been sent to your email.")
 
 
@@ -257,24 +259,35 @@ async def update_opening(
 Slug = Annotated[str, StringConstraints(max_length=60)]
 
 
+class CompanyAdmin(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+
+
 class CompanyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     slug: Optional[Slug] = Field(default=None, description="Careers page address; made from the name when left out")
+    email_domains: List[str] = Field(default_factory=list, max_length=20, description="e.g. ['abc.com']; empty allows any email")
+    admin: Optional[CompanyAdmin] = Field(default=None, description="The company's first administrator")
 
 
 class CompanyUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     slug: Optional[Slug] = None
     status: Optional[str] = Field(default=None, pattern="^(ACTIVE|INACTIVE)$")
+    email_domains: Optional[List[str]] = Field(default=None, max_length=20)
+    is_active: Optional[bool] = Field(default=None, description="Turn the whole workspace on or off (super admin)")
 
 
 @companies_router.get("", summary="List companies with role counts (staff)")
 async def list_companies(
+    all: bool = Query(False, description="Super admin: every company, with user and resume counts"),
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
     _require_staff(current_user)
-    data = await service.list_companies()
+    data = await service.list_companies(all_companies=bool(current_user.get("is_superadmin")) and all)
     return success_response(data=data, message="Companies retrieved successfully.")
 
 
@@ -284,7 +297,8 @@ async def create_company(
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
-    _require_staff(current_user)
+    if not current_user.get("is_superadmin"):
+        raise AuthorizationError("Only the platform super admin can add companies.")
     data = await service.create_company(body.model_dump())
     return success_response(data=data, message="Company added.", status_code=status.HTTP_201_CREATED)
 
@@ -296,6 +310,12 @@ async def update_company(
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
-    _require_staff(current_user)
-    data = await service.update_company(company_id, body.model_dump(exclude_unset=True))
+    changes = body.model_dump(exclude_unset=True)
+    if not current_user.get("is_superadmin"):
+        # A company admin may rename their own company and change its careers page, nothing else.
+        if not is_company_admin(current_user) or company_id != current_user.get("company_id"):
+            raise AuthorizationError("You can only change your own company.")
+        if {"email_domains", "is_active"} & set(changes):
+            raise AuthorizationError("Only the platform super admin can change email domains or turn a workspace off.")
+    data = await service.update_company(company_id, changes)
     return success_response(data=data, message="Company updated.")

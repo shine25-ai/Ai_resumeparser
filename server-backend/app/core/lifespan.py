@@ -5,7 +5,8 @@ FastAPI application lifespan context manager managing startup and shutdown tasks
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
-from app.core.bootstrap import bootstrap_default_admin
+from app.core.bootstrap import bootstrap_default_admin, bootstrap_default_skills
+from app.repositories.tenant_migration import migrate_to_companies
 from app.core.database import db_manager
 from app.core.logging import setup_logging
 from app.repositories.company_repository import bootstrap_companies
@@ -46,7 +47,8 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing FastAPI Application Startup Lifespan...")
 
     await db_manager.connect_to_database()
-    db = db_manager.get_db()
+    # Startup jobs see every company's data (app.core.tenant); requests never inherit this.
+    db = db_manager.get_raw_db()
 
     await bootstrap_default_admin(db)
 
@@ -59,6 +61,12 @@ async def lifespan(app: FastAPI):
         await bootstrap_companies(db)
     except Exception as e:
         logger.warning(f"Could not set up companies: {e}")
+
+    try:
+        await migrate_to_companies(db)
+        await bootstrap_default_skills(db)
+    except Exception as e:
+        logger.error(f"Could not move older data into company workspaces: {e}")
 
     try:
         await fail_interrupted_parses(db)

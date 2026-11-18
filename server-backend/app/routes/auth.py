@@ -4,6 +4,7 @@ Authentication routes for registration, login, logout, token refresh, and passwo
 
 from fastapi import APIRouter, Depends, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel, Field
 from app.controllers.auth_controller import AuthController
 from app.core.database import get_database
 from app.core.dependencies import get_current_active_user
@@ -11,6 +12,7 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RefreshTokenRequest, RegisterRequest
 from app.schemas.user import ChangePasswordRequest
 from app.services.auth_service import AuthService
+from app.utils.response import success_response
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
@@ -86,3 +88,22 @@ async def change_password(
     controller: AuthController = Depends(get_auth_controller),
 ):
     return await controller.change_password(current_user["id"], payload)
+
+
+class SwitchCompanyRequest(BaseModel):
+    company_id: str = Field(..., min_length=1, max_length=64)
+
+
+@router.post(
+    "/switch-company",
+    status_code=status.HTTP_200_OK,
+    summary="Open another company's workspace (super admin)",
+    description="Returns new tokens for the chosen company. Replace the stored tokens and reload.",
+)
+async def switch_company(
+    payload: SwitchCompanyRequest,
+    current_user: dict = Depends(get_current_active_user),
+    controller: AuthController = Depends(get_auth_controller),
+):
+    tokens = await controller.auth_service.switch_company(current_user, payload.company_id)
+    return success_response(data=tokens.model_dump(), message="Company switched.")

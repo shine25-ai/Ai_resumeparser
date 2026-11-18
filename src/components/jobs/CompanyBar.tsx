@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { Building2, Check, Copy, ExternalLink, Loader2, Pencil, Plus, X } from "lucide-react";
+import { Building2, Check, Copy, ExternalLink, Loader2, Pencil } from "lucide-react";
 import { useFeedback } from "../ui/Feedback";
-import { createCompany, updateCompany, type Company } from "../../utils/jobsApi";
+import { updateCompany, type Company } from "../../utils/jobsApi";
 
 // Where the public careers site lives. Defaults to this app until it moves to its own site.
 const CAREERS_SITE_URL: string = (import.meta.env.VITE_CAREERS_SITE_URL || "").replace(/\/+$/, "");
@@ -23,15 +23,14 @@ function CompanyForm({
   onSaved,
   onCancel,
 }: {
-  company?: Company;
+  company: Company;
   onSaved: (company: Company) => void;
   onCancel: () => void;
 }) {
   const { toast } = useFeedback();
-  const [name, setName] = useState(company?.name ?? "");
-  const [slug, setSlug] = useState(company?.slug ?? "");
-  // A new company's address follows its name until it is typed in.
-  const [slugTouched, setSlugTouched] = useState(!!company);
+  const [name, setName] = useState(company.name);
+  const [slug, setSlug] = useState(company.slug);
+  const [slugTouched, setSlugTouched] = useState(true);
   const [saving, setSaving] = useState(false);
   const shownSlug = slugTouched ? slug : slugify(name);
 
@@ -40,8 +39,8 @@ function CompanyForm({
     setSaving(true);
     try {
       const payload = { name: name.trim(), slug: slugify(shownSlug) };
-      const saved = company ? await updateCompany(company.id, payload) : await createCompany(payload);
-      toast(company ? "Company updated." : `${saved.name} added. Add its roles below.`, "success");
+      const saved = await updateCompany(company.id, payload);
+      toast("Company updated.", "success");
       onSaved(saved);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save the company.", "error");
@@ -78,17 +77,17 @@ function CompanyForm({
           Cancel
         </button>
         <button disabled={saving || !name.trim() || !slugify(shownSlug)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {company ? "Save" : "Add company"}
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
         </button>
       </div>
-      {company && company.slug !== slugify(shownSlug) && (
+      {company.slug !== slugify(shownSlug) && (
         <p className="text-xs text-amber-700 sm:col-span-3">Links shared with the old address will stop working.</p>
       )}
     </form>
   );
 }
 
-/** Pick the company whose roles, page text and applications are shown, and manage companies. */
+/** The workspace's company: its careers page link, name and page address, and turning the page on or off. */
 export default function CompanyBar({
   companies,
   selected,
@@ -101,7 +100,7 @@ export default function CompanyBar({
   onChanged: (company: Company) => void;
 }) {
   const { toast } = useFeedback();
-  const [mode, setMode] = useState<"add" | "edit" | null>(null);
+  const [mode, setMode] = useState<"edit" | null>(null);
   const [copied, setCopied] = useState(false);
   const link = selected ? careersUrl(selected) : "";
 
@@ -132,6 +131,12 @@ export default function CompanyBar({
         <label className="flex items-center gap-2">
           <Building2 size={18} className="text-indigo-600" />
           <span className="sr-only">Company</span>
+          {companies.length <= 1 ? (
+            <span className="text-sm font-semibold text-slate-900">
+              {selected?.name}
+              {selected?.status === "INACTIVE" ? " · page off" : ""}
+            </span>
+          ) : (
           <select
             value={selected?.id ?? ""}
             onChange={(e) => {
@@ -146,6 +151,7 @@ export default function CompanyBar({
               </option>
             ))}
           </select>
+          )}
         </label>
         {selected && (
           <button onClick={() => setMode(mode === "edit" ? null : "edit")} className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:underline">
@@ -157,12 +163,7 @@ export default function CompanyBar({
             {selected.status === "ACTIVE" ? "Turn page off" : "Turn page on"}
           </button>
         )}
-        <button
-          onClick={() => setMode(mode === "add" ? null : "add")}
-          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          {mode === "add" ? <X size={14} /> : <Plus size={14} />} Add company
-        </button>
+        {/* New companies are separate workspaces now: the super admin adds them on the Companies page. */}
       </div>
 
       {selected && (
@@ -183,16 +184,6 @@ export default function CompanyBar({
         </p>
       )}
 
-      {mode === "add" && (
-        <CompanyForm
-          onCancel={() => setMode(null)}
-          onSaved={(company) => {
-            setMode(null);
-            onChanged(company);
-            onSelect(company.id);
-          }}
-        />
-      )}
       {mode === "edit" && selected && (
         <CompanyForm
           key={selected.id}

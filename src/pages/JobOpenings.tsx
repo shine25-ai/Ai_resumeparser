@@ -219,7 +219,7 @@ export default function JobOpenings() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Job openings</h1>
-          <p className="text-sm text-slate-500">Each company has its own roles, careers page text and careers page link.</p>
+          <p className="text-sm text-slate-500">Your company's roles, careers page text and careers page link.</p>
         </div>
         <button onClick={() => Promise.all([loadCompanies(), loadOpenings(), loadApplications()])} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
           <RefreshCw size={16} /> Refresh

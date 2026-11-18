@@ -58,6 +58,10 @@ export interface UserProfile {
   role: string;
   permissions?: string[];
   is_active: boolean;
+  /** The company workspace this session works in (a super admin can switch). */
+  company_id?: string;
+  company_name?: string;
+  is_superadmin?: boolean;
   created_at: string;
   updated_at: string;
 }

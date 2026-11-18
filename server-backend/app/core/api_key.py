@@ -8,6 +8,8 @@ from fastapi.security import APIKeyHeader
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
 from app.core.exceptions import AppException, AuthenticationError, AuthorizationError
+from app.core.tenant import set_company, system_scope
+from app.models.company import DEFAULT_COMPANY_ID
 from app.repositories.integration_repository import IntegrationRepository
 from app.services.integration_service import IntegrationService, hash_api_key, key_hint
 
@@ -29,17 +31,23 @@ async def get_integration_client(
     """
     request.state.integration_key_hint = key_hint(api_key or "")
 
+    if not api_key:
+        raise AuthenticationError("X-API-Key header missing.")
+
+    # The key decides the company: everything the call reads or creates belongs to that company only.
+    with system_scope():
+        stored = await service.repo.find_by_hash(hash_api_key(api_key))
+    if not stored:
+        raise AuthenticationError("Invalid API key.")
+    company_id = stored.get("company_id") or DEFAULT_COMPANY_ID
+    set_company(company_id)
+    request.state.integration_company_id = company_id
+
     if not await service.repo.is_enabled():
         raise AppException(
             "Integration API is turned off. An admin can enable it in Settings → API Integration.",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    if not api_key:
-        raise AuthenticationError("X-API-Key header missing.")
-
-    stored = await service.repo.find_by_hash(hash_api_key(api_key))
-    if not stored:
-        raise AuthenticationError("Invalid API key.")
 
     request.state.integration_key_id = stored["id"]
     request.state.integration_key_name = stored["name"]
@@ -53,4 +61,5 @@ async def get_integration_client(
         "email": None,
         "key_id": stored["id"],
         "client_name": stored["name"],
+        "company_id": company_id,
     }

@@ -2,14 +2,16 @@
 FastAPI dependency injectors for database access, JWT user authentication, and RBAC authorization.
 """
 
-from typing import Callable, List
+from typing import Callable, List, Optional
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
 from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.core.security import decode_jwt_token
-from app.utils.constants import USERS_COLLECTION, ROLES_COLLECTION
+from app.core.tenant import set_company, system_scope
+from app.models.company import DEFAULT_COMPANY_ID
+from app.utils.constants import COMPANIES_COLLECTION, USERS_COLLECTION, ROLES_COLLECTION
 
 security_bearer = HTTPBearer(auto_error=False)
 
@@ -80,13 +82,42 @@ async def get_current_user(
     if not user_id:
         raise AuthenticationError("Token payload missing subject.")
 
-    users_collection = db[USERS_COLLECTION]
-    user = await users_collection.find_one({"id": user_id})
+    with system_scope():
+        user = await db[USERS_COLLECTION].find_one({"id": user_id})
 
-    if not user:
+    if not user or user.get("is_deleted"):
         raise AuthenticationError("Authenticated user no longer exists.")
 
+    await enter_user_company(user, payload.get("company_id"), db)
     return await _enrich_user_permissions(user, db)
+
+
+def is_superadmin(user: dict) -> bool:
+    return str((user or {}).get("role", "")).strip().lower() == "superadmin"
+
+
+async def enter_user_company(user: dict, requested_company_id: Optional[str], db: AsyncIOMotorDatabase) -> dict:
+    """
+    Limit the request to the user's company. A super admin works in the company chosen with
+    POST /auth/switch-company (carried in the token), or their own company.
+    """
+    company_id = user.get("company_id") or DEFAULT_COMPANY_ID
+    if is_superadmin(user) and requested_company_id:
+        company_id = requested_company_id
+
+    company = await db[COMPANIES_COLLECTION].find_one({"id": company_id})
+    if not company:
+        raise AuthenticationError("Your company workspace no longer exists.")
+    if company.get("is_active") is False and not is_superadmin(user):
+        raise AuthenticationError("Your company's workspace has been turned off. Please contact support.")
+
+    set_company(company_id)
+    user["home_company_id"] = user.get("company_id") or DEFAULT_COMPANY_ID
+    user["company_id"] = company_id
+    user["company_name"] = company.get("name")
+    user["company_slug"] = company.get("slug")
+    user["is_superadmin"] = is_superadmin(user)
+    return company
 
 
 async def get_current_active_user(
@@ -176,3 +207,24 @@ def require_permission(required_perm: str) -> Callable:
 
     return permission_checker
 
+
+
+def is_company_admin(user: dict) -> bool:
+    """Can manage the company's users and settings."""
+    role = str((user or {}).get("role", "")).strip().lower()
+    if role in ("admin", "superadmin"):
+        return True
+    permissions = (user or {}).get("permissions") or []
+    return "role-management" in permissions or "settings" in permissions
+
+
+async def require_company_admin(current_user: dict = Depends(get_current_active_user)) -> dict:
+    if not is_company_admin(current_user):
+        raise AuthorizationError("Only your company's administrators can do this.")
+    return current_user
+
+
+async def require_superadmin(current_user: dict = Depends(get_current_active_user)) -> dict:
+    if not is_superadmin(current_user):
+        raise AuthorizationError("Only the platform super admin can do this.")
+    return current_user
