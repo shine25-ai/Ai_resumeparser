@@ -15,8 +15,11 @@ class UserRepository(BaseRepository):
         super().__init__(db, USERS_COLLECTION)
 
     async def get_by_email(self, email: str) -> Optional[Dict[str, Any]]:
-        """Fetch active user document by normalized email address."""
-        doc = await self.find_one({"email": email.strip().lower()})
+        """Fetch active user document by normalized email address. Emails are unique across all
+        companies (one sign-in per person), so this looks in every company."""
+        from app.core.tenant import system_scope
+        with system_scope():
+            doc = await self.find_one({"email": email.strip().lower()})
         if doc and doc.get("is_deleted", False):
             return None
         return doc

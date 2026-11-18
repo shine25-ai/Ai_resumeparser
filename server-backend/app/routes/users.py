@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.user_controller import UserController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, require_company_admin
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate, UserRoleUpdate, UserUpdate
@@ -47,7 +47,7 @@ async def update_me(
     current_user: dict = Depends(get_current_active_user),
     controller: UserController = Depends(get_user_controller),
 ):
-    return await controller.update_me(current_user["id"], payload)
+    return await controller.update_me(current_user, payload)
 
 
 @router.get(
@@ -73,10 +73,10 @@ async def list_users(
 )
 async def create_user(
     payload: UserCreate,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: UserController = Depends(get_user_controller),
 ):
-    return await controller.create_user(payload)
+    return await controller.create_user(payload, admin_user)
 
 
 @router.get(
@@ -102,10 +102,10 @@ async def get_user_by_id(
 async def update_user(
     user_id: str,
     payload: UserUpdate,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: UserController = Depends(get_user_controller),
 ):
-    return await controller.update_user(user_id, payload)
+    return await controller.update_user(user_id, payload, admin_user)
 
 
 @router.put(
@@ -117,10 +117,10 @@ async def update_user(
 async def update_user_role(
     user_id: str,
     payload: UserRoleUpdate,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: UserController = Depends(get_user_controller),
 ):
-    return await controller.update_user_role(user_id, payload.role)
+    return await controller.update_user_role(user_id, payload.role, admin_user)
 
 
 @router.delete(
@@ -131,7 +131,7 @@ async def update_user_role(
 )
 async def delete_user(
     user_id: str,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: UserController = Depends(get_user_controller),
 ):
-    return await controller.delete_user(user_id)
+    return await controller.delete_user(user_id, admin_user)

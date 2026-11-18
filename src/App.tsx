@@ -12,6 +12,7 @@ import InterviewManagement from "./pages/InterviewManagement";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
+import Companies from "./pages/Companies";
 import ResumeTemplates from "./pages/ResumeTemplates";
 import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
@@ -73,6 +74,7 @@ export default function App() {
                       <Route path="/client-feedback" element={<Navigate to="/interviews" replace />} />
                       <Route path="/analytics" element={<AnalyticsReports />} />
                       <Route path="/settings" element={<Settings />} />
+                      <Route path="/companies" element={<Companies />} />
                     </Routes>
                   </div>
                 </main>

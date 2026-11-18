@@ -106,12 +106,13 @@ export const fetchPageSettings = async (company?: string): Promise<CareersPageSe
   ...(await readJson(await fetch(`${publicJobsUrl()}/page${companyQuery(company)}`))),
 });
 
-export const requestApplicantCode = async (email: string) =>
+/** openingId: the role being applied for, so the code is sent by that company's email settings. */
+export const requestApplicantCode = async (email: string, openingId?: string) =>
   readJson(
     await fetch(`${publicJobsUrl()}/verification/request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, opening_id: openingId }),
     })
   );
 

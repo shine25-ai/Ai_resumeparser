@@ -16,6 +16,8 @@ class UserDocument(BaseModel):
     email: str
     password: str
     role: str = "user"
+    # The company (workspace) this user belongs to. Stamped by the database layer when left out.
+    company_id: Optional[str] = None
     is_active: bool = True
     is_deleted: bool = False
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())

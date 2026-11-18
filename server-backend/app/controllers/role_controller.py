@@ -14,18 +14,18 @@ class RoleController:
     def __init__(self, role_service: RoleService):
         self.role_service = role_service
 
-    async def list_roles(self, skip: int = 0, limit: int = 100) -> JSONResponse:
+    async def list_roles(self, skip: int = 0, limit: int = 100, include_superadmin: bool = False) -> JSONResponse:
         """Return list of all roles."""
-        roles = await self.role_service.list_roles(skip=skip, limit=limit)
+        roles = await self.role_service.list_roles(skip=skip, limit=limit, include_superadmin=include_superadmin)
         role_list = [r.model_dump() for r in roles]
         return success_response(
             data={"total": len(role_list), "roles": role_list},
             message="Roles list retrieved successfully.",
         )
 
-    async def get_role(self, role_id: str) -> JSONResponse:
+    async def get_role(self, role_id: str, include_superadmin: bool = False) -> JSONResponse:
         """Return single role details by ID."""
-        role = await self.role_service.get_role(role_id)
+        role = await self.role_service.get_role(role_id, include_superadmin=include_superadmin)
         return success_response(
             data=role.model_dump(),
             message="Role details retrieved successfully.",

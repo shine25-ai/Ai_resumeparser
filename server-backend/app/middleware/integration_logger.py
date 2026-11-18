@@ -9,6 +9,7 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 from app.core.database import db_manager
+from app.core.tenant import company_scope, system_scope
 from app.repositories.integration_repository import IntegrationRepository
 from app.services.integration_service import IntegrationService, endpoint_label
 
@@ -48,6 +49,10 @@ class IntegrationLoggerMiddleware(BaseHTTPMiddleware):
                 or (request.client.host if request.client else None),
                 "user_agent": request.headers.get("user-agent"),
             }
-            await IntegrationService(IntegrationRepository(db_manager.get_db())).record_request(entry)
+            # Middleware runs outside the endpoint's company scope, so use the key's company explicitly.
+            company_id = getattr(state, "integration_company_id", None)
+            scope = company_scope(company_id) if company_id else system_scope()
+            with scope:
+                await IntegrationService(IntegrationRepository(db_manager.get_db())).record_request(entry)
         except Exception as e:  # logging must never break the API
             logger.warning(f"Integration request logging failed: {e}")

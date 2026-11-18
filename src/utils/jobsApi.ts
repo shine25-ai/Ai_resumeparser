@@ -22,6 +22,13 @@ export interface Company {
   open_roles_count: number;
   /** Roles and links from before companies existed belong to it; its page needs no ?company. */
   is_default: boolean;
+  /** Users must have an email at one of these domains; empty allows any email. */
+  email_domains: string[];
+  /** The whole workspace is on (its users can sign in). `status` only turns the careers page off. */
+  is_active: boolean;
+  /** Super admin list only */
+  users_count?: number;
+  resumes_count?: number;
 }
 
 export interface JobApplicationRow {
@@ -51,18 +58,9 @@ const withCompany = (companyId?: string) => (companyId ? `?company_id=${encodeUR
 
 export const fetchCompanies = async (): Promise<Company[]> => readJson(await apiFetch(COMPANIES));
 
-export const createCompany = async (payload: { name: string; slug?: string }): Promise<Company> =>
-  readJson(
-    await apiFetch(COMPANIES, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-  );
-
 export const updateCompany = async (
   id: string,
-  payload: Partial<Pick<Company, "name" | "slug" | "status">>
+  payload: Partial<Pick<Company, "name" | "slug" | "status" | "email_domains" | "is_active">>
 ): Promise<Company> =>
   readJson(
     await apiFetch(`${COMPANIES}/${id}`, {
@@ -132,3 +130,40 @@ export const updateCareersPageSettings = async (
       body: JSON.stringify(changes),
     })
   );
+
+// ── Super admin: company workspaces ─────────────────────────────────────────
+
+/** Every company, with user and resume counts (super admin). */
+export const fetchAllCompanies = async (): Promise<Company[]> => readJson(await apiFetch(`${COMPANIES}?all=true`));
+
+export interface NewWorkspace {
+  name: string;
+  slug?: string;
+  email_domains: string[];
+  admin?: { full_name: string; email: string; password: string };
+}
+
+export const createWorkspace = async (payload: NewWorkspace): Promise<Company> =>
+  readJson(
+    await apiFetch(COMPANIES, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  );
+
+/** Super admin: open another company's workspace. Stores the new tokens and profile, then reloads. */
+export const switchCompany = async (companyId: string): Promise<void> => {
+  const tokens = await readJson(
+    await apiFetch(`${BASE_URL}/auth/switch-company`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company_id: companyId }),
+    })
+  );
+  localStorage.setItem("access_token", tokens.access_token);
+  localStorage.setItem("refresh_token", tokens.refresh_token);
+  const me = await readJson(await apiFetch(`${BASE_URL}/users/me`));
+  localStorage.setItem("user", JSON.stringify(me));
+  window.location.assign("/");
+};

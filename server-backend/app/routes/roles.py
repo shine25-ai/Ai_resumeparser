@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.role_controller import RoleController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, require_role
+from app.core.dependencies import get_current_active_user, require_company_admin, require_role
 from app.repositories.role_repository import RoleRepository
 from app.schemas.role import RoleCreate, RoleUpdate
 from app.services.role_service import RoleService
@@ -34,7 +34,7 @@ async def list_roles(
     current_user: dict = Depends(get_current_active_user),
     controller: RoleController = Depends(get_role_controller),
 ):
-    return await controller.list_roles(skip=skip, limit=limit)
+    return await controller.list_roles(skip=skip, limit=limit, include_superadmin=bool(current_user.get("is_superadmin")))
 
 
 @router.get(
@@ -48,7 +48,7 @@ async def get_role(
     current_user: dict = Depends(get_current_active_user),
     controller: RoleController = Depends(get_role_controller),
 ):
-    return await controller.get_role(role_id)
+    return await controller.get_role(role_id, include_superadmin=bool(current_user.get("is_superadmin")))
 
 
 @router.post(
@@ -59,7 +59,7 @@ async def get_role(
 )
 async def create_role(
     payload: RoleCreate,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: RoleController = Depends(get_role_controller),
 ):
     return await controller.create_role(payload)
@@ -74,7 +74,7 @@ async def create_role(
 async def update_role(
     role_id: str,
     payload: RoleUpdate,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: RoleController = Depends(get_role_controller),
 ):
     return await controller.update_role(role_id, payload)
@@ -88,7 +88,7 @@ async def update_role(
 )
 async def delete_role(
     role_id: str,
-    admin_user: dict = Depends(get_current_active_user),
+    admin_user: dict = Depends(require_company_admin),
     controller: RoleController = Depends(get_role_controller),
 ):
     return await controller.delete_role(role_id)

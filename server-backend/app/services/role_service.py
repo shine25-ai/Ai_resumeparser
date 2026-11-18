@@ -11,6 +11,13 @@ from app.schemas.role import RoleCreate, RoleResponse, RoleUpdate
 from app.utils.helpers import utc_now
 
 
+
+SUPERADMIN_SLUG = "superadmin"
+
+
+def _is_superadmin_role(role: dict) -> bool:
+    return str(role.get("slug", "")).strip().lower() == SUPERADMIN_SLUG
+
 class RoleService:
     """Service handling role management operations."""
 
@@ -42,23 +49,29 @@ class RoleService:
         created = await self.role_repo.create(role_doc.to_dict())
         return RoleResponse.model_validate(created)
 
-    async def get_role(self, role_id: str) -> RoleResponse:
-        """Retrieve role details by ID."""
+    async def get_role(self, role_id: str, include_superadmin: bool = False) -> RoleResponse:
+        """Retrieve role details by ID. The super admin role is visible only to the super admin."""
         role = await self.role_repo.get_by_id(role_id)
-        if not role:
+        if not role or (not include_superadmin and _is_superadmin_role(role)):
             raise NotFoundError("Role not found.")
         return RoleResponse.model_validate(role)
 
-    async def list_roles(self, skip: int = 0, limit: int = 100) -> List[RoleResponse]:
-        """Fetch list of all active system and custom roles (excluding soft-deleted)."""
+    async def list_roles(self, skip: int = 0, limit: int = 100, include_superadmin: bool = False) -> List[RoleResponse]:
+        """
+        Active system and custom roles (excluding soft-deleted). The super admin role is listed only for the
+        super admin, so company admins never see it as an option.
+        """
         roles = await self.role_repo.find_active_roles(skip=skip, limit=limit)
-        return [RoleResponse.model_validate(r) for r in roles]
+        return [RoleResponse.model_validate(r) for r in roles if include_superadmin or not _is_superadmin_role(r)]
 
     async def update_role(self, role_id: str, payload: RoleUpdate) -> RoleResponse:
         """Update fields for specified role."""
         role = await self.role_repo.get_by_id(role_id)
         if not role or role.get("is_deleted", False):
             raise NotFoundError("Role not found.")
+        if not role.get("company_id"):
+            from app.core.exceptions import BadRequestError
+            raise BadRequestError("Built-in roles are shared by every company and cannot be changed. Create a new role instead.")
 
         update_dict = payload.model_dump(exclude_unset=True)
         if not update_dict:

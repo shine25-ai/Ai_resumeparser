@@ -2,15 +2,22 @@ import { useEffect, useState } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
   LayoutDashboard, UploadCloud, Users, Settings, Briefcase,
-  Calendar, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield, Megaphone
+  Calendar, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield, Megaphone, Building2, Undo2
 } from "lucide-react";
+import { switchCompany } from "../utils/jobsApi";
 
 interface UserState {
   full_name?: string;
   email?: string;
   role?: string;
   permissions?: string[];
+  company_id?: string;
+  company_name?: string;
+  is_superadmin?: boolean;
 }
+
+// The super admin's own company (the platform's). Opening another company's workspace switches away from it.
+const PLATFORM_COMPANY_ID = "default";
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -48,7 +55,12 @@ export function Sidebar() {
     { name: "Interviews", path: "/interviews", perm: "interviews", icon: <Calendar size={20} /> },
     { name: "Analytics", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
     // Interview types live under Settings
+    ...(user?.is_superadmin || user?.role?.toLowerCase() === "superadmin"
+      ? [{ name: "Companies", path: "/companies", perm: "companies", icon: <Building2 size={20} /> }]
+      : []),
   ];
+  const isSuper = !!user?.is_superadmin || user?.role?.toLowerCase() === "superadmin";
+  const inOtherCompany = isSuper && !!user?.company_id && user.company_id !== PLATFORM_COMPANY_ID;
 
   // Dynamic role-based filtering:
   // If user is admin or permissions array is missing/empty, show all default items.
@@ -104,7 +116,9 @@ export function Sidebar() {
               <h2 className="text-base font-extrabold bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-600 bg-clip-text text-transparent">
                 AI Recruiter
               </h2>
-              <p className="text-[11px] text-slate-500 font-medium">Smart Hiring Platform</p>
+              <p className="text-[11px] text-slate-500 font-medium truncate max-w-[150px]" title={user?.company_name}>
+                {user?.company_name || "Smart Hiring Platform"}
+              </p>
             </div>
           )}
         </div>
@@ -119,6 +133,27 @@ export function Sidebar() {
           </button>
         )}
       </div>
+
+      {inOtherCompany && (
+        <div className={`mx-3 mt-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 ${isExpanded ? "px-3 py-2" : "p-2 flex justify-center"}`}>
+          {isExpanded ? (
+            <>
+              <div className="text-[11px] font-semibold uppercase tracking-wide">Viewing as super admin</div>
+              <div className="text-xs font-bold truncate">{user?.company_name}</div>
+              <button
+                onClick={() => switchCompany(PLATFORM_COMPANY_ID)}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:underline cursor-pointer"
+              >
+                <Undo2 size={11} /> Back to my company
+              </button>
+            </>
+          ) : (
+            <button onClick={() => switchCompany(PLATFORM_COMPANY_ID)} title={`Viewing ${user?.company_name}. Back to my company`} className="cursor-pointer">
+              <Undo2 size={16} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Navigation Items */}
       <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">

@@ -20,7 +20,10 @@ from loguru import logger
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BadRequestError, ConflictError, NotFoundError
 from app.core.security import decode_jwt_token
+from app.core.tenant import company_scope, current_company_id, set_company, system_scope
 from app.models.company import (
+    clean_domains,
+    email_domain,
     COMPANY_STATUS_ACTIVE,
     COMPANY_STATUS_INACTIVE,
     DEFAULT_COMPANY_ID,
@@ -48,6 +51,7 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.settings_repository import SettingsRepository
 from app.services.resume_service import ResumeService
 from app.utils.encryption import decrypt_password
+from app.utils.constants import RESUMES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import utc_now
 
 CODE_TTL_MINUTES = 10
@@ -94,9 +98,11 @@ class JobOpeningService:
     # ── Companies ─────────────────────────────────────────────────────────────
 
     async def company_by_id(self, company_id: Optional[str]) -> Dict[str, Any]:
-        """A company for staff screens. No id means the default company."""
-        company_id = (company_id or "").strip() or DEFAULT_COMPANY_ID
-        company = await self.company_repo.get_by_id(company_id) if self.company_repo else None
+        """A company for staff screens: always the workspace the request runs in, whatever id is passed,
+        so one company cannot read or change another's roles or careers page."""
+        company_id = current_company_id() or (company_id or "").strip() or DEFAULT_COMPANY_ID
+        repo = getattr(self, "company_repo", None)
+        company = await repo.get_by_id(company_id) if repo else None
         if company:
             return company
         if company_id == DEFAULT_COMPANY_ID:
@@ -107,10 +113,13 @@ class JobOpeningService:
         """The company whose careers page is open (?company=<slug>). No slug means the default company."""
         slug = (slug or "").strip().lower()
         if not slug:
+            set_company(DEFAULT_COMPANY_ID)
             return await self.company_by_id(DEFAULT_COMPANY_ID)
-        company = await self.company_repo.get_by_slug(slug) if self.company_repo else None
-        if not company or company.get("status") == COMPANY_STATUS_INACTIVE:
+        repo = getattr(self, "company_repo", None)
+        company = await repo.get_by_slug(slug) if repo else None
+        if not company or company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:
             raise NotFoundError("This careers page was not found.")
+        set_company(company["id"])
         return company
 
     @staticmethod
@@ -120,11 +129,33 @@ class JobOpeningService:
             return {"$or": [{"company_id": company_id}, {"company_id": {"$exists": False}}]}
         return {"company_id": company_id}
 
-    async def list_companies(self) -> List[Dict[str, Any]]:
+    async def list_companies(self, all_companies: bool = False) -> List[Dict[str, Any]]:
+        """The request's own company, or every company for the super admin (all_companies)."""
         await self.company_repo.ensure_default()
-        companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500)
-        roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=10000)
+        if all_companies:
+            with system_scope():
+                companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500)
+                roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=100000)
+                users = await self.resume_repo.db[USERS_COLLECTION].aggregate([
+                    {"$match": {"is_deleted": {"$ne": True}}},
+                    {"$group": {"_id": "$company_id", "n": {"$sum": 1}}},
+                ]).to_list(length=None)
+                resumes = await self.resume_repo.db[RESUMES_COLLECTION].aggregate([
+                    {"$match": {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}},
+                    {"$group": {"_id": "$company_id", "n": {"$sum": 1}}},
+                ]).to_list(length=None)
+            user_counts = {u["_id"]: u["n"] for u in users}
+            resume_counts = {r["_id"]: r["n"] for r in resumes}
+        else:
+            companies = [await self.company_by_id(None)]
+            roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=10000)
+            user_counts, resume_counts = {}, {}
         for c in companies:
+            c.setdefault("email_domains", [])
+            c.setdefault("is_active", True)
+            if all_companies:
+                c["users_count"] = user_counts.get(c["id"], 0)
+                c["resumes_count"] = resume_counts.get(c["id"], 0)
             mine = [r for r in roles if (r.get("company_id") or DEFAULT_COMPANY_ID) == c["id"]]
             c["roles_count"] = len(mine)
             c["open_roles_count"] = sum(1 for r in mine if r.get("status") == JOB_STATUS_OPEN)
@@ -142,12 +173,47 @@ class JobOpeningService:
         return slug
 
     async def create_company(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Super admin: a new company workspace, optionally with its first administrator."""
+        from app.core.bootstrap import bootstrap_default_skills
+        from app.schemas.user import UserCreate
+        from app.services.user_service import UserService
+        from app.repositories.user_repository import UserRepository
+
         name = (data.get("name") or "").strip()
         if not name:
             raise BadRequestError("Company name is required.")
-        doc = CompanyDocument(name=name, slug=await self._clean_slug(data.get("slug") or name))
+        try:
+            domains = clean_domains(data.get("email_domains"))
+        except ValueError as e:
+            raise BadRequestError(str(e))
+        admin = data.get("admin") or None
+        db = getattr(getattr(self, "resume_repo", None), "db", None)
+        users = UserRepository(db) if db is not None else None
+        if admin:
+            if users is None:
+                raise BadRequestError("Users cannot be created here.")
+            admin_email = (admin.get("email") or "").strip().lower()
+            if domains and email_domain(admin_email) not in domains:
+                raise BadRequestError(f"The administrator's email must be at {', '.join('@' + d for d in domains)}.")
+            if await users.get_by_email(admin_email):
+                raise ConflictError(f"User with email '{admin_email}' already exists.")
+
+        doc = CompanyDocument(name=name, slug=await self._clean_slug(data.get("slug") or name), email_domains=domains)
         created = await self.company_repo.create(doc.to_dict())
-        return {**created, "roles_count": 0, "open_roles_count": 0, "is_default": False}
+        created_admin = None
+        with company_scope(created["id"]):
+            if db is not None:
+                await bootstrap_default_skills(db, created["id"])
+            if admin:
+                created_admin = await UserService(users).create_user(
+                    UserCreate(full_name=admin["full_name"], email=admin["email"], password=admin["password"], role="admin"),
+                    actor={"role": "superadmin"},
+                )
+        return {
+            **created, "roles_count": 0, "open_roles_count": 0, "is_default": False,
+            "users_count": 1 if created_admin else 0, "resumes_count": 0,
+            "admin": created_admin.model_dump() if created_admin else None,
+        }
 
     async def update_company(self, company_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
         existing = await self.company_repo.get_by_id(company_id)
@@ -166,12 +232,22 @@ class JobOpeningService:
             if company_id == DEFAULT_COMPANY_ID and changes["status"] == COMPANY_STATUS_INACTIVE:
                 raise BadRequestError("The default company's careers page cannot be turned off.")
             clean["status"] = changes["status"]
+        if "email_domains" in changes:
+            try:
+                clean["email_domains"] = clean_domains(changes["email_domains"])
+            except ValueError as e:
+                raise BadRequestError(str(e))
+        if "is_active" in changes:
+            if company_id == DEFAULT_COMPANY_ID and changes["is_active"] is False:
+                raise BadRequestError("The platform's own company cannot be turned off.")
+            clean["is_active"] = bool(changes["is_active"])
         if not clean:
             return existing
         clean["updated_at"] = utc_now().isoformat()
         updated = await self.company_repo.update(company_id, clean)
         if clean.get("name") and clean["name"] != existing["name"]:
-            await self._rename_company_everywhere(company_id, clean["name"])
+            with company_scope(company_id):
+                await self._rename_company_everywhere(company_id, clean["name"])
         return updated
 
     async def _rename_company_everywhere(self, company_id: str, name: str) -> None:
@@ -280,8 +356,21 @@ class JobOpeningService:
         finally:
             server.quit()
 
-    async def request_code(self, email: str) -> Dict[str, Any]:
+    async def _enter_opening_company(self, opening_id: str) -> Optional[Dict[str, Any]]:
+        """The opening decides the company: limit the rest of the request to it."""
+        with system_scope():
+            opening = await self.opening_repo.get_by_id(opening_id)
+        if opening:
+            set_company(opening.get("company_id") or DEFAULT_COMPANY_ID)
+        return opening
+
+    async def request_code(
+        self, email: str, company_slug: Optional[str] = None, opening_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """The code is sent with the email settings of the company the applicant is applying to."""
         clean_email = self._normalize_email(email)
+        if not (opening_id and await self._enter_opening_company(opening_id)):
+            await self.public_company(company_slug)
 
         config = await self.settings_repo.get_email_config()
         if not config:
@@ -366,11 +455,12 @@ class JobOpeningService:
         heard_from = (heard_from or "").strip() or None
         note = (note or "").strip() or None
 
-        opening = await self.opening_repo.get_by_id(opening_id)
+        # The opening decides the company: the resume goes to that company's workspace only.
+        opening = await self._enter_opening_company(opening_id)
         if not opening or opening.get("status") != JOB_STATUS_OPEN or opening.get("open_positions", 0) <= 0:
             raise BadRequestError("This role is no longer accepting applications.")
         company = await self.company_by_id(opening.get("company_id"))
-        if company.get("status") == COMPANY_STATUS_INACTIVE:
+        if company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:
             raise BadRequestError("This role is no longer accepting applications.")
         ref = company_ref(company)
 
