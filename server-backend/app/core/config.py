@@ -4,6 +4,7 @@ Application configuration management utilizing Pydantic BaseSettings and dotenv 
 
 import os
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,16 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI Resume Parser Backend"
     APP_ENV: str = "development"
     DEBUG: bool = True
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, v):
+        if isinstance(v, str):
+            if v.lower() in ("release", "prod", "production", "false", "0", "no"):
+                return False
+            if v.lower() in ("debug", "dev", "development", "true", "1", "yes"):
+                return True
+        return bool(v)
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000

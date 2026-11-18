@@ -112,6 +112,8 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
         await db[RESUME_LOGS_COLLECTION].create_index([("resume_id", 1)])
         await db[RESUME_LOGS_COLLECTION].create_index([("email", 1)])
         await db[RESUMES_COLLECTION].create_index([("parsed_data.email", 1)])
+        await db[RESUMES_COLLECTION].create_index([("redirect_id", 1)])
+        await db[USERS_COLLECTION].create_index([("id", 1)], unique=True)
         await db[ROLES_COLLECTION].create_index([("slug", 1)], unique=True)
         # Create index for skills evaluation skill_name
         await db[SKILLS_EVALUATION_COLLECTION].create_index([("skill_name", 1)], unique=True)

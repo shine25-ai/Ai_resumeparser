@@ -85,6 +85,9 @@ class ResumeController:
         sort_by: Optional[str] = None,
         stage: Optional[str] = None,
         company_id: Optional[str] = None,
+        attention: Optional[str] = None,
+        stuck_days: int = 7,
+        source: Optional[str] = None,
     ) -> JSONResponse:
         """Process request to filter resumes based on criteria."""
         filtered_response = await self.resume_service.filter_resumes(
@@ -110,6 +113,9 @@ class ResumeController:
             sort_by=sort_by,
             stage=stage,
             company_id=company_id,
+            attention=attention,
+            stuck_days=stuck_days,
+            source=source,
         )
         return success_response(
             data=filtered_response.model_dump(),
@@ -237,7 +243,7 @@ class ResumeController:
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    async def generate_interview_questions(self, resume_id: str, user_id: str, round_skills: list = None, round_categories: list = None, existing_questions: str = None, is_admin: bool = False) -> JSONResponse:
+    async def generate_interview_questions(self, resume_id: str, user_id: str, round_skills: Optional[list[str]] = None, round_categories: Optional[list[str]] = None, existing_questions: Optional[str] = None, is_admin: bool = False) -> JSONResponse:
         """Process request to generate interview questions using ai-parser."""
         questions = await self.resume_service.generate_interview_questions(resume_id, user_id, round_skills=round_skills, round_categories=round_categories, existing_questions=existing_questions, is_admin=is_admin)
         return success_response(

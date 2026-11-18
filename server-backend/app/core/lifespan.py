@@ -65,6 +65,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not check for interrupted resume parses: {e}")
 
+    # Warm up dashboard cache in the background so initial user requests are instant (< 5ms)
+    try:
+        import asyncio
+        from app.services.dashboard_service import DashboardService
+        asyncio.create_task(DashboardService().get_dashboard_metrics())
+    except Exception as e:
+        logger.warning(f"Could not warm dashboard cache: {e}")
+
     logger.info("Application startup completed successfully.")
 
     yield

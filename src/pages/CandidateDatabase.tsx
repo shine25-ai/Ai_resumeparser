@@ -25,13 +25,47 @@ export default function CandidateDatabase() {
   const [limit, setLimit] = useState<number>(10);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
-  // The Dashboard search box opens this page with ?search=<text>
-  const [searchParams] = useSearchParams();
+  // URL-driven dashboard filters (?stage=, ?attention=, ?days=, ?seniority=, ?skill=, ?city=, ?source=, ?domain=, ?sort=)
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") || "");
-  const [sortBy, setSortBy] = useState<SortOption>("latest");
-  const [stageFilter, setStageFilter] = useState<string>("All");
+  const [sortBy, setSortBy] = useState<SortOption>(() => {
+    const s = searchParams.get("sort");
+    return (s && ["latest", "oldest", "ai_score", "experience_desc", "experience_asc", "name"].includes(s))
+      ? (s as SortOption)
+      : "latest";
+  });
+  const [stageFilter, setStageFilter] = useState<string>(() => {
+    const st = searchParams.get("stage");
+    return st && CANDIDATE_STAGES.includes(st as any) ? st : "All";
+  });
   const companies = useCompanies();
   const [companyFilter, setCompanyFilter] = useState<string>(() => searchParams.get("company") || "");
+  const [attentionFilter, setAttentionFilter] = useState<string>(() => searchParams.get("attention") || "");
+  const [stuckDaysFilter, setStuckDaysFilter] = useState<number>(() => {
+    const d = Number(searchParams.get("days"));
+    return Number.isFinite(d) && d > 0 ? d : 7;
+  });
+  const [seniorityFilter, setSeniorityFilter] = useState<string>(() => searchParams.get("seniority") || "");
+  const [skillFilter, setSkillFilter] = useState<string>(() => searchParams.get("skill") || "");
+  const [cityFilter, setCityFilter] = useState<string>(() => searchParams.get("city") || "");
+  const [sourceFilter, setSourceFilter] = useState<string>(() => searchParams.get("source") || "");
+  const [domainFilter, setDomainFilter] = useState<string>(() => searchParams.get("domain") || "");
+
+  // Sync if user navigates to /database with new query params
+  useEffect(() => {
+    const st = searchParams.get("stage");
+    if (st && CANDIDATE_STAGES.includes(st as any)) setStageFilter(st);
+    setAttentionFilter(searchParams.get("attention") || "");
+    const d = Number(searchParams.get("days"));
+    if (Number.isFinite(d) && d > 0) setStuckDaysFilter(d);
+    setSeniorityFilter(searchParams.get("seniority") || "");
+    setSkillFilter(searchParams.get("skill") || "");
+    setCityFilter(searchParams.get("city") || "");
+    setSourceFilter(searchParams.get("source") || "");
+    setDomainFilter(searchParams.get("domain") || "");
+    const q = searchParams.get("search");
+    if (q !== null) setSearchTerm(q);
+  }, [searchParams]);
 
   // Advanced Specific Field Filters State
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
@@ -39,6 +73,52 @@ export default function CandidateDatabase() {
   const [emailFilter, setEmailFilter] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("");
   const [expFilter, setExpFilter] = useState<string>("");
+
+  const getSeniorityBounds = (tier: string): { min?: number; max?: number } => {
+    if (tier === "Junior") return { min: 0, max: 2 };
+    if (tier === "Mid") return { min: 2, max: 5 };
+    if (tier === "Senior") return { min: 5, max: 8 };
+    if (tier === "Lead / Architect") return { min: 8 };
+    return {};
+  };
+
+  const getDomainKeyword = (dom: string): string => {
+    const d = dom.toLowerCase();
+    if (d.includes("data")) return "data";
+    if (d.includes("support") || d.includes("security")) return "support";
+    if (d.includes("software")) return "developer";
+    if (d.includes("project") || d.includes("product")) return "manager";
+    if (d.includes("cloud") || d.includes("devops")) return "cloud";
+    if (d.includes("qa") || d.includes("test")) return "qa";
+    return dom;
+  };
+
+  const clearDashboardFilter = () => {
+    setAttentionFilter("");
+    setSeniorityFilter("");
+    setSkillFilter("");
+    setCityFilter("");
+    setSourceFilter("");
+    setDomainFilter("");
+    setStageFilter("All");
+    setSearchTerm("");
+    setPage(1);
+    setSearchParams({}, { replace: true });
+  };
+
+  const activeDashboardFilterLabel = (() => {
+    const parts: string[] = [];
+    if (attentionFilter === "unreviewed") parts.push("Resumes waiting for review");
+    else if (attentionFilter === "low_confidence") parts.push("Resumes needing manual check");
+    else if (attentionFilter === "stuck") parts.push(`Candidates waiting over ${stuckDaysFilter} days`);
+    else if (attentionFilter === "selected") parts.push("Selected & Offer candidates");
+    if (seniorityFilter) parts.push(`Experience: ${seniorityFilter}`);
+    if (skillFilter) parts.push(`Skill: ${skillFilter}`);
+    if (cityFilter) parts.push(`City: ${cityFilter}`);
+    if (sourceFilter) parts.push(`Source: ${sourceFilter}`);
+    if (domainFilter) parts.push(`Category: ${domainFilter}`);
+    return parts.join(" · ");
+  })();
 
   // Export State & Handlers
   const [exportLoading, setExportLoading] = useState<boolean>(false);
@@ -62,7 +142,20 @@ export default function CandidateDatabase() {
 
   useEffect(() => {
     fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-  }, [page, limit, sortBy, stageFilter, companyFilter]);
+  }, [
+    page,
+    limit,
+    sortBy,
+    stageFilter,
+    companyFilter,
+    attentionFilter,
+    stuckDaysFilter,
+    seniorityFilter,
+    skillFilter,
+    cityFilter,
+    sourceFilter,
+    domainFilter,
+  ]);
 
   // Debounced search on typing
   useEffect(() => {
@@ -84,17 +177,27 @@ export default function CandidateDatabase() {
   ) => {
     setLoading(true);
     try {
+      const senBounds = getSeniorityBounds(seniorityFilter);
+      const effectiveRole = rVal || (domainFilter ? getDomainKeyword(domainFilter) : "");
+
       const params: CandidateQueryParams = {
         page: targetPage,
         limit: targetLimit,
         search: searchVal,
         name: nVal,
         email: eVal,
-        role: rVal,
+        role: effectiveRole,
         experience: expVal ? Number(expVal) : undefined,
+        min_experience: senBounds.min,
+        max_experience: senBounds.max,
         sort_by: sortBy,
         stage: stageFilter,
         company_id: companyFilter,
+        attention: attentionFilter || undefined,
+        stuck_days: attentionFilter === "stuck" ? stuckDaysFilter : undefined,
+        source: sourceFilter || undefined,
+        skills: skillFilter ? [skillFilter] : undefined,
+        location: cityFilter ? [cityFilter] : undefined,
       };
 
       const resData = await getResumes(params);
@@ -193,6 +296,26 @@ export default function CandidateDatabase() {
 
       {/* Main Table Card Wrapper */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+        {/* Active Dashboard Drill-Down Filter Chip */}
+        {activeDashboardFilterLabel && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-indigo-50/80 border border-indigo-200/80 text-xs text-indigo-800">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
+              <span className="font-medium">Showing:</span>
+              <span className="font-semibold">{activeDashboardFilterLabel}</span>
+              <span className="text-indigo-600">({totalCount} matching)</span>
+            </div>
+            <button
+              type="button"
+              onClick={clearDashboardFilter}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100/60 font-medium transition-colors"
+            >
+              <X size={12} />
+              <span>Clear filter</span>
+            </button>
+          </div>
+        )}
+
         {/* Hiring stage filter */}
         <div role="radiogroup" aria-label="Filter by hiring stage" className="flex flex-wrap gap-2">
           {["All", ...CANDIDATE_STAGES].map((st) => (

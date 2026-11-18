@@ -122,6 +122,9 @@ async def match_resumes(
     sort_by: Optional[str] = Query(None, description="Sort order: latest, oldest, ai_score, experience_desc, experience_asc, name"),
     stage: Optional[str] = Query(None, description="Hiring stage: Screening, Interviewing, Offer, Hired, Closed"),
     company_id: Optional[str] = Query(None, max_length=64, description="Company applied to from the careers page; 'none' for resumes with no company"),
+    attention: Optional[str] = Query(None, description="Dashboard quick filter: unreviewed, low_confidence, stuck, selected"),
+    stuck_days: int = Query(7, ge=1, le=90, description="Threshold in days for attention=stuck"),
+    source: Optional[str] = Query(None, description="Grouped candidate source channel (Job Portals, Social & Professional, Careers Website, Referrals & Events, Agencies & Vendors, Direct & Email)"),
     current_user: dict = Depends(get_current_active_user),
     controller: ResumeController = Depends(get_resume_controller),
 ):
@@ -150,6 +153,9 @@ async def match_resumes(
         sort_by=sort_by,
         stage=stage,
         company_id=company_id,
+        attention=attention,
+        stuck_days=stuck_days,
+        source=source,
     )
 
 

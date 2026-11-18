@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Pencil, Plus, RefreshCw, X } from "lucide-react";
 import CareersPageSettingsPanel from "../components/jobs/CareersPageSettingsPanel";
 import CompanyBar from "../components/jobs/CompanyBar";
@@ -43,6 +43,11 @@ const toList = (key: SectionKey, text: string) =>
 
 const fieldClass = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none";
 
+const emptyForm = {
+  title: "", department: "", location: "", employment_type: "", experience: "", description: "", open_positions: "1",
+  responsibilities: "", required_skills: "", qualifications: "", preferred_skills: "",
+};
+
 function Field({ label, hint, className = "", children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
     <label className={`flex flex-col gap-1 ${className}`}>
@@ -55,6 +60,8 @@ function Field({ label, hint, className = "", children }: { label: string; hint?
 }
 
 export default function JobOpenings() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState<string>(readSavedCompany);
   const company = companies.find((c) => c.id === companyId) ?? companies[0];
@@ -66,10 +73,6 @@ export default function JobOpenings() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const emptyForm = {
-    title: "", department: "", location: "", employment_type: "", experience: "", description: "", open_positions: "1",
-    responsibilities: "", required_skills: "", qualifications: "", preferred_skills: "",
-  };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -126,6 +129,29 @@ export default function JobOpenings() {
   useEffect(() => {
     loadOpenings();
   }, [company?.id]);
+
+  // Honor Dashboard deep-links: ?jobId=<id> selects that role; ?action=new scrolls to the create form
+  useEffect(() => {
+    const jobIdParam = searchParams.get("jobId");
+    const actionParam = searchParams.get("action");
+
+    if (jobIdParam && openings.some((o) => o.id === jobIdParam)) {
+      setSelectedId(jobIdParam);
+      setPage(1);
+    }
+    if (actionParam === "new") {
+      setEditingId(null);
+      setForm(emptyForm);
+      setTimeout(() => {
+        formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const firstInput = formRef.current?.querySelector("input");
+        if (firstInput instanceof HTMLInputElement) firstInput.focus();
+      }, 150);
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, openings, setSearchParams]);
 
   useEffect(() => {
     loadApplications();
@@ -253,7 +279,7 @@ export default function JobOpenings() {
             </button>
           )}
         </div>
-        <form onSubmit={create} className="space-y-5">
+        <form ref={formRef} onSubmit={create} className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <Field label="Job title" className="lg:col-span-2">
               <input required maxLength={200} placeholder="Fullstack Developer" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={fieldClass} />

@@ -4,7 +4,7 @@ import {
   Calendar, Edit2, Trash2, Plus, Star, X, AlertCircle, UserCheck, FileText, RefreshCw, Eye, MapPin, Mail, Layers, Sparkles, Building2, Loader2, CheckCircle, Search, ChevronLeft, ChevronRight, MoreVertical, XCircle
 } from "lucide-react";
 import {
-  getInterviews, deleteInterview, cancelInterview,
+  getInterviews, getInterviewById, deleteInterview, cancelInterview,
   sendInterviewEmail, getInterviewTypes, MAIL_TEMPLATES_URL,
   type InterviewItem, type UserProfile, type InterviewTypeItem, apiFetch } from "../utils/Api";
 import { BulkFeedbackModal } from "../components/BulkFeedbackModal";
@@ -35,14 +35,20 @@ export default function InterviewManagement() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Modals & URL params state
+  // "Today and Upcoming" is the default view; "All" is the full table. Kept in the URL (?view=all).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialSearchParam = searchParams.get("search") || "";
+  const initialAwaitingFeedback = searchParams.get("filter") === "awaiting_feedback";
+
   // Pagination & Server Search/Filter State
   const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(10);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
-  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState<string>(initialSearchParam);
   // The search box only hits the server 300 ms after typing stops
-  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(initialSearchParam);
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
     return () => clearTimeout(timer);
@@ -51,7 +57,8 @@ export default function InterviewManagement() {
   // Specific Filters State
   const [scheduledDateFilter, setScheduledDateFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("All");
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string>(initialAwaitingFeedback ? "COMPLETED" : "All");
+  const [awaitingFeedbackOnly, setAwaitingFeedbackOnly] = useState<boolean>(initialAwaitingFeedback);
   // Verdict (how the interview went) and Stage (where the candidate is), worked out by the server
   const [recommendationFilter, setRecommendationFilter] = useState<string>("All");
   const [stageFilter, setStageFilter] = useState<string>("All");
@@ -62,6 +69,7 @@ export default function InterviewManagement() {
     statusFilter !== "All",
     recommendationFilter !== "All",
     stageFilter !== "All",
+    awaitingFeedbackOnly,
   ].filter(Boolean).length;
 
   // Bulk Selection & Modal State
@@ -85,11 +93,12 @@ export default function InterviewManagement() {
     };
   }, [openActionMenuId]);
 
-  // Modals state
-  // "Today and Upcoming" is the default view; "All" is the full table. Kept in the URL (?view=all).
-  const [searchParams, setSearchParams] = useSearchParams();
-  const view: "today" | "all" = searchParams.get("view") === "all" ? "all" : "today";
-  const setView = (next: "today" | "all") => setSearchParams(next === "all" ? { view: "all" } : {}, { replace: true });
+  const view: "today" | "all" =
+    searchParams.get("view") === "all" || awaitingFeedbackOnly ? "all" : "today";
+  const setView = (next: "today" | "all") => {
+    if (next === "today") setAwaitingFeedbackOnly(false);
+    setSearchParams(next === "all" ? { view: "all" } : {}, { replace: true });
+  };
   // Bumped after any change so the Today view reloads too
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -306,9 +315,20 @@ export default function InterviewManagement() {
       if (isClientUser || isInterviewerUser) {
         items = items.filter(isInterviewAssignedToCurrentUser);
       }
+      if (awaitingFeedbackOnly) {
+        items = items.filter((item) => !hasFeedback(item));
+      }
 
-      const total = typeof interviewData?.total === "number" ? interviewData.total : (interviewData?.data?.total || items.length);
-      const computedTotalPages = typeof interviewData?.total_pages === "number" ? interviewData.total_pages : (interviewData?.data?.total_pages || Math.ceil(total / targetLimit) || 1);
+      const total = awaitingFeedbackOnly
+        ? items.length
+        : typeof interviewData?.total === "number"
+          ? interviewData.total
+          : (interviewData?.data?.total || items.length);
+      const computedTotalPages = awaitingFeedbackOnly
+        ? Math.max(1, Math.ceil(items.length / targetLimit))
+        : typeof interviewData?.total_pages === "number"
+          ? interviewData.total_pages
+          : (interviewData?.data?.total_pages || Math.ceil(total / targetLimit) || 1);
 
       setInterviews(items);
       setTotalCount(items.length < total && (isClientUser || isInterviewerUser) ? items.length : total);
@@ -325,7 +345,56 @@ export default function InterviewManagement() {
 
   useEffect(() => {
     fetchAllData(page, limit, debouncedSearch, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter);
-  }, [page, limit, debouncedSearch, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, stageFilter]);
+  }, [page, limit, debouncedSearch, scheduledDateFilter, typeFilter, statusFilter, recommendationFilter, stageFilter, awaitingFeedbackOnly]);
+
+  // Handle direct deep-links from Dashboard (?action=schedule, ?reschedule=<id>, ?filter=awaiting_feedback, ?search=<name>)
+  useEffect(() => {
+    const action = searchParams.get("action");
+    const rescheduleId = searchParams.get("reschedule");
+    const filterParam = searchParams.get("filter");
+    const searchParam = searchParams.get("search");
+
+    if (filterParam === "awaiting_feedback") {
+      setAwaitingFeedbackOnly(true);
+      setStatusFilter("COMPLETED");
+    }
+    if (searchParam) {
+      setSearchTerm(searchParam);
+      setDebouncedSearch(searchParam);
+    }
+
+    if (action === "schedule") {
+      setInterviewForm({ mode: "schedule" });
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+      return;
+    }
+
+    if (rescheduleId) {
+      let cancelled = false;
+      getInterviewById(rescheduleId)
+        .then((inv) => {
+          if (!cancelled && inv) {
+            setInterviewForm({ mode: "reschedule", interview: inv });
+          }
+        })
+        .catch((err) => {
+          console.error("Could not load interview to reschedule:", err);
+          toast("Could not load that interview for rescheduling.", "error");
+        })
+        .finally(() => {
+          if (!cancelled) {
+            const next = new URLSearchParams(searchParams);
+            next.delete("reschedule");
+            setSearchParams(next, { replace: true });
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [searchParams, setSearchParams, toast]);
 
   // Other pages (Candidates, Interview Dashboard) open the form here with a candidate already chosen
   useEffect(() => {
@@ -661,6 +730,27 @@ export default function InterviewManagement() {
       {/* Main Table Card Wrapper ("All" view) */}
       {view === "all" && (
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-6">
+        {awaitingFeedbackOnly && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-amber-50/90 border border-amber-200/80 text-xs text-amber-900">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span className="font-semibold">Showing completed interviews missing feedback</span>
+              <span className="text-amber-700">({totalCount} matching)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAwaitingFeedbackOnly(false);
+                setStatusFilter("All");
+                setSearchParams({ view: "all" }, { replace: true });
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-800 hover:bg-amber-100/60 font-medium transition-colors"
+            >
+              <X size={12} />
+              <span>Clear filter</span>
+            </button>
+          </div>
+        )}
         {/* SERVER SEARCH & FILTERS BAR */}
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
           <div className="flex flex-col md:flex-row items-center justify-between gap-3">

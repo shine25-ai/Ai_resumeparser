@@ -2,7 +2,8 @@
 FastAPI dependency injectors for database access, JWT user authentication, and RBAC authorization.
 """
 
-from typing import Callable, List
+import time
+from typing import Callable, List, Dict, Tuple, Optional
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -12,6 +13,29 @@ from app.core.security import decode_jwt_token
 from app.utils.constants import USERS_COLLECTION, ROLES_COLLECTION
 
 security_bearer = HTTPBearer(auto_error=False)
+
+# In-memory authentication & permissions cache with 60-second TTL
+# Avoids hammering MongoDB Atlas on concurrent dashboard requests
+_USER_AUTH_CACHE: Dict[str, Tuple[dict, float]] = {}
+_USER_AUTH_TTL_SECONDS: float = 60.0
+
+def get_cached_user(user_id: str) -> Optional[dict]:
+    entry = _USER_AUTH_CACHE.get(user_id)
+    if entry:
+        user_data, cached_at = entry
+        if (time.time() - cached_at) < _USER_AUTH_TTL_SECONDS:
+            return user_data
+        _USER_AUTH_CACHE.pop(user_id, None)
+    return None
+
+def set_cached_user(user_id: str, user_data: dict) -> None:
+    _USER_AUTH_CACHE[user_id] = (user_data, time.time())
+
+def invalidate_cached_user(user_id: Optional[str] = None) -> None:
+    if user_id:
+        _USER_AUTH_CACHE.pop(user_id, None)
+    else:
+        _USER_AUTH_CACHE.clear()
 
 
 async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict:
@@ -80,13 +104,20 @@ async def get_current_user(
     if not user_id:
         raise AuthenticationError("Token payload missing subject.")
 
+    # Check RAM cache first (< 0.01ms) to eliminate redundant network roundtrips
+    cached_user = get_cached_user(user_id)
+    if cached_user:
+        return cached_user
+
     users_collection = db[USERS_COLLECTION]
     user = await users_collection.find_one({"id": user_id})
 
     if not user:
         raise AuthenticationError("Authenticated user no longer exists.")
 
-    return await _enrich_user_permissions(user, db)
+    enriched_user = await _enrich_user_permissions(user, db)
+    set_cached_user(user_id, enriched_user)
+    return enriched_user
 
 
 async def get_current_active_user(

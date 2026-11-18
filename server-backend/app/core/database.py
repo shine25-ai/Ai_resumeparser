@@ -18,17 +18,29 @@ class DatabaseManager:
         """Establish connection to MongoDB using Motor async driver."""
         logger.info(f"Connecting to MongoDB database '{settings.DATABASE_NAME}'...")
         try:
-            client_kwargs = {"serverSelectionTimeoutMS": 10000}
-            try:
-                import certifi
-                client_kwargs["tlsCAFile"] = certifi.where()
-            except ImportError:
-                pass
+            client_kwargs = {
+                "serverSelectionTimeoutMS": 5000,
+                "connectTimeoutMS": 5000,
+                "socketTimeoutMS": 10000,
+                "maxPoolSize": 30,
+                "minPoolSize": 0,
+                "maxIdleTimeMS": 60000,
+            }
+            url_lower = settings.DATABASE_URL.lower()
+            if "mongodb+srv://" in url_lower or "tls=true" in url_lower or "ssl=true" in url_lower:
+                try:
+                    import certifi
+                    client_kwargs["tlsCAFile"] = certifi.where()
+                except ImportError:
+                    pass
+                client_kwargs.setdefault("readPreference", "secondaryPreferred")
+                client_kwargs.setdefault("retryWrites", True)
 
             self.client = AsyncIOMotorClient(settings.DATABASE_URL, **client_kwargs)
             self.db = self.client[settings.DATABASE_NAME]
             # Verify connectivity
-            await self.client.admin.command("ping")
+            from pymongo import ReadPreference
+            await self.client.admin.command("ping", read_preference=ReadPreference.SECONDARY_PREFERRED)
             logger.info(f"Successfully connected to MongoDB database '{settings.DATABASE_NAME}'")
         except Exception as e:
             logger.error(

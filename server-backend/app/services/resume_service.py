@@ -254,8 +254,12 @@ class ResumeService:
                 logger.info(f"[EXISTING_EMAIL_CHECK] No valid email found in parsed_data for upload '{resume_id}'. Keys in parsed_data: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
             if not existing_doc and isinstance(parsed_data, dict):
                 # Same person with a different (or no) email: match on name + phone (gap G11).
-                existing_doc = await self.resume_repo.find_by_name_and_phone(
-                    parsed_data.get("full_name"), parsed_data.get("phone"), exclude_resume_id=resume_id)
+                parsed_full_name = parsed_data.get("full_name")
+                parsed_phone = parsed_data.get("phone")
+                if parsed_full_name and parsed_phone:
+                    existing_doc = await self.resume_repo.find_by_name_and_phone(
+                        str(parsed_full_name), str(parsed_phone), exclude_resume_id=resume_id
+                    )
                 if existing_doc:
                     match_reason = "name and phone"
                     logger.info(f"[EXISTING_NAME_PHONE_CHECK] Upload '{resume_id}' matches candidate '{existing_doc['id']}' on name and phone.")
@@ -624,6 +628,212 @@ class ResumeService:
         total_pages = math.ceil(total / limit) if limit > 0 else 1
         return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items)
 
+    async def _attention_conditions(self, attention: str, stuck_days: int = 7) -> List[Dict[str, Any]]:
+        """Exact MongoDB conditions matching Dashboard Needs Attention / KPI click-throughs."""
+        import re
+        from datetime import datetime, timezone
+        from app.utils.hiring_stage import stage_of, verdict_of
+
+        mode = (attention or "").strip().lower()
+        if not mode:
+            return []
+
+        now_utc = datetime.now(timezone.utc)
+
+        def _parse_dt(val: Any) -> Optional[datetime]:
+            if isinstance(val, datetime):
+                return val.astimezone(timezone.utc) if val.tzinfo else val.replace(tzinfo=timezone.utc)
+            if not val:
+                return None
+            s = str(val).strip()
+            try:
+                if len(s) == 10 and s[4] == "-" and s[7] == "-":
+                    return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+                return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                return None
+
+        if mode == "unreviewed":
+            # Screening candidates (no interview yet) with no hr_updates
+            stage_conds = await self._stage_conditions("Screening")
+            return stage_conds + [
+                {"$or": [{"hr_updates": {"$exists": False}}, {"hr_updates": None}, {"hr_updates": {"$size": 0}}]}
+            ]
+
+        if mode == "selected":
+            cursor = self.resume_repo.db["interviews"].find(
+                {},
+                {"_id": 0, "candidate_id": 1, "resume_id": 1, "recommendation": 1, "status": 1},
+            )
+            matching_keys: set = set()
+            async for inv in cursor:
+                if verdict_of(inv.get("recommendation"), inv.get("status")) == "Selected" or stage_of(
+                    inv.get("recommendation"), inv.get("status")
+                ) in ("Offer", "Hired"):
+                    for k in (inv.get("resume_id"), inv.get("candidate_id")):
+                        if k:
+                            matching_keys.add(str(k))
+            return [{"$or": [{"id": {"$in": list(matching_keys)}}, {"candidate_id": {"$in": list(matching_keys)}}]}]
+
+        if mode == "low_confidence":
+            cursor = self.resume_repo.db["resumes"].find(
+                {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]},
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "status": 1,
+                    "parse_error": 1,
+                    "candidate_name": 1,
+                    "parsed_data.full_name": 1,
+                    "parsed_data.name": 1,
+                    "parsed_data.email": 1,
+                    "parsed_data.phone": 1,
+                    "parsed_data.total_experience_years": 1,
+                    "parsed_data.location": 1,
+                    "parsed_data.city": 1,
+                    "parsed_data.current_location": 1,
+                    "parsed_data.primary_skills": 1,
+                    "parsed_data.programming_languages": 1,
+                    "parsed_data.frameworks": 1,
+                    "parsed_data.databases": 1,
+                    "parsed_data.cloud_tech": 1,
+                    "parsed_data.devops_and_infrastructure": 1,
+                    "parsed_data.other_technologies": 1,
+                },
+            )
+            low_ids: List[str] = []
+            async for r in cursor:
+                rid = str(r.get("id") or "")
+                if not rid:
+                    continue
+                pd = r.get("parsed_data") or {}
+                st_str = str(r.get("status") or "").upper()
+                if st_str == "FAILED" or bool(r.get("parse_error")) or not isinstance(pd, dict) or len(pd) == 0:
+                    low_ids.append(rid)
+                    continue
+                has_name = bool(pd.get("full_name") or pd.get("name") or r.get("candidate_name"))
+                has_email = bool(str(pd.get("email") or "").strip())
+                ph = re.sub(r"\D", "", str(pd.get("phone") or ""))[-10:]
+                has_phone = len(ph) >= 8
+                has_exp = pd.get("total_experience_years") is not None and str(pd.get("total_experience_years")).strip() != ""
+                has_loc = bool(pd.get("location") or pd.get("city") or pd.get("current_location"))
+                has_skills = any(
+                    bool(pd.get(f))
+                    for f in (
+                        "primary_skills",
+                        "programming_languages",
+                        "frameworks",
+                        "databases",
+                        "cloud_tech",
+                        "devops_and_infrastructure",
+                        "other_technologies",
+                    )
+                )
+                score = (
+                    (20 if has_name else 0)
+                    + (20 if has_email else 0)
+                    + (15 if has_phone else 0)
+                    + (15 if has_exp else 0)
+                    + (15 if has_skills else 0)
+                    + (15 if has_loc else 0)
+                )
+                if score < 65:
+                    low_ids.append(rid)
+            return [{"id": {"$in": low_ids}}]
+
+        if mode == "stuck":
+            inv_cursor = self.resume_repo.db["interviews"].find(
+                {},
+                {
+                    "_id": 0,
+                    "candidate_id": 1,
+                    "resume_id": 1,
+                    "recommendation": 1,
+                    "status": 1,
+                    "scheduled_date": 1,
+                    "scheduled_time": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                },
+            )
+            inv_by_key: Dict[str, List[Dict[str, Any]]] = {}
+            async for inv in inv_cursor:
+                for k in (inv.get("resume_id"), inv.get("candidate_id")):
+                    if k:
+                        inv_by_key.setdefault(str(k), []).append(inv)
+
+            res_cursor = self.resume_repo.db["resumes"].find(
+                {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]},
+                {"_id": 0, "id": 1, "candidate_id": 1, "upload_date": 1, "created_at": 1},
+            )
+            stuck_ids: List[str] = []
+            async for r in res_cursor:
+                rid = str(r.get("id") or "")
+                cid = str(r.get("candidate_id") or "")
+                cand_invs = inv_by_key.get(rid) or inv_by_key.get(cid) or []
+                if cand_invs:
+                    active_invs = [i for i in cand_invs if str(i.get("status") or "").upper() != "CANCELLED"] or cand_invs
+                    latest = max(
+                        active_invs,
+                        key=lambda i: (str(i.get("scheduled_date") or ""), str(i.get("scheduled_time") or ""), str(i.get("created_at") or "")),
+                    )
+                    earliest = min(active_invs, key=lambda i: (str(i.get("created_at") or ""), str(i.get("scheduled_date") or "")))
+                    st = stage_of(latest.get("recommendation"), latest.get("status"))
+                    if st == "Interviewing":
+                        dt = _parse_dt(earliest.get("created_at") or earliest.get("scheduled_date"))
+                        if dt and (now_utc - dt).total_seconds() / 86400.0 > stuck_days:
+                            stuck_ids.append(rid)
+                    elif st == "Offer":
+                        dt = _parse_dt(latest.get("updated_at") or latest.get("scheduled_date") or latest.get("created_at"))
+                        if dt and (now_utc - dt).total_seconds() / 86400.0 > stuck_days:
+                            stuck_ids.append(rid)
+                else:
+                    dt = _parse_dt(r.get("upload_date") or r.get("created_at"))
+                    if dt and (now_utc - dt).total_seconds() / 86400.0 > stuck_days:
+                        stuck_ids.append(rid)
+            return [{"id": {"$in": stuck_ids}}]
+
+        return []
+
+    async def _source_conditions(self, source: str) -> List[Dict[str, Any]]:
+        """Match normalized grouped divisions from Dashboard Where Candidates Come From with exact parity."""
+        from app.services.dashboard_insights_service import _classify_source
+
+        src = (source or "").strip().lower()
+        if not src:
+            return []
+
+        apps_cursor = self.resume_repo.db["job_applications"].find(
+            {}, {"_id": 0, "resume_id": 1, "heard_from": 1}
+        )
+        app_by_resume: Dict[str, List[Dict[str, Any]]] = {}
+        async for app_doc in apps_cursor:
+            rid = str(app_doc.get("resume_id") or "")
+            if rid:
+                app_by_resume.setdefault(rid, []).append(app_doc)
+
+        res_cursor = self.resume_repo.db["resumes"].find(
+            {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]},
+            {"_id": 0, "id": 1, "resume_source": 1, "applicant_heard_from": 1},
+        )
+        matching_ids: List[str] = []
+        async for r in res_cursor:
+            rid = str(r.get("id") or "")
+            if not rid:
+                continue
+            r_apps = app_by_resume.get(rid, [])
+            raw_src = (
+                r.get("resume_source")
+                or r.get("applicant_heard_from")
+                or (r_apps[0].get("heard_from") if r_apps else None)
+            )
+            group_name, sub_name = _classify_source(raw_src, has_app=bool(r_apps))
+            if group_name.lower() == src or sub_name.lower() == src or src in group_name.lower():
+                matching_ids.append(rid)
+
+        return [{"id": {"$in": matching_ids}}]
+
     async def filter_resumes(
         self,
         user_id: str,
@@ -648,11 +858,18 @@ class ResumeService:
         sort_by: Optional[str] = None,
         stage: Optional[str] = None,
         company_id: Optional[str] = None,
+        attention: Optional[str] = None,
+        stuck_days: int = 7,
+        source: Optional[str] = None,
     ) -> ResumeListResponse:
         """Filter resumes matching criteria with backend pagination and total_pages calculation."""
         import math
         extra_conditions = await self._stage_conditions(stage) if stage and stage.strip().upper() != "ALL" else []
         extra_conditions += company_conditions(company_id)
+        if attention:
+            extra_conditions += await self._attention_conditions(attention, stuck_days=stuck_days)
+        if source:
+            extra_conditions += await self._source_conditions(source)
         res_dict = await self.resume_repo.filter_resumes(
             extra_conditions=extra_conditions,
             user_id=user_id,
@@ -1134,7 +1351,7 @@ class ResumeService:
             stream = io.BytesIO(csv_buffer.getvalue().encode("utf-8-sig"))
             return stream, "candidate_database_export.csv", "text/csv"
 
-    async def generate_interview_questions(self, resume_id: str, user_id: str, round_skills: list = None, round_categories: list = None, existing_questions: str = None, is_admin: bool = False) -> Dict[str, Any]:
+    async def generate_interview_questions(self, resume_id: str, user_id: str, round_skills: Optional[list[str]] = None, round_categories: Optional[list[str]] = None, existing_questions: Optional[str] = None, is_admin: bool = False) -> Dict[str, Any]:
         """Call AI parser to generate interview questions for a candidate."""
         resume = await self.resume_repo.get_by_id(resume_id)
         if not resume:
