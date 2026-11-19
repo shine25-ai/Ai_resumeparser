@@ -16,15 +16,15 @@ class UserController:
 
     async def get_me(self, current_user: dict) -> JSONResponse:
         """Return profile information of currently authenticated user with attached permissions."""
-        user_response = await self.user_service.get_user_profile(current_user["id"])
+        user_response = await self.user_service.get_me(current_user)
         return success_response(
             data=user_response.model_dump(),
             message="User profile retrieved successfully.",
         )
 
-    async def create_user(self, payload: UserCreate) -> JSONResponse:
+    async def create_user(self, payload: UserCreate, actor: dict) -> JSONResponse:
         """Create a new user account (Admin privilege)."""
-        user_response = await self.user_service.create_user(payload)
+        user_response = await self.user_service.create_user(payload, actor)
         return success_response(
             data=user_response.model_dump(),
             message="User created successfully.",
@@ -39,33 +39,33 @@ class UserController:
             message="User details retrieved successfully.",
         )
 
-    async def update_me(self, user_id: str, payload: UserUpdate) -> JSONResponse:
+    async def update_me(self, current_user: dict, payload: UserUpdate) -> JSONResponse:
         """Update authenticated user's profile information."""
-        user_response = await self.user_service.update_user_profile(user_id, payload)
+        user_response = await self.user_service.update_me(current_user, payload)
         return success_response(
             data=user_response.model_dump(),
             message="User profile updated successfully.",
         )
 
-    async def update_user(self, user_id: str, payload: UserUpdate) -> JSONResponse:
+    async def update_user(self, user_id: str, payload: UserUpdate, actor: dict) -> JSONResponse:
         """Update specified user's profile information (Admin privilege)."""
-        user_response = await self.user_service.update_user_profile(user_id, payload)
+        user_response = await self.user_service.update_user_profile(user_id, payload, actor)
         return success_response(
             data=user_response.model_dump(),
             message="User updated successfully.",
         )
 
-    async def update_user_role(self, user_id: str, role: str) -> JSONResponse:
+    async def update_user_role(self, user_id: str, role: str, actor: dict) -> JSONResponse:
         """Update role for specified user (Admin privilege)."""
-        user_response = await self.user_service.update_user_role(user_id, role)
+        user_response = await self.user_service.update_user_role(user_id, role, actor)
         return success_response(
             data=user_response.model_dump(),
             message="User role updated successfully.",
         )
 
-    async def delete_user(self, user_id: str) -> JSONResponse:
+    async def delete_user(self, user_id: str, actor: dict) -> JSONResponse:
         """Delete user account by ID (Admin privilege)."""
-        await self.user_service.delete_user(user_id)
+        await self.user_service.delete_user(user_id, actor)
         return success_response(
             data=None,
             message="User deleted successfully.",

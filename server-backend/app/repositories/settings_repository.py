@@ -1,5 +1,6 @@
 from typing import Optional
 from app.core.database import get_database
+from app.core.tenant import system_scope
 from app.models.settings import EmailConfigModel, AIConfigModel, AppConfigModel
 
 class SettingsRepository:
@@ -24,8 +25,10 @@ class SettingsRepository:
         )
         return config
 
+    # The AI provider settings belong to the platform (no company); email and app settings are per company.
     async def get_ai_config(self) -> Optional[AIConfigModel]:
-        doc = await self.collection.find_one({"type": "ai_config"})
+        with system_scope():
+            doc = await self.collection.find_one({"type": "ai_config", "company_id": None})
         if doc:
             return AIConfigModel(**doc)
         return None
@@ -33,12 +36,13 @@ class SettingsRepository:
     async def save_ai_config(self, config: AIConfigModel) -> AIConfigModel:
         config_dict = config.model_dump()
         config_dict["type"] = "ai_config"
-        
-        await self.collection.update_one(
-            {"type": "ai_config"},
-            {"$set": config_dict},
-            upsert=True
-        )
+
+        with system_scope():
+            await self.collection.update_one(
+                {"type": "ai_config", "company_id": None},
+                {"$set": config_dict},
+                upsert=True
+            )
         return config
 
     async def get_app_config(self) -> Optional[AppConfigModel]:

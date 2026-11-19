@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.utils.constants import ROLES_COLLECTION, USERS_COLLECTION, SKILLS_EVALUATION_COLLECTION
 from app.utils.helpers import generate_uuid, utc_now
+from app.models.company import DEFAULT_COMPANY_ID
 
 
 DEFAULT_SYSTEM_ROLES = [
@@ -22,6 +23,17 @@ DEFAULT_SYSTEM_ROLES = [
         ],
         "is_system": True,
     },
+    {
+        "name": "Super Admin",
+        "slug": "superadmin",
+        "description": "Platform owner: manages companies and can open any company's workspace.",
+        "permissions": [
+            "dashboard", "upload", "database", "evaluation",
+            "jd-match", "interviews",
+            "analytics", "settings", "role-management", "companies"
+        ],
+        "is_system": True,
+    },
 ]
 
 
@@ -30,7 +42,7 @@ async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:
     """Idempotently create default system roles if absent in MongoDB."""
     roles_collection = db[ROLES_COLLECTION]
     for default_role in DEFAULT_SYSTEM_ROLES:
-        existing = await roles_collection.find_one({"slug": default_role["slug"]})
+        existing = await roles_collection.find_one({"slug": default_role["slug"], "company_id": None})
         if not existing:
             role_doc = {
                 "id": generate_uuid(),
@@ -46,10 +58,10 @@ async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:
             logger.info(f"Bootstrapped system role: {default_role['name']} ({default_role['slug']})")
 
 
-async def bootstrap_default_skills(db: AsyncIOMotorDatabase) -> None:
-    """Idempotently bootstrap default skills evaluations templates."""
+async def bootstrap_default_skills(db: AsyncIOMotorDatabase, company_id: str = DEFAULT_COMPANY_ID) -> None:
+    """Idempotently bootstrap a company's default skills evaluation templates."""
     collection = db[SKILLS_EVALUATION_COLLECTION]
-    count = await collection.count_documents({})
+    count = await collection.count_documents({"company_id": company_id})
     if count == 0:
         default_templates = [
             {
@@ -88,11 +100,24 @@ async def bootstrap_default_skills(db: AsyncIOMotorDatabase) -> None:
                 "id": generate_uuid(),
                 "skill_name": template["skill_name"],
                 "categories": template["categories"],
+                "company_id": company_id,
                 "created_at": utc_now().isoformat(),
                 "updated_at": utc_now().isoformat()
             }
             await collection.insert_one(doc)
             logger.info(f"Bootstrapped default skill evaluation template: {template['skill_name']}")
+
+
+BUILT_IN_ADMIN_PASSWORD = "Admin@123"
+
+
+def _uses_public_default_password() -> bool:
+    return settings.DEFAULT_ADMIN_PASSWORD == BUILT_IN_ADMIN_PASSWORD
+
+
+def _is_local_database() -> bool:
+    url = settings.DATABASE_URL.lower()
+    return any(host in url for host in ("localhost", "127.0.0.1", "[::1]"))
 
 
 async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
@@ -102,7 +127,6 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
     This operation is strictly idempotent.
     """
     await bootstrap_default_roles(db)
-    await bootstrap_default_skills(db)
 
     users_collection = db[USERS_COLLECTION]
 
@@ -112,20 +136,34 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
         await db[RESUME_LOGS_COLLECTION].create_index([("resume_id", 1)])
         await db[RESUME_LOGS_COLLECTION].create_index([("email", 1)])
         await db[RESUMES_COLLECTION].create_index([("parsed_data.email", 1)])
-        await db[RESUMES_COLLECTION].create_index([("redirect_id", 1)])
-        await db[USERS_COLLECTION].create_index([("id", 1)], unique=True)
-        await db[ROLES_COLLECTION].create_index([("slug", 1)], unique=True)
-        # Create index for skills evaluation skill_name
-        await db[SKILLS_EVALUATION_COLLECTION].create_index([("skill_name", 1)], unique=True)
+        await db[USERS_COLLECTION].create_index([("company_id", 1)])
+        await db[RESUMES_COLLECTION].create_index([("company_id", 1), ("upload_date", -1)])
+        # Unique per company: see app.repositories.tenant_migration
         logger.info(f"Initialized MongoDB collections '{RESUME_LOGS_COLLECTION}', '{RESUMES_COLLECTION}', and '{ROLES_COLLECTION}' with indexes.")
     except Exception as idx_err:
         logger.warning(f"Index initialization note: {idx_err}")
 
     admin_email = settings.DEFAULT_ADMIN_EMAIL.strip().lower()
+    if _uses_public_default_password() and not _is_local_database():
+        # A server started without DEFAULT_ADMIN_* would otherwise create (or promote) an admin whose
+        # password is published in this repository, and make it the platform super admin.
+        logger.warning(
+            "DEFAULT_ADMIN_PASSWORD is the built-in default; skipping the default admin on a non-local "
+            "database. Set DEFAULT_ADMIN_EMAIL and DEFAULT_ADMIN_PASSWORD in the server's .env."
+        )
+        return
     existing_admin = await users_collection.find_one({"email": admin_email})
 
     if existing_admin:
-        logger.info(f"Default admin user '{admin_email}' already exists. Skipping bootstrap.")
+        # The bootstrap admin is the platform super admin, in the default company.
+        fix = {}
+        if str(existing_admin.get("role", "")).lower() != "superadmin":
+            fix["role"] = "superadmin"
+        if not existing_admin.get("company_id"):
+            fix["company_id"] = DEFAULT_COMPANY_ID
+        if fix:
+            await users_collection.update_one({"_id": existing_admin["_id"]}, {"$set": fix})
+            logger.info(f"Default admin user '{admin_email}' is now the platform super admin.")
         return
 
     logger.info(f"Default admin user '{admin_email}' not found. Initializing bootstrap administrator creation...")
@@ -135,11 +173,12 @@ async def bootstrap_default_admin(db: AsyncIOMotorDatabase) -> None:
         "full_name": settings.DEFAULT_ADMIN_NAME,
         "email": admin_email,
         "password": hash_password(settings.DEFAULT_ADMIN_PASSWORD),
-        "role": settings.DEFAULT_ADMIN_ROLE,
+        "role": "superadmin",
+        "company_id": DEFAULT_COMPANY_ID,
         "is_active": True,
         "created_at": utc_now().isoformat(),
         "updated_at": utc_now().isoformat(),
     }
 
     await users_collection.insert_one(admin_document)
-    logger.info(f"Successfully bootstrapped default admin account for '{admin_email}' with role '{settings.DEFAULT_ADMIN_ROLE}'.")
+    logger.info(f"Successfully bootstrapped default admin account for '{admin_email}' as the platform super admin.")

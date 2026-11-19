@@ -4,7 +4,7 @@ from app.schemas.settings import EmailConfigCreate, EmailConfigResponse
 from app.controllers.settings_controller import SettingsController
 from pydantic import BaseModel, EmailStr
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, require_company_admin, require_superadmin
 
 # Logged-in users only: these hold SMTP and AI provider settings
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"], dependencies=[Depends(get_current_active_user)])
@@ -19,6 +19,7 @@ async def get_email_config(controller: SettingsController = Depends(get_controll
 @router.put("/email", response_model=EmailConfigResponse)
 async def update_email_config(
     config: EmailConfigCreate,
+    _admin: dict = Depends(require_company_admin),
     controller: SettingsController = Depends(get_controller)
 ):
     return await controller.update_email_config(config)
@@ -42,6 +43,7 @@ async def get_ai_config(controller: SettingsController = Depends(get_controller)
 @router.put("/ai", response_model=AIConfigResponse)
 async def update_ai_config(
     config: AIConfigCreate,
+    _admin: dict = Depends(require_superadmin),  # one AI provider for the whole platform
     controller: SettingsController = Depends(get_controller)
 ):
     return await controller.update_ai_config(config)
@@ -59,6 +61,7 @@ async def get_app_config(controller: SettingsController = Depends(get_controller
 @router.put("/app", response_model=AppConfigResponse)
 async def update_app_config(
     config: AppConfigCreate,
+    _admin: dict = Depends(require_company_admin),
     controller: SettingsController = Depends(get_controller)
 ):
     return await controller.update_app_config(config)

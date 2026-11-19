@@ -7,7 +7,8 @@ from enum import Enum
 
 class UserRole(str, Enum):
     """User system roles."""
-    ADMIN = "admin"
+    SUPERADMIN = "superadmin"  # Platform owner: manages companies and can open any company's workspace
+    ADMIN = "admin"  # A company's administrator: manages that company's users and settings
     USER = "user"
 
 

@@ -6,6 +6,7 @@ from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from loguru import logger
 from app.core.config import settings
+from app.core.tenant import ScopedDatabase
 
 
 class DatabaseManager:
@@ -18,23 +19,15 @@ class DatabaseManager:
         """Establish connection to MongoDB using Motor async driver."""
         logger.info(f"Connecting to MongoDB database '{settings.DATABASE_NAME}'...")
         try:
-            client_kwargs = {
-                "serverSelectionTimeoutMS": 5000,
-                "connectTimeoutMS": 5000,
-                "socketTimeoutMS": 10000,
-                "maxPoolSize": 30,
-                "minPoolSize": 0,
-                "maxIdleTimeMS": 60000,
-            }
-            url_lower = settings.DATABASE_URL.lower()
-            if "mongodb+srv://" in url_lower or "tls=true" in url_lower or "ssl=true" in url_lower:
+            client_kwargs = {"serverSelectionTimeoutMS": 10000}
+            url = settings.DATABASE_URL.lower()
+            uses_tls = url.startswith("mongodb+srv://") or "tls=true" in url or "ssl=true" in url
+            if uses_tls:  # a local MongoDB without TLS rejects tlsCAFile
                 try:
                     import certifi
                     client_kwargs["tlsCAFile"] = certifi.where()
                 except ImportError:
                     pass
-                client_kwargs.setdefault("readPreference", "secondaryPreferred")
-                client_kwargs.setdefault("retryWrites", True)
 
             self.client = AsyncIOMotorClient(settings.DATABASE_URL, **client_kwargs)
             self.db = self.client[settings.DATABASE_NAME]
@@ -57,7 +50,11 @@ class DatabaseManager:
             logger.info("MongoDB connection closed.")
 
     def get_db(self) -> AsyncIOMotorDatabase:
-        """Retrieve active Motor database instance."""
+        """The database limited to the request's company (see app.core.tenant)."""
+        return ScopedDatabase(self.get_raw_db())  # type: ignore[return-value]
+
+    def get_raw_db(self) -> AsyncIOMotorDatabase:
+        """Every company's data, with no company limits. Startup migrations only."""
         if self.db is None:
             raise RuntimeError("Database connection has not been initialized.")
         return self.db

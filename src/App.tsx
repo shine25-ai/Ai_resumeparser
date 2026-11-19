@@ -1,6 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
-import { TopHeader } from "./components/TopHeader";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import SessionExpiredModal from "./components/SessionExpiredModal";
 import { FeedbackProvider } from "./components/ui/Feedback";
@@ -13,6 +12,7 @@ import InterviewManagement from "./pages/InterviewManagement";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
+import Companies from "./pages/Companies";
 import ResumeTemplates from "./pages/ResumeTemplates";
 import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
@@ -41,28 +41,26 @@ function RedirectToCandidate() {
 export default function App() {
   return (
     <FeedbackProvider>
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        {/* Public careers page: no login needed */}
-        <Route path="/jobs" element={<CareersPage manageTitle />} />
-        <Route path="/jobs/:jobId" element={<RedirectToJob />} />
-        <Route path="/careers" element={<CareersPage manageTitle />} />
-        <Route path="/careers/:company" element={<CompanyCareersPage />} />
-        {/* Public candidate self-service status tracker */}
-        <Route path="/track/:token" element={<CandidateTracker />} />
-        <Route element={<ProtectedRoute />}>
-          <Route
-            path="/*"
-            element={
-              <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
-                <SessionExpiredModal />
-                <Sidebar />
-                <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden transition-all duration-300">
-                  <TopHeader />
-                  <main className="flex-1 overflow-y-auto relative pb-20 md:pb-0">
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          {/* Public careers page: no login needed */}
+          <Route path="/jobs" element={<CareersPage manageTitle />} />
+          <Route path="/jobs/:jobId" element={<RedirectToJob />} />
+          <Route path="/careers" element={<CareersPage manageTitle />} />
+          <Route path="/careers/:company" element={<CompanyCareersPage />} />
+          {/* Public candidate self-service status tracker */}
+          <Route path="/track/:token" element={<CandidateTracker />} />
+          <Route element={<ProtectedRoute />}>
+            <Route
+              path="/*"
+              element={
+                <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+                  <SessionExpiredModal />
+                  <Sidebar />
+                  <main className="flex-1 overflow-y-auto relative md:pl-20 pb-20 md:pb-0 transition-all duration-300">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-slate-50 to-slate-50 -z-10" />
-                    <div className="p-2 sm:p-4 md:p-6 h-full">
+                    <div className="p-2 sm:p-4 md:p-8 h-full">
                       <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/upload" element={<Upload />} />
@@ -83,16 +81,16 @@ export default function App() {
                         <Route path="/pipeline" element={<PipelineHub />} />
                         <Route path="/audit-log" element={<AuditLog />} />
                         <Route path="/settings" element={<Settings />} />
+                        <Route path="/companies" element={<Companies />} />
                       </Routes>
                     </div>
                   </main>
                 </div>
-              </div>
-            }
-          />
-        </Route>
-      </Routes>
-    </Router>
+              }
+            />
+          </Route>
+        </Routes>
+      </Router>
     </FeedbackProvider>
   );
 }

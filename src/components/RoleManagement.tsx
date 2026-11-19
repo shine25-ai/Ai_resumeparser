@@ -162,6 +162,18 @@ export default function RoleManagement() {
     return ["admin", "administrator", "superadmin"].includes(slug) || ["admin", "administrator"].includes(name);
   };
 
+  // Only the platform super admin sees, changes or assigns the super admin role and account.
+  const viewerIsSuper = (() => {
+    try {
+      const me = JSON.parse(localStorage.getItem("user") || "{}");
+      return !!me?.is_superadmin || String(me?.role || "").toLowerCase() === "superadmin";
+    } catch {
+      return false;
+    }
+  })();
+  const isSuperUser = (user: UserProfile) => (user.role || "").toLowerCase() === "superadmin";
+  const lockedForViewer = (user: UserProfile) => isSuperUser(user) && !viewerIsSuper;
+
   const isAdministratorUser = (user: UserProfile) => {
     const role = (user.role || "").toLowerCase();
     const email = (user.email || "").toLowerCase();
@@ -476,6 +488,11 @@ export default function RoleManagement() {
                     <td className="p-4 text-sm text-slate-600 align-top truncate max-w-xs">{u.email}</td>
 
                     <td className="p-4 align-top">
+                      {lockedForViewer(u) ? (
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 border border-indigo-200 text-indigo-700">
+                          Super Admin
+                        </span>
+                      ) : (
                       <select
                         value={u.role}
                         disabled={updatingUserId === u.id}
@@ -488,6 +505,7 @@ export default function RoleManagement() {
                           </option>
                         ))}
                       </select>
+                      )}
                     </td>
 
                     <td className="p-4 align-top">
@@ -506,6 +524,7 @@ export default function RoleManagement() {
 
                     <td className="p-4 text-right align-top whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
+                        {!lockedForViewer(u) && (
                         <button
                           onClick={() => handleOpenEditUserModal(u)}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -513,6 +532,7 @@ export default function RoleManagement() {
                          aria-label="Edit">
                           <Edit2 className="w-4 h-4" />
                         </button>
+                        )}
                         {!isAdministratorUser(u) && (
                           <button
                             onClick={() => handleDeleteUser(u)}

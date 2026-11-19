@@ -44,7 +44,7 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None,
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None, extra_claims: Optional[Dict[str, Any]] = None) -> str:
     """Generate JWT Refresh Token for subject (user_id)."""
     now = datetime.now(timezone.utc)
     if expires_delta:
@@ -58,6 +58,8 @@ def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None
         "iat": now,
         "exp": expire,
     }
+    if extra_claims:
+        payload.update(extra_claims)
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
