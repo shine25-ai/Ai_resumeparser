@@ -511,16 +511,6 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
     }
   };
 
-  const handleSkillRatingChange = (index: number, newRating: number) => {
-    const updated = [...skillRatings];
-    updated[index] = {
-      ...updated[index],
-      rating: newRating,
-      evaluator_name: updated[index].evaluator_name || currentLoggedInName || undefined,
-    };
-    onChangeSkills(updated);
-  };
-
   const handleCategoryRatingChange = (catName: string, newRating: number, weightage: number) => {
     if (!onChangeCategoryScores || !selectedSkillName) return;
     const newScore = Math.round((newRating / 5) * weightage * 10) / 10;
@@ -1032,27 +1022,17 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                   Overall Rating for <span className="text-indigo-600 uppercase tracking-wide">{skillRatings[selectedSkillIndex].skill_name}</span>:
                 </span>
 
-                {/* Interactive Star Rating */}
-                <div className="flex items-center gap-1">
+                {/* Non-editable Star Rating Display */}
+                <div className="flex items-center gap-1 select-none" title="Overall rating computed from category ratings">
                   {[1, 2, 3, 4, 5].map((starVal) => {
                     const currentRating = Number(skillRatings[selectedSkillIndex].rating) || 0;
                     const isFilled = currentRating >= starVal;
                     const isHalf = !isFilled && currentRating >= starVal - 0.5;
 
                     return (
-                      <button
+                      <div
                         key={starVal}
-                        type="button"
-                        disabled={readOnly}
-                        onClick={() => {
-                          if (!readOnly) {
-                            handleSkillRatingChange(selectedSkillIndex, starVal);
-                          }
-                        }}
-                        className={`p-0.5 rounded transition-transform ${
-                          readOnly ? "cursor-default" : "hover:scale-115 cursor-pointer active:scale-95"
-                        }`}
-                        title={`Rate ${starVal} star${starVal > 1 ? "s" : ""}`}
+                        className="p-0.5 cursor-default"
                       >
                         <Star
                           size={18}
@@ -1061,35 +1041,26 @@ export const SkillRatingsEvaluation: React.FC<SkillRatingsEvaluationProps> = ({
                               ? "text-amber-400 fill-amber-400"
                               : isHalf
                               ? "text-amber-400 fill-amber-400/50"
-                              : "text-slate-300 hover:text-amber-300"
+                              : "text-slate-300"
                           } transition-colors`}
                         />
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
 
-                {/* Decimal Number Input */}
-                <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs">
-                  {!readOnly ? (
-                    <input
-                      type="number"
-                      min={0}
-                      max={5}
-                      step={0.1}
-                      value={skillRatings[selectedSkillIndex].rating !== undefined ? skillRatings[selectedSkillIndex].rating : ""}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        handleSkillRatingChange(selectedSkillIndex, isNaN(v) ? 0 : Math.min(5, Math.max(0, v)));
-                      }}
-                      placeholder="0.0"
-                      className="w-14 h-7 bg-slate-50 border border-slate-300 rounded-lg px-1.5 text-xs font-black text-slate-900 text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
-                    />
-                  ) : (
-                    <span className="text-xs font-black text-slate-800 px-1">
-                      {skillRatings[selectedSkillIndex].rating}
-                    </span>
-                  )}
+                {/* Non-editable Rating Display Badge */}
+                <div
+                  className="flex items-center gap-1.5 bg-slate-100/90 px-3 py-1 rounded-xl border border-slate-200/90 shadow-2xs select-none"
+                  title="Auto-calculated from category ratings"
+                >
+                  <span className="text-xs font-black text-slate-900 px-0.5">
+                    {skillRatings[selectedSkillIndex].rating !== undefined && skillRatings[selectedSkillIndex].rating !== null && !isNaN(Number(skillRatings[selectedSkillIndex].rating))
+                      ? (Number(skillRatings[selectedSkillIndex].rating) % 1 === 0
+                          ? Number(skillRatings[selectedSkillIndex].rating)
+                          : Number(skillRatings[selectedSkillIndex].rating).toFixed(1))
+                      : "0.0"}
+                  </span>
                   <span className="text-xs font-bold text-slate-400">/ 5.0</span>
                 </div>
               </div>
