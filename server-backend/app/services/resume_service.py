@@ -556,6 +556,8 @@ class ResumeService:
                 latest_clean = dict(latest)
                 latest_clean.pop("_id", None)
                 r["latest_interview"] = latest_clean
+                if not r.get("job_title") and latest_clean.get("job_title"):
+                    r["job_title"] = latest_clean["job_title"]
 
                 clean_invs = []
                 for inv in valid_invs:
@@ -572,6 +574,51 @@ class ResumeService:
                 r["last_interview_updated_at"] = None
                 r["latest_interview"] = None
                 r["interviews"] = []
+
+        # Enrich any resume still missing job_title from job_applications collection
+        missing_job_resumes = [r for r in resumes if not r.get("job_title")]
+        if missing_job_resumes:
+            try:
+                r_ids = [r.get("id") for r in missing_job_resumes if r.get("id")]
+                r_emails = []
+                for r in missing_job_resumes:
+                    em = (r.get("parsed_data") or {}).get("email") or r.get("email")
+                    if em and isinstance(em, str) and em.strip():
+                        r_emails.append(em.strip().lower())
+
+                app_or = []
+                if r_ids:
+                    app_or.append({"resume_id": {"$in": r_ids}})
+                if r_emails:
+                    app_or.append({"applicant_email": {"$in": [re.compile(f"^{re.escape(e)}$", re.IGNORECASE) for e in r_emails]}})
+
+                if app_or:
+                    apps_cursor = self.resume_repo.db["job_applications"].find({"$or": app_or}).sort("submitted_at", -1)
+                    app_docs = await apps_cursor.to_list(length=100)
+                    for r in missing_job_resumes:
+                        r_id = r.get("id")
+                        r_em = ((r.get("parsed_data") or {}).get("email") or r.get("email") or "").strip().lower()
+                        matched_apps = [
+                            a for a in app_docs
+                            if (r_id and a.get("resume_id") == r_id) or (r_em and (a.get("applicant_email") or "").strip().lower() == r_em)
+                        ]
+                        if matched_apps:
+                            latest_app = matched_apps[0]
+                            r["job_title"] = latest_app.get("opening_title")
+                            r["job_opening_id"] = latest_app.get("opening_id")
+                            if not r.get("applied_jobs"):
+                                r["applied_jobs"] = [
+                                    {
+                                        "job_id": a.get("opening_id"),
+                                        "job_title": a.get("opening_title"),
+                                        "applied_at": a.get("submitted_at"),
+                                        "company_id": a.get("company_id"),
+                                        "company_name": a.get("company_name"),
+                                    }
+                                    for a in matched_apps
+                                ]
+            except Exception as e:
+                logger.warning(f"Failed to enrich resumes with job applications: {e}")
 
         return resumes
 

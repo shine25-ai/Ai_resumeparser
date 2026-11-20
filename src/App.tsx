@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
+import { TopHeader } from "./components/TopHeader";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import SessionExpiredModal from "./components/SessionExpiredModal";
 import { FeedbackProvider } from "./components/ui/Feedback";
@@ -58,9 +59,11 @@ export default function App() {
                 <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
                   <SessionExpiredModal />
                   <Sidebar />
-                  <main className="flex-1 overflow-y-auto relative md:pl-20 pb-20 md:pb-0 transition-all duration-300">
+                <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden transition-all duration-300">
+                  <TopHeader />
+                  <main className="flex-1 overflow-y-auto relative pb-20 md:pb-0">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-slate-50 to-slate-50 -z-10" />
-                    <div className="p-2 sm:p-4 md:p-8 h-full">
+                    <div className="p-2 sm:p-4 md:p-6 h-full">
                       <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/upload" element={<Upload />} />
@@ -86,6 +89,7 @@ export default function App() {
                     </div>
                   </main>
                 </div>
+              </div>
               }
             />
           </Route>

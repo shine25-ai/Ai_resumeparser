@@ -433,6 +433,14 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                                 </span>
                               </div>
 
+                              <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-500">
+                                <span>Evaluator: <strong className="text-slate-800">{intItem.interviewer_name || `Interviewer ${intIdx + 1}`}</strong></span>
+                                <span className="flex items-center gap-1">
+                                  <Calendar size={11} className="text-indigo-600" />
+                                  <span>Feedback Date: <strong className="text-indigo-700">{round.updated_at ? new Date(round.updated_at).toLocaleDateString() : round.scheduled_date || "N/A"}</strong></span>
+                                </span>
+                              </div>
+
                               {intItem.interviewer_email && (
                                 <div className="text-slate-500 text-[11px]">
                                   Email: <span className="text-slate-800 font-medium">{intItem.interviewer_email}</span>
@@ -519,11 +527,13 @@ export const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                                 </span>
                               </div>
 
-                              {clientItem.client_feedback_date && (
-                                <div className="text-slate-500 text-[11px]">
-                                  Date: <span className="text-teal-700 font-medium">{clientItem.client_feedback_date}</span>
-                                </div>
-                              )}
+                              <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-500">
+                                <span>Evaluator: <strong className="text-slate-800">{clientItem.client_name || `Client Evaluator ${clientIdx + 1}`}</strong></span>
+                                <span className="flex items-center gap-1">
+                                  <Calendar size={11} className="text-teal-600" />
+                                  <span>Feedback Date: <strong className="text-teal-700">{clientItem.client_feedback_date || (round.updated_at ? new Date(round.updated_at).toLocaleDateString() : round.scheduled_date || "N/A")}</strong></span>
+                                </span>
+                              </div>
 
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] text-slate-500 font-semibold">Client Outcome:</span>

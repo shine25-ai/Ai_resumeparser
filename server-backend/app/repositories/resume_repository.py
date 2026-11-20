@@ -55,9 +55,16 @@ def phone_digits(phone: Any) -> str:
     """Last 10 digits, so '+91 98450 12345', '+919845012345' and '09845012345' compare equal."""
     return re.sub(r"\D", "", str(phone or ""))[-10:]
 
-# Fields that hold a candidate's job title. The AI parser saves `current_role`;
-# `designation` / `role` come from older or HR-edited records.
-ROLE_FIELDS = ["parsed_data.current_role", "parsed_data.designation", "parsed_data.role"]
+# Fields that hold a candidate's job title or applied role.
+# `job_title` / `applied_jobs.job_title` hold the role applied for.
+# The AI parser saves `current_role`; `designation` / `role` come from older or HR-edited records.
+ROLE_FIELDS = [
+    "job_title",
+    "applied_jobs.job_title",
+    "parsed_data.current_role",
+    "parsed_data.designation",
+    "parsed_data.role",
+]
 
 # Allowed sort options -> MongoDB sort spec. Newest upload breaks ties.
 SORT_OPTIONS: Dict[str, List[Tuple[str, int]]] = {

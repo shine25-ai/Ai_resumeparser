@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "super-secret-key-change-in-production-ai-resume-parser-2026"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
 
     DEFAULT_ADMIN_NAME: str = "Administrator"
     DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
