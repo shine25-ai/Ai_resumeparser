@@ -66,9 +66,9 @@ function getTargetRoute(item: AttentionItem): string {
     case 'awaiting_feedback':
       return '/interviews?view=all&filter=awaiting_feedback';
     case 'possible_duplicates':
-      return '/pipeline?tab=duplicates';
+      return '/database';
     case 'pending_offers':
-      return '/pipeline?tab=offers';
+      return '/interviews';
     default:
       return item.actionPath || '/database';
   }

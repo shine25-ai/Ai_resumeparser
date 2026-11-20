@@ -3,7 +3,7 @@ import { useNavigate, NavLink } from "react-router-dom";
 import {
   LayoutDashboard, UploadCloud, Users, Settings, Briefcase,
   Calendar, BarChart3, LogOut, Sparkles, PanelLeftClose, PanelLeft, Shield, Megaphone, Building2, Undo2,
-  Kanban, FileClock
+  FileClock
 } from "lucide-react";
 import { switchCompany } from "../utils/jobsApi";
 
@@ -54,7 +54,6 @@ export function Sidebar() {
     { name: "JD Match", path: "/jd-match", perm: "jd-match", icon: <Briefcase size={20} /> },
     { name: "Job Openings", path: "/job-openings", perm: "upload", icon: <Megaphone size={20} /> },
     { name: "Interviews", path: "/interviews", perm: "interviews", icon: <Calendar size={20} /> },
-    { name: "Pipeline", path: "/pipeline", perm: "database", icon: <Kanban size={20} /> },
     { name: "Analytics", path: "/analytics", perm: "analytics", icon: <BarChart3 size={20} /> },
     { name: "Audit Log", path: "/audit-log", perm: "dashboard", icon: <FileClock size={20} /> },
     // Interview types live under Settings
