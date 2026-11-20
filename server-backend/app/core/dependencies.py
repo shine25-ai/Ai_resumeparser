@@ -2,7 +2,8 @@
 FastAPI dependency injectors for database access, JWT user authentication, and RBAC authorization.
 """
 
-from typing import Callable, List, Optional
+import time
+from typing import Callable, Dict, List, Optional, Tuple
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -14,6 +15,29 @@ from app.models.company import DEFAULT_COMPANY_ID
 from app.utils.constants import COMPANIES_COLLECTION, USERS_COLLECTION, ROLES_COLLECTION
 
 security_bearer = HTTPBearer(auto_error=False)
+
+# In-memory authentication & permissions cache with 60-second TTL
+# Avoids hammering MongoDB Atlas on concurrent dashboard requests
+_USER_AUTH_CACHE: Dict[str, Tuple[dict, float]] = {}
+_USER_AUTH_TTL_SECONDS: float = 60.0
+
+def get_cached_user(user_id: str) -> Optional[dict]:
+    entry = _USER_AUTH_CACHE.get(user_id)
+    if entry:
+        user_data, cached_at = entry
+        if (time.time() - cached_at) < _USER_AUTH_TTL_SECONDS:
+            return user_data
+        _USER_AUTH_CACHE.pop(user_id, None)
+    return None
+
+def set_cached_user(user_id: str, user_data: dict) -> None:
+    _USER_AUTH_CACHE[user_id] = (user_data, time.time())
+
+def invalidate_cached_user(user_id: Optional[str] = None) -> None:
+    if user_id:
+        _USER_AUTH_CACHE.pop(user_id, None)
+    else:
+        _USER_AUTH_CACHE.clear()
 
 
 async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict:

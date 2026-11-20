@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Mail, Phone, MapPin, ChevronDown, CheckCircle2,
-  ExternalLink, User, Award, Brain, Briefcase, GraduationCap, Code, Edit3, X, Save, Paperclip, FileText, Upload, Camera, Trash2
+  ExternalLink, User, Award, Brain, Briefcase, GraduationCap, Code, Edit3, X, Save, Paperclip, FileText, Upload, Camera, Trash2,
+  Building2, Calendar
 } from "lucide-react";
 import { getResumeById, getResumes, updateResume, RESUME_DOCUMENTS, RESUME_PROFILE_PICTURE, apiFetch } from "../utils/Api";
 import { formatExperience, getAllSkills } from "../utils/candidateFields";
@@ -818,6 +819,187 @@ export default function Evaluation() {
               </div>
             </div>
           </div>
+
+          {/* Saved Evaluation Feedback & Reviewer Comments */}
+          {activeInterview && (() => {
+            const hasInterviewerFeedback = Boolean(activeInterview.feedback || activeInterview.rating);
+            const hasClientFeedback = Boolean(activeInterview.client_feedback || activeInterview.client_rating);
+            const interviewers = activeInterview.interviewers && activeInterview.interviewers.length > 0
+              ? activeInterview.interviewers
+              : hasInterviewerFeedback
+              ? [{
+                  interviewer_name: activeInterview.interviewer_name || activeInterview.evaluator_name || "Interviewer",
+                  interviewer_email: activeInterview.interviewer_email,
+                  rating: activeInterview.rating,
+                  feedback: activeInterview.feedback,
+                  recommendation: activeInterview.recommendation,
+                  strengths: activeInterview.strengths,
+                  weaknesses: activeInterview.weaknesses,
+                }]
+              : [];
+
+            const clients = activeInterview.clients && activeInterview.clients.length > 0
+              ? activeInterview.clients
+              : hasClientFeedback
+              ? [{
+                  client_name: activeInterview.client_name || "Client Evaluator",
+                  client_rating: activeInterview.client_rating,
+                  client_feedback: activeInterview.client_feedback,
+                  client_feedback_date: activeInterview.client_feedback_date,
+                  client_recommendation: activeInterview.client_recommendation,
+                  client_notes: activeInterview.client_notes,
+                  client_strengths: activeInterview.client_strengths,
+                  client_weaknesses: activeInterview.client_weaknesses,
+                }]
+              : [];
+
+            const feedbackDate = activeInterview.updated_at
+              ? new Date(activeInterview.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+              : activeInterview.scheduled_date || "N/A";
+
+            if (interviewers.length === 0 && clients.length === 0) {
+              return (
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                  <span>No evaluation feedback submitted yet for this round.</span>
+                  <span className="text-[11px] text-slate-400">Scheduled: {activeInterview.scheduled_date || "N/A"}</span>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <CheckCircle2 size={14} className="text-emerald-600" />
+                    <span>Saved Evaluation Feedback &amp; Reviewer Comments</span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Last Updated: <strong className="text-slate-700">{feedbackDate}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Panel Evaluator Feedback */}
+                  {interviewers.map((int: any, iIdx: number) => (
+                    <div key={iIdx} className="p-3.5 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <User size={13} className="text-indigo-600 shrink-0" />
+                          <span className="font-bold text-slate-900">{int.interviewer_name || "Panel Interviewer"}</span>
+                          {int.interviewer_email && (
+                            <span className="text-[10px] text-slate-400">({int.interviewer_email})</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {int.rating && (
+                            <span className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                              ★ {int.rating} / 5
+                            </span>
+                          )}
+                          {int.recommendation && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                              int.recommendation === "Selected" ? "bg-emerald-100 text-emerald-800" :
+                              int.recommendation === "Rejected" ? "bg-rose-100 text-rose-800" :
+                              "bg-slate-100 text-slate-700"
+                            }`}>
+                              {int.recommendation}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                        <Calendar size={11} className="text-slate-400" />
+                        <span>Feedback Given On: <strong className="text-slate-700">{feedbackDate}</strong></span>
+                        <span className="text-slate-300">•</span>
+                        <span>Evaluator: <strong className="text-indigo-700">{int.interviewer_name || "Interviewer"}</strong></span>
+                      </div>
+
+                      {int.feedback ? (
+                        <div className="bg-white p-2.5 rounded-lg border border-indigo-100 text-slate-700 leading-relaxed text-xs">
+                          <p className="whitespace-pre-line">{int.feedback}</p>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic">No written feedback comment provided.</p>
+                      )}
+
+                      {(int.strengths || int.weaknesses) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
+                          {int.strengths && (
+                            <div className="bg-emerald-50/70 p-2 rounded-lg border border-emerald-100">
+                              <span className="font-bold text-emerald-800 block text-[10px] uppercase">Strengths</span>
+                              <span className="text-slate-700">{Array.isArray(int.strengths) ? int.strengths.join(", ") : int.strengths}</span>
+                            </div>
+                          )}
+                          {int.weaknesses && (
+                            <div className="bg-rose-50/70 p-2 rounded-lg border border-rose-100">
+                              <span className="font-bold text-rose-800 block text-[10px] uppercase">Areas for Improvement</span>
+                              <span className="text-slate-700">{Array.isArray(int.weaknesses) ? int.weaknesses.join(", ") : int.weaknesses}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Client Evaluator Feedback */}
+                  {clients.map((cli: any, cIdx: number) => {
+                    const clientDate = cli.client_feedback_date
+                      ? new Date(cli.client_feedback_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                      : feedbackDate;
+                    return (
+                      <div key={cIdx} className="p-3.5 bg-teal-50/40 border border-teal-100 rounded-xl space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Building2 size={13} className="text-teal-600 shrink-0" />
+                            <span className="font-bold text-slate-900">{cli.client_name || "Client Evaluator"}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {cli.client_rating && (
+                              <span className="bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                                ★ {cli.client_rating} / 5
+                              </span>
+                            )}
+                            {cli.client_recommendation && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                cli.client_recommendation === "Selected" ? "bg-emerald-100 text-emerald-800" :
+                                cli.client_recommendation === "Rejected" ? "bg-rose-100 text-rose-800" :
+                                "bg-slate-100 text-slate-700"
+                              }`}>
+                                {cli.client_recommendation}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                          <Calendar size={11} className="text-slate-400" />
+                          <span>Feedback Date: <strong className="text-slate-700">{clientDate}</strong></span>
+                          <span className="text-slate-300">•</span>
+                          <span>Evaluator: <strong className="text-teal-700">{cli.client_name || "Client"}</strong></span>
+                        </div>
+
+                        {cli.client_feedback ? (
+                          <div className="bg-white p-2.5 rounded-lg border border-teal-100 text-slate-700 leading-relaxed text-xs">
+                            <p className="whitespace-pre-line">{cli.client_feedback}</p>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 italic">No client written feedback comments.</p>
+                        )}
+
+                        {cli.client_notes && (
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[11px] text-slate-600">
+                            <span className="font-bold text-slate-700 block text-[10px] uppercase">Client Notes</span>
+                            <p>{cli.client_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

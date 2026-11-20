@@ -1,340 +1,289 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PieChart, Pie, Cell } from 'recharts';
-import { Search, FileText, Sparkles, CheckCircle2, Video, Loader2 } from 'lucide-react';
-import { getDashboardMetrics } from '../utils/Api';
+import { RefreshCw, AlertCircle } from 'lucide-react';
+import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
+import { DashboardSkeleton } from '../components/dashboard/DashboardSkeleton';
+import { GlobalFilterBar } from '../components/dashboard/GlobalFilterBar';
+import { KpiCardsGrid } from '../components/dashboard/KpiCardsGrid';
+import { NeedsAttentionCard } from '../components/dashboard/NeedsAttentionCard';
+import { TodaysInterviewsCard } from '../components/dashboard/TodaysInterviewsCard';
+import { PipelineVelocityCard } from '../components/dashboard/PipelineVelocityCard';
+import { ApplicationsTrendCard } from '../components/dashboard/ApplicationsTrendCard';
+import { SourceOfHireCard } from '../components/dashboard/SourceOfHireCard';
+import { OpenJobsHealthCard } from '../components/dashboard/OpenJobsHealthCard';
+import { AiRecommendationsCard } from '../components/dashboard/AiRecommendationsCard';
+import { DistributionsRow } from '../components/dashboard/DistributionsRow';
+import { SkillsGapCard } from '../components/dashboard/SkillsGapCard';
+import { ParsingQualityCard } from '../components/dashboard/ParsingQualityCard';
+import { CandidateDemographicsCard } from '../components/dashboard/CandidateDemographicsCard';
+import { InterviewerAndOutcomesRow } from '../components/dashboard/InterviewerAndOutcomesRow';
+import { RecentActivityCard } from '../components/dashboard/RecentActivityCard';
+
+type DashboardTab = 'overview' | 'candidates' | 'team';
+
+const VIEW_TABS: { id: DashboardTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'candidates', label: 'Talent Insights' },
+  { id: 'team', label: 'Hiring Performance' },
+];
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [userName, setUserName] = useState<string>("");
-  const [userRole, setUserRole] = useState<string>("");
-  const [searchText, setSearchText] = useState<string>("");
-  const initials = userName
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("") || "U";
-  
-  const [loading, setLoading] = useState<boolean>(true);
-  const [stats, setStats] = useState<any[]>([]);
-  const [pipelineData, setPipelineData] = useState<any[]>([]);
-  const [statusData, setStatusData] = useState<any[]>([]);
-  const [recentActivities, setRecentActivities] = useState<any[]>([]);
-  const [upcomingInterviews, setUpcomingInterviews] = useState<any[]>([]);
-  const [seniorityData, setSeniorityData] = useState<any[]>([]);
-  const [domainData, setDomainData] = useState<any[]>([]);
-  const [totalPipeline, setTotalPipeline] = useState<number>(0);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        if (parsedUser.full_name) {
-          setUserName(parsedUser.full_name);
-        }
-        if (parsedUser.role) {
-          setUserRole(parsedUser.role.charAt(0).toUpperCase() + parsedUser.role.slice(1));
-        }
-      } catch (e) {
-        console.error("Failed to parse user data from localStorage", e);
-      }
-    }
+  const {
+    loading,
+    refreshing,
+    filtering,
+    error,
+    insights,
+    insightsLoading,
+    insightsError,
+    retryInsights,
+    filters,
+    updateFilters,
+    resetFilters,
+    localTimeZoneName,
+    stats,
+    pipelineData,
+    uniqueCandidatesInterviewed,
+    totalInterviewRounds,
+    activeInterviewingCount,
+    recentActivities,
+    upcomingInterviews,
+    seniorityData,
+    domainData,
+    refresh,
+  } = useDashboardMetrics();
 
-    const fetchDashboard = async () => {
-      try {
-        const data = await getDashboardMetrics();
-        setStats(data.stats || []);
-        setPipelineData(data.pipelineData || []);
-        setStatusData(data.statusData || []);
-        setRecentActivities(data.recentActivities || []);
-        setUpcomingInterviews(data.upcomingInterviews || []);
-        setSeniorityData(data.seniorityDistribution || []);
-        setDomainData(data.domainDistribution || []);
-        
-        let sum = 0;
-        if (data.statusData) {
-            data.statusData.forEach((s: any) => sum += s.count);
-        }
-        setTotalPipeline(sum);
-      } catch (error) {
-        console.error("Failed to load dashboard metrics", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchDashboard();
-  }, []);
+  const handleNavigate = useCallback((path: string) => navigate(path), [navigate]);
 
-  const getIcon = (type: string) => {
-    switch(type) {
-      case 'sparkles': return <Sparkles size={14} className="text-amber-500" />;
-      case 'video': return <Video size={14} className="text-purple-500" />;
-      case 'check': return <CheckCircle2 size={14} className="text-emerald-500" />;
-      case 'file':
-      default: return <FileText size={14} className="text-blue-500" />;
-    }
-  };
+  const totalResumes =
+    stats.find((s) => s.key === 'total_talent' || s.label === 'Total Resumes')?.value || '0';
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-full bg-white text-slate-800">
-        <Loader2 className="animate-spin mr-2 text-indigo-600" /> Loading Dashboard...
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
-    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans">
-      {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        {/* Enter opens the Candidate Database filtered by this text */}
-        <form
-          className="relative w-full sm:w-96"
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const text = searchText.trim();
-            navigate(text ? `/database?search=${encodeURIComponent(text)}` : "/database");
-          }}
-        >
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="search"
-            aria-label="Search candidates"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Search candidates, skills, position..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-          />
-        </form>
+    <div className="max-w-[1380px] mx-auto space-y-5 pb-10 font-sans text-slate-900">
+      {/* 1. Unified Page Header: Title (Left) + View Switcher & Date Controls (Right) */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-[20px] font-bold text-slate-900 tracking-[-0.02em] leading-tight">
+            Recruitment Dashboard
+          </h1>
+          <p className="text-xs font-medium text-slate-600 mt-0.5">
+            Hiring pipeline, active openings, and recruiter workload
+          </p>
+        </div>
 
-        <div className="flex items-center gap-3 self-end sm:self-auto">
-          <div
-            className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-sm flex items-center justify-center"
-            aria-hidden="true"
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Clean Segmented View Switcher */}
+          <nav
+            role="tablist"
+            aria-label="Dashboard sections"
+            className="inline-flex items-center gap-0.5 bg-slate-200/70 p-1 rounded-xl border border-slate-200/80"
           >
-            {initials}
-          </div>
-          <div className="text-left leading-tight hidden sm:block">
-            <span className="block font-semibold text-slate-800 text-sm">{userName}</span>
-            <span className="text-xs text-slate-500 font-medium">{userRole}</span>
-          </div>
+            {VIEW_TABS.map((t) => {
+              const active = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                    active
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          <GlobalFilterBar
+            filters={filters}
+            onChange={updateFilters}
+            onReset={resetFilters}
+            filtering={filtering}
+          />
+
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            title="Refresh data"
+            aria-label="Refresh data"
+            className="h-9 w-9 flex items-center justify-center bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 rounded-lg border border-slate-200/90 transition-colors shrink-0 disabled:opacity-60 cursor-pointer"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin text-indigo-600' : ''} />
+          </button>
         </div>
       </div>
 
-      {/* Main Title */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-      </div>
+      {/* 2. Anchored Top KPI Summary (Always Visible Across All Views) */}
+      <KpiCardsGrid
+        stats={stats}
+        uniqueCandidatesInterviewed={uniqueCandidatesInterviewed}
+        totalInterviewRounds={totalInterviewRounds}
+        activeInterviewingCount={activeInterviewingCount}
+        dateRange={filters.dateRange}
+        localTimeZoneName={localTimeZoneName}
+        onNavigate={handleNavigate}
+      />
 
-      {/* 5 Top Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {stats.map((stat, i) => (
-          <div key={i} className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-2">
-            <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
-            <div className="text-2xl font-extrabold text-slate-900">{stat.value}</div>
-            <span className={`text-xs font-semibold ${stat.changeColor}`}>{stat.change}</span>
+      {/* Global Error Banner */}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-rose-50/80 border border-rose-200/80 text-rose-800 text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle size={15} className="text-rose-600 shrink-0" />
+            <span>{error}</span>
           </div>
-        ))}
-      </div>
-
-      {/* Middle Row: Pipeline & Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pipeline Overview */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-base font-bold text-slate-900 mb-6">Pipeline Overview</h2>
-          <div className="flex items-center justify-between gap-6">
-            {/* Funnel Visual */}
-            <div className="w-1/2 flex flex-col items-center gap-1.5">
-              <div className="w-full h-8 bg-indigo-600 rounded-sm clip-funnel-1 shadow-sm"></div>
-              <div className="w-[82%] h-8 bg-indigo-400 rounded-sm clip-funnel-2 shadow-sm"></div>
-              <div className="w-[64%] h-8 bg-sky-400 rounded-sm clip-funnel-3 shadow-sm"></div>
-              <div className="w-[46%] h-8 bg-teal-500 rounded-sm clip-funnel-4 shadow-sm"></div>
-              <div className="w-[28%] h-8 bg-emerald-400 rounded-sm clip-funnel-5 shadow-sm"></div>
-            </div>
-
-            {/* Stage List */}
-            <div className="w-1/2 space-y-3.5 text-xs font-medium">
-              {pipelineData.map((item, i) => (
-                <div key={i} className="flex justify-between items-center text-slate-700">
-                  <span className="text-slate-500">{item.stage}</span>
-                  <span className="font-bold text-slate-900">{item.count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="px-2.5 py-1 rounded-md bg-white border border-rose-200 text-rose-700 font-medium hover:bg-rose-100/60 transition-colors shrink-0"
+          >
+            Retry
+          </button>
         </div>
+      )}
 
-        {/* Status Overview */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-base font-bold text-slate-900 mb-4">Status Overview</h2>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            {/* Donut Chart with Center Text */}
-            <div className="relative w-48 h-48 flex items-center justify-center">
-              <PieChart width={192} height={192}>
-                  <Pie
-                    data={statusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="count"
-                    isAnimationActive={false}
-                  >
-                    {statusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-lg font-bold text-slate-900">{totalPipeline.toLocaleString()}</span>
-                <span className="text-xs text-slate-500 font-medium">Total</span>
-              </div>
+      {/* 4. Priority-Ordered, Equal-Height Tab Views */}
+      <div
+        className={`space-y-5 transition-opacity duration-200 ${
+          filtering ? 'opacity-65' : 'opacity-100'
+        }`}
+      >
+        {activeTab === 'overview' && (
+          <>
+            {/* Row 1 (50% / 50%, matched height): Hiring Pipeline | Interviews */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+              <PipelineVelocityCard
+                pipelineData={pipelineData}
+                totalResumes={totalResumes}
+                onNavigate={handleNavigate}
+              />
+
+              <TodaysInterviewsCard
+                interviews={insights?.todaysInterviews || []}
+                upcomingInterviews={upcomingInterviews}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onRefreshDashboard={refresh}
+                onNavigate={handleNavigate}
+              />
             </div>
 
-            {/* Legend List */}
-            <div className="space-y-2.5 w-full sm:w-auto">
-              {statusData.map((item, i) => (
-                <div key={i} className="flex items-center justify-between gap-6 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
-                    <span className="font-semibold text-slate-700">{item.name}</span>
-                  </div>
-                  <span className="text-slate-500 font-medium">{item.percentage} ({item.count})</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+            {/* Row 2 (Full Width): Open Jobs */}
+            <OpenJobsHealthCard
+              jobs={insights?.openJobsHealth || []}
+              loading={insightsLoading}
+              error={insightsError}
+              onRetry={retryInsights}
+              onNavigate={handleNavigate}
+            />
 
-      {/* Demographics Row: Seniority & Domain */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Seniority Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-base font-bold text-slate-900 mb-4">Seniority Distribution</h2>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="relative w-48 h-48 flex items-center justify-center">
-              <PieChart width={192} height={192}>
-                  <Pie
-                    data={seniorityData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="count"
-                    isAnimationActive={false}
-                  >
-                    {seniorityData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-lg font-bold text-slate-900">{seniorityData.reduce((acc, item) => acc + item.count, 0)}</span>
-                <span className="text-xs text-slate-500 font-medium">Total</span>
-              </div>
-            </div>
+            {/* Row 3 (50% / 50%, matched height): Needs Attention | Recent Activity */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+              <NeedsAttentionCard
+                items={insights?.needsAttention || []}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onNavigate={handleNavigate}
+              />
 
-            <div className="space-y-2.5 w-full sm:w-auto">
-              {seniorityData.map((item, i) => (
-                <div key={i} className="flex items-center justify-between gap-6 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
-                    <span className="font-semibold text-slate-700">{item.name}</span>
-                  </div>
-                  <span className="text-slate-500 font-medium">{item.percentage} ({item.count})</span>
-                </div>
-              ))}
+              <RecentActivityCard
+                recentActivities={recentActivities}
+                onNavigate={handleNavigate}
+              />
             </div>
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* Domain Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-base font-bold text-slate-900 mb-4">Domain Specialization</h2>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="relative w-48 h-48 flex items-center justify-center">
-              <PieChart width={192} height={192}>
-                  <Pie
-                    data={domainData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="count"
-                    isAnimationActive={false}
-                  >
-                    {domainData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-lg font-bold text-slate-900">{domainData.reduce((acc, item) => acc + item.count, 0)}</span>
-                <span className="text-xs text-slate-500 font-medium">Total</span>
-              </div>
+        {activeTab === 'candidates' && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+              <ApplicationsTrendCard
+                data={insights?.applicationsTrend}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+              />
+              <SourceOfHireCard
+                items={insights?.sourceOfHire || []}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onNavigate={handleNavigate}
+              />
             </div>
 
-            <div className="space-y-2.5 w-full sm:w-auto">
-              {domainData.map((item, i) => (
-                <div key={i} className="flex items-center justify-between gap-6 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
-                    <span className="font-semibold text-slate-700">{item.name}</span>
-                  </div>
-                  <span className="text-slate-500 font-medium">{item.count}</span>
-                </div>
-              ))}
+            <DistributionsRow
+              seniorityData={seniorityData}
+              domainData={domainData}
+              onNavigate={handleNavigate}
+            />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+              <CandidateDemographicsCard
+                candidateExtras={insights?.candidateExtras}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onNavigate={handleNavigate}
+              />
+              <SkillsGapCard
+                items={insights?.skillsGap || []}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onNavigate={handleNavigate}
+              />
             </div>
-          </div>
-        </div>
-      </div>
+          </>
+        )}
 
-      {/* Bottom Row: Recent Activities & Upcoming Interviews */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Activities */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-base font-bold text-slate-900 mb-4">Recent Activities</h2>
-          <div className="space-y-3.5">
-            {recentActivities.map((act, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-lg border border-slate-200 bg-slate-50`}>
-                    {getIcon(act.icon_type)}
-                  </div>
-                  <span className="font-semibold text-slate-800">{act.title}</span>
-                </div>
-                <span className="text-slate-500">{act.time}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {activeTab === 'team' && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+              <ParsingQualityCard
+                data={insights?.parsingQuality}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onNavigate={handleNavigate}
+              />
+              <AiRecommendationsCard
+                data={insights?.aiRecommendations}
+                loading={insightsLoading}
+                error={insightsError}
+                onRetry={retryInsights}
+                onNavigate={handleNavigate}
+              />
+            </div>
 
-        {/* Upcoming Interviews */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-base font-bold text-slate-900">Upcoming Interviews</h2>
-            <button className="text-xs font-bold text-indigo-600 hover:text-indigo-700">View All</button>
-          </div>
-          <div className="space-y-4">
-            {upcomingInterviews.map((item, i) => (
-              <div key={i} className="flex items-center justify-between text-xs py-1">
-                <span className="font-bold text-slate-900 w-20">{item.time}</span>
-                <span className="font-semibold text-slate-700 flex-1">{item.role}</span>
-                <span className="text-slate-500 font-medium">{item.candidate}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+            <InterviewerAndOutcomesRow
+              workload={insights?.interviewerWorkload}
+              outcomes={insights?.rejectionAndOffers}
+              loading={insightsLoading}
+              error={insightsError}
+              onRetry={retryInsights}
+              onNavigate={handleNavigate}
+            />
+          </>
+        )}
       </div>
     </div>
   );
 }
-

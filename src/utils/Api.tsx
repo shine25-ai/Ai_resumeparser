@@ -45,6 +45,13 @@ export const getAnalyticsReports = async (range: AnalyticsRange = "30") => {
 };
 export const MAIL_TEMPLATES_URL = `${BASE_URL}/templates`;
 export const DASHBOARD_METRICS = `${BASE_URL}/dashboard/metrics`;
+export const DASHBOARD_STATS = `${BASE_URL}/dashboard/stats`;
+export const DASHBOARD_PIPELINE = `${BASE_URL}/dashboard/pipeline`;
+export const DASHBOARD_ACTIVITIES = `${BASE_URL}/dashboard/activities`;
+export const DASHBOARD_UPCOMING_INTERVIEWS = `${BASE_URL}/dashboard/upcoming-interviews`;
+export const DASHBOARD_DISTRIBUTIONS = `${BASE_URL}/dashboard/distributions`;
+export const DASHBOARD_NOTIFICATIONS = `${BASE_URL}/dashboard/notifications`;
+export const DASHBOARD_INSIGHTS = `${BASE_URL}/dashboard/insights`;
 
 export interface LoginPayload {
   email: string;
@@ -212,6 +219,12 @@ export interface CandidateQueryParams {
   stage?: string;
   /** Company applied to from its careers page; "none" for resumes with no company */
   company_id?: string;
+  /** Dashboard quick filters */
+  attention?: string;
+  stuck_days?: number;
+  source?: string;
+  skills?: string[];
+  location?: string[];
 }
 
 export type SortOption = "latest" | "oldest" | "ai_score" | "experience_desc" | "experience_asc" | "name";
@@ -263,9 +276,16 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   let email = "";
   let role = "";
   let experience: number | undefined = undefined;
+  let minExperience: number | undefined = undefined;
+  let maxExperience: number | undefined = undefined;
   let sortBy: SortOption | undefined = undefined;
   let stage = "";
   let companyId = "";
+  let attention = "";
+  let stuckDays: number | undefined = undefined;
+  let source = "";
+  let skills: string[] = [];
+  let locations: string[] = [];
 
   if (typeof params === "object" && params !== null) {
     page = params.page || 1;
@@ -275,9 +295,16 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
     email = params.email || "";
     role = params.role || "";
     experience = params.experience;
+    minExperience = params.min_experience;
+    maxExperience = params.max_experience;
     sortBy = params.sort_by;
     stage = params.stage || "";
     companyId = params.company_id || "";
+    attention = params.attention || "";
+    stuckDays = params.stuck_days;
+    source = params.source || "";
+    skills = params.skills || [];
+    locations = params.location || [];
   } else if (typeof params === "number") {
     page = params;
   }
@@ -291,9 +318,20 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
   if (email && email.trim()) queryParts.push(`email=${encodeURIComponent(email.trim())}`);
   if (role && role.trim()) queryParts.push(`role=${encodeURIComponent(role.trim())}`);
   if (experience !== undefined) queryParts.push(`experience=${experience}`);
+  if (minExperience !== undefined) queryParts.push(`min_experience=${minExperience}`);
+  if (maxExperience !== undefined) queryParts.push(`max_experience=${maxExperience}`);
   if (sortBy) queryParts.push(`sort_by=${sortBy}`);
   if (stage && stage !== "All") queryParts.push(`stage=${encodeURIComponent(stage)}`);
   if (companyId) queryParts.push(`company_id=${encodeURIComponent(companyId)}`);
+  if (attention) queryParts.push(`attention=${encodeURIComponent(attention)}`);
+  if (stuckDays !== undefined) queryParts.push(`stuck_days=${stuckDays}`);
+  if (source) queryParts.push(`source=${encodeURIComponent(source)}`);
+  skills.forEach((sk) => {
+    if (sk.trim()) queryParts.push(`skills=${encodeURIComponent(sk.trim())}`);
+  });
+  locations.forEach((loc) => {
+    if (loc.trim()) queryParts.push(`location=${encodeURIComponent(loc.trim())}`);
+  });
 
   const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
 
@@ -580,9 +618,38 @@ export const getResumeLogs = async (resumeId: string) => {
   return resData.data || resData;
 };
 
-export const getDashboardMetrics = async () => {
+export interface DashboardFilterQuery {
+  dateRange?: "all" | "today" | "7d" | "30d" | "90d" | "custom";
+  startDate?: string;
+  endDate?: string;
+  tzOffset?: number;
+}
+
+export interface DashboardStatsQuery extends DashboardFilterQuery {
+  window?: "today" | "24h" | "7d";
+  stuckDays?: number;
+}
+
+export interface DashboardPipelineQuery extends DashboardFilterQuery {
+  stuckDays?: number;
+}
+
+const buildDashboardQuery = (params?: DashboardStatsQuery): string => {
+  if (!params) return "";
+  const query = new URLSearchParams();
+  if (params.window) query.set("window", params.window);
+  if (params.tzOffset !== undefined) query.set("tz_offset", String(params.tzOffset));
+  if (params.stuckDays !== undefined) query.set("stuck_days", String(params.stuckDays));
+  if (params.dateRange && params.dateRange !== "all") query.set("date_range", params.dateRange);
+  if (params.dateRange === "custom" && params.startDate) query.set("start_date", params.startDate);
+  if (params.dateRange === "custom" && params.endDate) query.set("end_date", params.endDate);
+  const s = query.toString();
+  return s ? `?${s}` : "";
+};
+
+export const getDashboardMetrics = async (params?: DashboardStatsQuery) => {
   const token = localStorage.getItem("access_token") || "";
-  const response = await fetch(DASHBOARD_METRICS, {
+  const response = await fetch(`${DASHBOARD_METRICS}${buildDashboardQuery(params)}`, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -597,6 +664,143 @@ export const getDashboardMetrics = async () => {
     throw new Error(resData.detail || "Failed to fetch dashboard metrics");
   }
 
+  return resData.data || resData;
+};
+
+export const getDashboardStats = async (params?: DashboardStatsQuery) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_STATS}${buildDashboardQuery(params)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch dashboard stats");
+  }
+  return resData.data || resData;
+};
+
+export const getDashboardPipeline = async (params?: DashboardPipelineQuery) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_PIPELINE}${buildDashboardQuery(params)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch dashboard pipeline");
+  }
+  return resData.data || resData;
+};
+
+export const getDashboardActivities = async (params?: DashboardFilterQuery) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_ACTIVITIES}${buildDashboardQuery(params)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch dashboard activities");
+  }
+  return resData.data || resData;
+};
+
+export const getDashboardUpcomingInterviews = async (params?: DashboardFilterQuery) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_UPCOMING_INTERVIEWS}${buildDashboardQuery(params)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch upcoming interviews");
+  }
+  return resData.data || resData;
+};
+
+export const getDashboardDistributions = async (params?: DashboardFilterQuery) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_DISTRIBUTIONS}${buildDashboardQuery(params)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch dashboard distributions");
+  }
+  return resData.data || resData;
+};
+
+export const getDashboardNotifications = async (stuckDays = 7) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_NOTIFICATIONS}?stuck_days=${stuckDays}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch notifications");
+  }
+  return resData.data || resData;
+};
+
+export const getDashboardInsights = async (params?: DashboardPipelineQuery) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${DASHBOARD_INSIGHTS}${buildDashboardQuery(params)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const resData = await response.json();
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || "Failed to fetch dashboard insights");
+  }
+  return resData.data || resData;
+};
+
+export const cancelInterviewQuick = async (interviewId: string) => {
+  const token = localStorage.getItem("access_token") || "";
+  const response = await fetch(`${INTERVIEWS_URL}/${encodeURIComponent(interviewId)}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status: "CANCELLED" }),
+  });
+  const resData = await response.json().catch(() => ({}));
+  handleAuthError(response, resData);
+  if (!response.ok) {
+    throw new Error(resData.detail || resData.message || "Failed to cancel interview");
+  }
   return resData.data || resData;
 };
 

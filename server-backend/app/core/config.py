@@ -4,6 +4,7 @@ Application configuration management utilizing Pydantic BaseSettings and dotenv 
 
 import os
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +18,16 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEBUG: bool = True
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, v):
+        if isinstance(v, str):
+            if v.lower() in ("release", "prod", "production", "false", "0", "no"):
+                return False
+            if v.lower() in ("debug", "dev", "development", "true", "1", "yes"):
+                return True
+        return bool(v)
+
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
@@ -25,8 +36,8 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "super-secret-key-change-in-production-ai-resume-parser-2026"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
 
     DEFAULT_ADMIN_NAME: str = "Administrator"
     DEFAULT_ADMIN_EMAIL: str = "admin@example.com"

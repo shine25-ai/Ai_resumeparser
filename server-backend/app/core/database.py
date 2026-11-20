@@ -32,7 +32,8 @@ class DatabaseManager:
             self.client = AsyncIOMotorClient(settings.DATABASE_URL, **client_kwargs)
             self.db = self.client[settings.DATABASE_NAME]
             # Verify connectivity
-            await self.client.admin.command("ping")
+            from pymongo import ReadPreference
+            await self.client.admin.command("ping", read_preference=ReadPreference.SECONDARY_PREFERRED)
             logger.info(f"Successfully connected to MongoDB database '{settings.DATABASE_NAME}'")
         except Exception as e:
             logger.error(

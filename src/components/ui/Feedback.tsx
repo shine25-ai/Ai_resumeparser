@@ -31,10 +31,10 @@ interface FeedbackApi {
 const FeedbackContext = createContext<FeedbackApi | null>(null);
 
 const KIND_STYLES: Record<ToastKind, { box: string; icon: ReactNode }> = {
-  success: { box: "border-emerald-200 bg-emerald-50 text-emerald-900", icon: <CheckCircle2 size={18} className="text-emerald-600 shrink-0" /> },
-  error: { box: "border-rose-200 bg-rose-50 text-rose-900", icon: <XCircle size={18} className="text-rose-600 shrink-0" /> },
-  warning: { box: "border-amber-200 bg-amber-50 text-amber-900", icon: <AlertTriangle size={18} className="text-amber-600 shrink-0" /> },
-  info: { box: "border-sky-200 bg-sky-50 text-sky-900", icon: <Info size={18} className="text-sky-600 shrink-0" /> },
+  success: { box: "border-emerald-200 bg-emerald-50 text-emerald-900", icon: <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> },
+  error: { box: "border-rose-200 bg-rose-50 text-rose-900", icon: <XCircle size={16} className="text-rose-600 shrink-0" /> },
+  warning: { box: "border-amber-200 bg-amber-50 text-amber-900", icon: <AlertTriangle size={16} className="text-amber-600 shrink-0" /> },
+  info: { box: "border-sky-200 bg-sky-50 text-sky-900", icon: <Info size={16} className="text-sky-600 shrink-0" /> },
 };
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
@@ -71,13 +71,24 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     <FeedbackContext.Provider value={{ toast, confirm }}>
       {children}
 
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-[min(360px,calc(100vw-2rem))]" role="status" aria-live="polite">
+      <div
+        className="fixed top-5 right-5 z-[200] flex flex-col items-end gap-2 w-[min(340px,calc(100vw-2rem))] pointer-events-none"
+        role="status"
+        aria-live="polite"
+      >
         {toasts.map((t) => (
-          <div key={t.id} className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 shadow-lg text-sm ${KIND_STYLES[t.kind].box}`}>
+          <div
+            key={t.id}
+            className={`pointer-events-auto flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-lg backdrop-blur-md text-xs font-semibold animate-in slide-in-from-top-2 fade-in duration-200 w-full ${KIND_STYLES[t.kind].box}`}
+          >
             {KIND_STYLES[t.kind].icon}
-            <span className="flex-1 whitespace-pre-line">{t.text}</span>
-            <button onClick={() => dismiss(t.id)} aria-label="Dismiss message" className="opacity-60 hover:opacity-100 cursor-pointer">
-              <X size={16} />
+            <span className="flex-1 whitespace-pre-line leading-snug">{t.text}</span>
+            <button
+              onClick={() => dismiss(t.id)}
+              aria-label="Dismiss message"
+              className="opacity-60 hover:opacity-100 transition-opacity p-0.5 rounded-md hover:bg-black/5 cursor-pointer shrink-0"
+            >
+              <X size={14} />
             </button>
           </div>
         ))}

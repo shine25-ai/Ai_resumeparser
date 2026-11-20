@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar } from "lucide-react";
+import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar, Briefcase } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CompanyFilter, CompanyPills, appliedCompanies, useCompanies } from "../components/CompanyTags";
 import { getResumes, exportResumesApi, type CandidateQueryParams, type SortOption, SORT_OPTION_LABELS } from "../utils/Api";
@@ -25,13 +25,47 @@ export default function CandidateDatabase() {
   const [limit, setLimit] = useState<number>(10);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
-  // The Dashboard search box opens this page with ?search=<text>
-  const [searchParams] = useSearchParams();
+  // URL-driven dashboard filters (?stage=, ?attention=, ?days=, ?seniority=, ?skill=, ?city=, ?source=, ?domain=, ?sort=)
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") || "");
-  const [sortBy, setSortBy] = useState<SortOption>("latest");
-  const [stageFilter, setStageFilter] = useState<string>("All");
+  const [sortBy, setSortBy] = useState<SortOption>(() => {
+    const s = searchParams.get("sort");
+    return (s && ["latest", "oldest", "ai_score", "experience_desc", "experience_asc", "name"].includes(s))
+      ? (s as SortOption)
+      : "latest";
+  });
+  const [stageFilter, setStageFilter] = useState<string>(() => {
+    const st = searchParams.get("stage");
+    return st && CANDIDATE_STAGES.includes(st as any) ? st : "All";
+  });
   const companies = useCompanies();
   const [companyFilter, setCompanyFilter] = useState<string>(() => searchParams.get("company") || "");
+  const [attentionFilter, setAttentionFilter] = useState<string>(() => searchParams.get("attention") || "");
+  const [stuckDaysFilter, setStuckDaysFilter] = useState<number>(() => {
+    const d = Number(searchParams.get("days"));
+    return Number.isFinite(d) && d > 0 ? d : 7;
+  });
+  const [seniorityFilter, setSeniorityFilter] = useState<string>(() => searchParams.get("seniority") || "");
+  const [skillFilter, setSkillFilter] = useState<string>(() => searchParams.get("skill") || "");
+  const [cityFilter, setCityFilter] = useState<string>(() => searchParams.get("city") || "");
+  const [sourceFilter, setSourceFilter] = useState<string>(() => searchParams.get("source") || "");
+  const [domainFilter, setDomainFilter] = useState<string>(() => searchParams.get("domain") || "");
+
+  // Sync if user navigates to /database with new query params
+  useEffect(() => {
+    const st = searchParams.get("stage");
+    if (st && CANDIDATE_STAGES.includes(st as any)) setStageFilter(st);
+    setAttentionFilter(searchParams.get("attention") || "");
+    const d = Number(searchParams.get("days"));
+    if (Number.isFinite(d) && d > 0) setStuckDaysFilter(d);
+    setSeniorityFilter(searchParams.get("seniority") || "");
+    setSkillFilter(searchParams.get("skill") || "");
+    setCityFilter(searchParams.get("city") || "");
+    setSourceFilter(searchParams.get("source") || "");
+    setDomainFilter(searchParams.get("domain") || "");
+    const q = searchParams.get("search");
+    if (q !== null) setSearchTerm(q);
+  }, [searchParams]);
 
   // Advanced Specific Field Filters State
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
@@ -39,6 +73,52 @@ export default function CandidateDatabase() {
   const [emailFilter, setEmailFilter] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("");
   const [expFilter, setExpFilter] = useState<string>("");
+
+  const getSeniorityBounds = (tier: string): { min?: number; max?: number } => {
+    if (tier === "Junior") return { min: 0, max: 2 };
+    if (tier === "Mid") return { min: 2, max: 5 };
+    if (tier === "Senior") return { min: 5, max: 8 };
+    if (tier === "Lead / Architect") return { min: 8 };
+    return {};
+  };
+
+  const getDomainKeyword = (dom: string): string => {
+    const d = dom.toLowerCase();
+    if (d.includes("data")) return "data";
+    if (d.includes("support") || d.includes("security")) return "support";
+    if (d.includes("software")) return "developer";
+    if (d.includes("project") || d.includes("product")) return "manager";
+    if (d.includes("cloud") || d.includes("devops")) return "cloud";
+    if (d.includes("qa") || d.includes("test")) return "qa";
+    return dom;
+  };
+
+  const clearDashboardFilter = () => {
+    setAttentionFilter("");
+    setSeniorityFilter("");
+    setSkillFilter("");
+    setCityFilter("");
+    setSourceFilter("");
+    setDomainFilter("");
+    setStageFilter("All");
+    setSearchTerm("");
+    setPage(1);
+    setSearchParams({}, { replace: true });
+  };
+
+  const activeDashboardFilterLabel = (() => {
+    const parts: string[] = [];
+    if (attentionFilter === "unreviewed") parts.push("Resumes waiting for review");
+    else if (attentionFilter === "low_confidence") parts.push("Resumes needing manual check");
+    else if (attentionFilter === "stuck") parts.push(`Candidates waiting over ${stuckDaysFilter} days`);
+    else if (attentionFilter === "selected") parts.push("Selected & Offer candidates");
+    if (seniorityFilter) parts.push(`Experience: ${seniorityFilter}`);
+    if (skillFilter) parts.push(`Skill: ${skillFilter}`);
+    if (cityFilter) parts.push(`City: ${cityFilter}`);
+    if (sourceFilter) parts.push(`Source: ${sourceFilter}`);
+    if (domainFilter) parts.push(`Category: ${domainFilter}`);
+    return parts.join(" · ");
+  })();
 
   // Export State & Handlers
   const [exportLoading, setExportLoading] = useState<boolean>(false);
@@ -62,7 +142,20 @@ export default function CandidateDatabase() {
 
   useEffect(() => {
     fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-  }, [page, limit, sortBy, stageFilter, companyFilter]);
+  }, [
+    page,
+    limit,
+    sortBy,
+    stageFilter,
+    companyFilter,
+    attentionFilter,
+    stuckDaysFilter,
+    seniorityFilter,
+    skillFilter,
+    cityFilter,
+    sourceFilter,
+    domainFilter,
+  ]);
 
   // Debounced search on typing
   useEffect(() => {
@@ -84,17 +177,27 @@ export default function CandidateDatabase() {
   ) => {
     setLoading(true);
     try {
+      const senBounds = getSeniorityBounds(seniorityFilter);
+      const effectiveRole = rVal || (domainFilter ? getDomainKeyword(domainFilter) : "");
+
       const params: CandidateQueryParams = {
         page: targetPage,
         limit: targetLimit,
         search: searchVal,
         name: nVal,
         email: eVal,
-        role: rVal,
+        role: effectiveRole,
         experience: expVal ? Number(expVal) : undefined,
+        min_experience: senBounds.min,
+        max_experience: senBounds.max,
         sort_by: sortBy,
         stage: stageFilter,
         company_id: companyFilter,
+        attention: attentionFilter || undefined,
+        stuck_days: attentionFilter === "stuck" ? stuckDaysFilter : undefined,
+        source: sourceFilter || undefined,
+        skills: skillFilter ? [skillFilter] : undefined,
+        location: cityFilter ? [cityFilter] : undefined,
       };
 
       const resData = await getResumes(params);
@@ -106,8 +209,11 @@ export default function CandidateDatabase() {
         name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         candidateName: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
         email: item.parsed_data?.email || item.email || "N/A",
+        candidateRole: getCandidateRole(item.parsed_data, "Role not specified"),
+        appliedJob: item.job_title || item.applied_jobs?.[0]?.job_title || item.latest_interview?.job_title || null,
+        appliedJobs: Array.isArray(item.applied_jobs) ? item.applied_jobs : [],
         role: getCandidateRole(item.parsed_data, "Role not specified"),
-        targetRole: getCandidateRole(item.parsed_data, "N/A"),
+        targetRole: item.job_title || item.applied_jobs?.[0]?.job_title || getCandidateRole(item.parsed_data, "N/A"),
         source: item.resume_source || "N/A",
         category: item.category || "",
         companies: appliedCompanies(item),
@@ -180,19 +286,65 @@ export default function CandidateDatabase() {
   const endRecord = Math.min(page * limit, totalCount);
 
   return (
-    <div className="bg-white text-slate-800 min-h-screen p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 font-sans relative">
-      {/* Top Header Bar */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-900">Candidate Database</h1>
-          <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
-            Total: {totalCount} Candidates
-          </span>
+    <div className="max-w-[1380px] mx-auto space-y-5 pb-10 font-sans text-slate-900">
+      {/* 1. Unified Page Header matching Dashboard layout */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-[20px] font-bold text-slate-900 tracking-[-0.02em] leading-tight">
+              Candidate Database
+            </h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 border border-indigo-200 text-indigo-700">
+              {totalCount} Candidates
+            </span>
+          </div>
+          <p className="text-xs font-medium text-slate-600 mt-0.5">
+            Search, filter, and review candidate talent profiles and application statuses
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => navigate("/resume-templates")}
+            className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
+          >
+            <FileText size={14} className="text-slate-500" />
+            <span>Resume templates</span>
+          </button>
+
+          <button
+            onClick={handleExportZIP}
+            disabled={exportLoading}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+          >
+            <Download size={14} />
+            <span>{exportLoading ? "Exporting ZIP..." : "Export Resumes (ZIP)"}</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Table Card Wrapper */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+      {/* Main Table Card (Single Layer, Full Width, matching Dashboard Cards) */}
+      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs space-y-5">
+        {/* Active Dashboard Drill-Down Filter Chip */}
+        {activeDashboardFilterLabel && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-indigo-50/80 border border-indigo-200/80 text-xs text-indigo-800">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
+              <span className="font-medium">Showing:</span>
+              <span className="font-semibold">{activeDashboardFilterLabel}</span>
+              <span className="text-indigo-600">({totalCount} matching)</span>
+            </div>
+            <button
+              type="button"
+              onClick={clearDashboardFilter}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100/60 font-medium transition-colors"
+            >
+              <X size={12} />
+              <span>Clear filter</span>
+            </button>
+          </div>
+        )}
+
         {/* Hiring stage filter */}
         <div role="radiogroup" aria-label="Filter by hiring stage" className="flex flex-wrap gap-2">
           {["All", ...CANDIDATE_STAGES].map((st) => (
@@ -233,7 +385,7 @@ export default function CandidateDatabase() {
             )}
           </div>
 
-          <div className="flex items-center gap-3 self-end sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2.5 self-end sm:self-auto">
             <CompanyFilter
               companies={companies}
               value={companyFilter}
@@ -267,24 +419,6 @@ export default function CandidateDatabase() {
               {(nameFilter || emailFilter || roleFilter || expFilter) && (
                 <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
               )}
-            </button>
-
-            {/* Resume templates moved here from the sidebar */}
-            <button
-              onClick={() => navigate("/resume-templates")}
-              className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer"
-            >
-              <FileText size={14} />
-              <span>Resume templates</span>
-            </button>
-
-            <button
-              onClick={handleExportZIP}
-              disabled={exportLoading}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-            >
-              <Download size={14} />
-              <span>{exportLoading ? "Exporting ZIP..." : "Export Resumes (ZIP)"}</span>
             </button>
           </div>
         </div>
@@ -389,7 +523,7 @@ export default function CandidateDatabase() {
                   />
                 </th>
                 <th className="py-3 px-3">Name & Email</th>
-                <th className="py-3 px-3">Role</th>
+                <th className="py-3 px-3">Role & Applied Job</th>
                 <th className="py-3 px-3">Exp & AI Score</th>
                 <th className="py-3 px-3">Interview Status</th>
                 <th className="py-3 px-3">Stage</th>
@@ -432,7 +566,36 @@ export default function CandidateDatabase() {
                     </td>
                     <td className="py-3.5 px-3">
                       <div className="flex flex-col gap-1">
-                        <span className="text-slate-800 font-bold">{row.role}</span>
+                        {/* Primary: Job Applied For (or Direct Intake General Pool) */}
+                        {row.appliedJob ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Briefcase size={13} className="text-indigo-600 shrink-0" />
+                            <span className="text-slate-900 font-bold text-xs" title={`Applied for: ${row.appliedJob}`}>
+                              {row.appliedJob}
+                            </span>
+                            {row.appliedJobs.length > 1 && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 cursor-help"
+                                title={`Applied to ${row.appliedJobs.length} roles: ${row.appliedJobs.map((j: any) => j.job_title).filter(Boolean).join(", ")}`}
+                              >
+                                +{row.appliedJobs.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 w-fit">
+                              Direct Intake (General Pool)
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Subtext: Candidate's Parsed Resume Designation */}
+                        <div className="text-[11px] text-slate-500 font-medium">
+                          Profile: <span className="text-slate-700 font-semibold">{row.candidateRole}</span>
+                        </div>
+
+                        {/* Metadata Pills */}
                         <div className="flex flex-wrap gap-1 items-center">
                           <CompanyPills companies={row.companies} />
                           {row.category && (
@@ -457,9 +620,9 @@ export default function CandidateDatabase() {
                       </div>
                     </td>
                     {/* Interview Assignment Status */}
-                    <td className="py-3.5 px-3">
+                    <td className="py-3.5 px-3 min-w-[200px]">
                       {row.interviewAssigned ? (
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1.5">
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 w-fit">
                             <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
                             Interview Assigned
@@ -471,9 +634,39 @@ export default function CandidateDatabase() {
                             </span>
                           )}
                           {row.latestInterview?.job_title && (
-                            <span className="text-[11px] text-slate-500 font-medium truncate max-w-[150px]" title={row.latestInterview.job_title}>
+                            <span className="text-[11px] text-slate-500 font-medium truncate max-w-[180px]" title={row.latestInterview.job_title}>
                               Role: {row.latestInterview.job_title}
                             </span>
+                          )}
+
+                          {/* Saved Evaluation Feedback snippet */}
+                          {row.latestInterview && (row.latestInterview.feedback || row.latestInterview.rating || row.latestInterview.client_feedback) && (
+                            <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] space-y-1 mt-0.5">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="font-bold text-slate-800 truncate">
+                                  By {row.latestInterview.interviewer_name || row.latestInterview.client_name || "Evaluator"}
+                                </span>
+                                {(row.latestInterview.rating || row.latestInterview.client_rating) && (
+                                  <span className="text-amber-800 font-bold bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-[10px] shrink-0">
+                                    ★ {row.latestInterview.rating || row.latestInterview.client_rating} / 5
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                Date: {row.latestInterview.client_feedback_date ||
+                                  (row.latestInterview.updated_at
+                                    ? new Date(row.latestInterview.updated_at).toLocaleDateString()
+                                    : row.latestInterview.scheduled_date || "N/A")}
+                              </div>
+                              {(row.latestInterview.feedback || row.latestInterview.client_feedback) && (
+                                <p
+                                  className="text-[11px] text-slate-600 line-clamp-2 italic leading-snug"
+                                  title={row.latestInterview.feedback || row.latestInterview.client_feedback}
+                                >
+                                  "{row.latestInterview.feedback || row.latestInterview.client_feedback}"
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -513,7 +706,7 @@ export default function CandidateDatabase() {
                                   candidate_name: row.candidateName,
                                   candidate_email: row.email !== "N/A" ? row.email : "",
                                   resume_id: row.realId || row.id,
-                                  job_title: row.targetRole !== "N/A" ? row.targetRole : "",
+                                  job_title: row.appliedJob || (row.targetRole !== "N/A" ? row.targetRole : row.candidateRole),
                                 },
                               },
                             });
