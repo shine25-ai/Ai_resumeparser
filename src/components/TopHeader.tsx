@@ -25,7 +25,6 @@ const ROUTE_TITLES: Record<string, string> = {
   '/jd-match': 'JD Match',
   '/job-openings': 'Job Openings',
   '/interviews': 'Interviews',
-  '/pipeline': 'Pipeline',
   '/analytics': 'Analytics',
   '/audit-log': 'Audit Log',
   '/settings': 'Settings',

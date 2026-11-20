@@ -17,7 +17,6 @@ import Companies from "./pages/Companies";
 import ResumeTemplates from "./pages/ResumeTemplates";
 import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
-import PipelineHub from "./pages/PipelineHub";
 import AuditLog from "./pages/AuditLog";
 import CandidateTracker from "./pages/CandidateTracker";
 
@@ -81,7 +80,7 @@ export default function App() {
                         {/* Old link: the mock Client Feedback page was removed */}
                         <Route path="/client-feedback" element={<Navigate to="/interviews" replace />} />
                         <Route path="/analytics" element={<AnalyticsReports />} />
-                        <Route path="/pipeline" element={<PipelineHub />} />
+                        <Route path="/pipeline" element={<Navigate to="/interviews" replace />} />
                         <Route path="/audit-log" element={<AuditLog />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/companies" element={<Companies />} />

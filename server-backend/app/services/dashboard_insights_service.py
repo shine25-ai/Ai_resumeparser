@@ -1,13 +1,43 @@
 import asyncio
 import re
 from collections import Counter
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, TypedDict
 
 from app.core.database import get_database
-from app.utils.constants import RESUMES_COLLECTION, INTERVIEWS_COLLECTION
-from app.utils.hiring_stage import stage_of, verdict_of
 from app.services.dashboard_service import DashboardService
+from app.utils.constants import INTERVIEWS_COLLECTION, RESUMES_COLLECTION
+from app.utils.hiring_stage import stage_of, verdict_of
+
+
+class _ScoredCandidate(TypedDict):
+    id: str
+    name: str
+    role: str
+    match_pct: int
+    matched_skills: list[str]
+    stage: str
+    applied: bool
+    upload_dt: datetime | None
+
+
+class _MissedCandidate(TypedDict):
+    id: str
+    name: str
+    role: str
+    matched_job: str
+    job_id: str
+    match_pct: int
+    days_in_pool: int
+    matched_skills: list[str]
+
+
+class _SkillGapItem(TypedDict):
+    skill: str
+    demand_jobs: int
+    supply_candidates: int
+    coverage_pct: int
+    gap_severity: str
 
 _SKILL_FIELDS = (
     "primary_skills",
@@ -27,7 +57,7 @@ _NOISE_SKILL_PATTERNS = re.compile(
     r"clear|strong|excellent|good|proven|ability|knowledge|understanding|familiarity|"
     r"communication|teamwork|leadership|problem\s+solving|analytical|interpersonal|"
     r"self[- ]motivated|flexible|detail[- ]oriented|time\s+management|multitasking)",
-    re.I,
+    re.IGNORECASE,
 )
 
 _GENERIC_NON_SKILLS = {
@@ -87,7 +117,7 @@ def _format_skill_name(raw: str) -> str:
     return raw.strip().title()
 
 
-def _clean_jd_skill(raw: Any) -> Optional[str]:
+def _clean_jd_skill(raw: Any) -> str | None:
     s = re.sub(r"\s+", " ", str(raw or "").strip().strip(".,;:-•()[]"))
     if not s or len(s) < 2 or len(s) > 28:
         return None
@@ -100,7 +130,7 @@ def _clean_jd_skill(raw: Any) -> Optional[str]:
     return _format_skill_name(s)
 
 
-def _resolve_candidate_name(r: Dict[str, Any]) -> str:
+def _resolve_candidate_name(r: dict[str, Any]) -> str:
     pd = r.get("parsed_data") or {}
     for val in (pd.get("full_name"), pd.get("name"), r.get("candidate_name")):
         s = str(val or "").strip()
@@ -108,17 +138,17 @@ def _resolve_candidate_name(r: Dict[str, Any]) -> str:
             return s
     fn = str(r.get("original_filename") or "").strip()
     if fn:
-        stem = re.sub(r"\.(pdf|docx?|txt)$", "", fn, flags=re.I)
+        stem = re.sub(r"\.(pdf|docx?|txt)$", "", fn, flags=re.IGNORECASE)
         stem = re.sub(r"[_\-]+", " ", stem).strip()
         if stem:
             return stem[:36]
     return "Unnamed Profile"
 
 
-def _extract_skills(parsed_data: Any) -> List[str]:
+def _extract_skills(parsed_data: Any) -> list[str]:
     if not isinstance(parsed_data, dict):
         return []
-    seen: Dict[str, str] = {}
+    seen: dict[str, str] = {}
     for field in _SKILL_FIELDS:
         for raw in (parsed_data.get(field) or []):
             s = str(raw or "").strip()
@@ -129,7 +159,7 @@ def _extract_skills(parsed_data: Any) -> List[str]:
     return list(seen.values())
 
 
-def _classify_source(raw: Any, has_app: bool = False) -> Tuple[str, str]:
+def _classify_source(raw: Any, has_app: bool = False) -> tuple[str, str]:
     """Return (grouped_division, specific_sub_source) for clean executive grouping + hover tooltip breakdown."""
     s = str(raw or "").strip().lower()
     if not s:
@@ -187,7 +217,7 @@ def _classify_source(raw: Any, has_app: bool = False) -> Tuple[str, str]:
     return ("Direct & Email", cleaned or "Direct Upload")
 
 
-def _parse_number(val: Any) -> Optional[float]:
+def _parse_number(val: Any) -> float | None:
     if val is None or val == "":
         return None
     if isinstance(val, (int, float)):
@@ -196,7 +226,7 @@ def _parse_number(val: Any) -> Optional[float]:
     return float(m.group(1)) if m else None
 
 
-def _ctc_to_lpa(val: Any) -> Optional[float]:
+def _ctc_to_lpa(val: Any) -> float | None:
     num = _parse_number(val)
     if num is None or num <= 0:
         return None
@@ -209,7 +239,7 @@ def _ctc_to_lpa(val: Any) -> Optional[float]:
     return None
 
 
-def _bucket_ctc(lpa: Optional[float]) -> str:
+def _bucket_ctc(lpa: float | None) -> str:
     if lpa is None:
         return "Not Specified"
     if lpa < 6:
@@ -292,15 +322,15 @@ def _categorize_rejection(note: Any, rec: Any) -> str:
 async def compute_dashboard_insights(
     service: DashboardService,
     stuck_days: int = 7,
-    filters: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    filters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Compute all 12 Phase 3 executive dashboard widgets from MongoDB in one parallel batch.
     """
     db = get_database()
     norm_f = filters or service._normalize_filters()
     has_filters = service._has_active_filters(norm_f)
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
 
     clamped_offset = max(-840, min(840, int(norm_f.get("tz_offset_minutes") or 0)))
     user_tz = timezone(timedelta(minutes=-clamped_offset))
@@ -406,15 +436,15 @@ async def compute_dashboard_insights(
         apps = apps_all
 
     # Index interviews by candidate/resume key
-    inv_by_cand: Dict[str, List[Dict[str, Any]]] = {}
+    inv_by_cand: dict[str, list[dict[str, Any]]] = {}
     for inv in interviews:
         key = str(inv.get("resume_id") or inv.get("candidate_id") or "")
         if key:
             inv_by_cand.setdefault(key, []).append(inv)
 
     # Index applications by resume_id and job_id
-    app_by_resume: Dict[str, List[Dict[str, Any]]] = {}
-    apps_by_job: Dict[str, List[Dict[str, Any]]] = {}
+    app_by_resume: dict[str, list[dict[str, Any]]] = {}
+    apps_by_job: dict[str, list[dict[str, Any]]] = {}
     for a in apps:
         rid = str(a.get("resume_id") or "")
         if rid:
@@ -443,7 +473,7 @@ async def compute_dashboard_insights(
     possible_duplicates = 0
 
     failed_parse_count = 0
-    confidence_scores: List[float] = []
+    confidence_scores: list[float] = []
     missing_field_counts: Counter = Counter()
 
     location_counts: Counter = Counter()
@@ -453,8 +483,8 @@ async def compute_dashboard_insights(
     real_ctc_present = 0
 
     pool_skill_counts: Counter = Counter()
-    candidate_stage_map: Dict[str, str] = {}
-    candidate_skills_map: Dict[str, Tuple[Dict[str, Any], set]] = {}
+    candidate_stage_map: dict[str, str] = {}
+    candidate_skills_map: dict[str, tuple[dict[str, Any], set]] = {}
 
     for r in resumes:
         rid = str(r.get("id") or r.get("resume_id") or "")
@@ -616,14 +646,14 @@ async def compute_dashboard_insights(
             "label": "Possible duplicate candidate profiles",
             "count": possible_duplicates,
             "severity": "warning" if possible_duplicates > 0 else "clear",
-            "actionPath": "/pipeline?tab=duplicates",
+            "actionPath": "/database",
         },
         {
             "key": "pending_offers",
             "label": "Offers pending response or expiring soon",
             "count": pending_offers_count,
             "severity": "info" if pending_offers_count > 0 else "clear",
-            "actionPath": "/pipeline?tab=offers",
+            "actionPath": "/interviews",
         },
     ]
 
@@ -727,7 +757,7 @@ async def compute_dashboard_insights(
     }
 
     # ── 4. Source of Hire (grouped divisions with sub-source breakdown for hover tooltip) ──
-    source_stats: Dict[str, Dict[str, Any]] = {}
+    source_stats: dict[str, dict[str, Any]] = {}
     for r in resumes:
         rid = str(r.get("id") or r.get("resume_id") or "")
         r_apps = app_by_resume.get(rid, [])
@@ -764,7 +794,7 @@ async def compute_dashboard_insights(
     open_jobs = [j for j in jobs_all if str(j.get("status") or "").upper() == "OPEN"]
     jd_skill_demand: Counter = Counter()
     open_jobs_health = []
-    missed_candidates = []
+    missed_candidates: list[_MissedCandidate] = []
 
     for j in open_jobs:
         jid = str(j.get("id") or "")
@@ -792,7 +822,7 @@ async def compute_dashboard_insights(
         ]
 
         # Deduplicate effective skills case-insensitively
-        eff_map: Dict[str, str] = {}
+        eff_map: dict[str, str] = {}
         for s in (*detected_pool_skills, *req_skills):
             k = s.lower()
             if k not in eff_map:
@@ -821,7 +851,7 @@ async def compute_dashboard_insights(
         applicants_count = max(len(j_apps), len(j_interviewed_cands))
 
         # Score candidate pool against this job for Top 3 AI Matches
-        scored_cands = []
+        scored_cands: list[_ScoredCandidate] = []
         for rid, (r_doc, cand_skills_lower) in candidate_skills_map.items():
             pd = r_doc.get("parsed_data") or {}
             cand_role = str(pd.get("current_role") or "").lower()
@@ -835,7 +865,7 @@ async def compute_dashboard_insights(
                 skill_pct = 50.0 if title_hit > 0 else 25.0
             ai_tech = _parse_number((r_doc.get("ai_evaluation") or {}).get("ai_technical_score")) or 0.0
             bonus = min(18.0, title_hit * 9.0) + min(12.0, (ai_tech / 100.0) * 12.0)
-            match_pct = int(min(97, max(42, round(skill_pct + bonus))))
+            match_pct = min(97, max(42, round(skill_pct + bonus)))
             is_applied = (
                 rid in j_app_rids
                 or str(r_doc.get("job_opening_id") or "") == jid
@@ -891,9 +921,10 @@ async def compute_dashboard_insights(
         # (ensures Suggested Candidates surfaces distinct hidden talent instead of repeating Open Jobs applicants)
         for c in scored_cands[:15]:
             if c["stage"] == "Screening" and not c["applied"] and c["match_pct"] >= 55:
+                upload_dt = c["upload_dt"]
                 age_days = (
-                    max(0, int((now_utc - c["upload_dt"]).total_seconds() // 86400))
-                    if c["upload_dt"]
+                    max(0, int((now_utc - upload_dt).total_seconds() // 86400))
+                    if upload_dt is not None
                     else 0
                 )
                 missed_candidates.append({
@@ -908,7 +939,7 @@ async def compute_dashboard_insights(
                 })
 
     # Deduplicate missed candidates by candidate id, keep best match
-    dedup_missed: Dict[str, Dict[str, Any]] = {}
+    dedup_missed: dict[str, _MissedCandidate] = {}
     for mc in sorted(missed_candidates, key=lambda x: -x["match_pct"]):
         if mc["id"] not in dedup_missed:
             dedup_missed[mc["id"]] = mc
@@ -921,7 +952,7 @@ async def compute_dashboard_insights(
     else:
         top_skill_keys = [k for k, _ in pool_skill_counts.most_common(8)]
 
-    skills_gap = []
+    skills_gap: list[_SkillGapItem] = []
     for sk_key in top_skill_keys:
         demand_jobs = jd_skill_demand.get(sk_key, 0)
         supply_cands = pool_skill_counts.get(sk_key, 0)
@@ -989,7 +1020,7 @@ async def compute_dashboard_insights(
     }
 
     # ── 10. Interviewer Workload ──
-    interviewer_map: Dict[str, Dict[str, Any]] = {}
+    interviewer_map: dict[str, dict[str, Any]] = {}
     no_show_count = 0
     rescheduled_count = 0
     total_invs = len(interviews)
