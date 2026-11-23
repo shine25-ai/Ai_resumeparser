@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Briefcase, CalendarDays, ChevronDown, Clock3, Info, Laptop, Loader2, MapPin, Search } from "lucide-react";
+import { ArrowRight, BarChart3, Briefcase, ChevronDown, Code2, Database, Info, Layers, Loader2, Megaphone, Monitor, PenTool, Search, Shield, Users } from "lucide-react";
 import {
   DEFAULT_PAGE_SETTINGS,
   careerAssetUrl,
@@ -13,7 +13,7 @@ import {
   type CareerSection,
   type PublicJob,
 } from "./api";
-import { ApplyModal, Meta, Pill, openingsLabel, postedAgo } from "./components";
+import { ApplyModal, openingsLabel, postedAgo } from "./components";
 import { OverlayContext } from "./overlay";
 import { BrandedFooter, BrandedHeader, ContentSection, Hero, JobDetailPage, brandVars } from "./sections";
 
@@ -94,46 +94,45 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
   );
 }
 
-function JobCard({ job, onDetails, onApply }: { job: PublicJob; onDetails: () => void; onApply: () => void }) {
+/** An icon for the job's department (the mockup's job rows). */
+function DeptIcon({ job }: { job: PublicJob }) {
+  const d = `${job.department} ${job.category || ""} ${job.title}`.toLowerCase();
+  const Icon = /design|ui|ux/.test(d) ? PenTool : /data|analytics|ai|ml/.test(d) ? Database : /qa|test|quality/.test(d) ? Shield
+    : /market|sales/.test(d) ? Megaphone : /hr|people|human/.test(d) ? Users : /product|manager/.test(d) ? Layers
+    : /devops|cloud|infra|platform/.test(d) ? Monitor : /finance|account/.test(d) ? BarChart3 : /engineer|developer|software/.test(d) ? Code2 : Briefcase;
+  return <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--cp-brand-soft)] text-[var(--cp-brand)]"><Icon size={22} /></span>;
+}
+
+function JobRow({ job, onDetails, onApply }: { job: PublicJob; onDetails: () => void; onApply: () => void }) {
   const posted = postedAgo(job.posted_at || job.created_at);
+  const meta = [job.department, job.location, job.experience, job.work_mode].filter(Boolean);
   return (
-    <article className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 border-l-[3px] border-[var(--cp-brand)] pl-3">
-          <h3 className="truncate text-lg font-semibold text-slate-900">{job.title}</h3>
-          {job.department && <p className="truncate text-sm text-slate-600">{job.department}</p>}
-        </div>
-        <Pill>{openingsLabel(job.open_positions)}</Pill>
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3">
-        {job.location && <Meta icon={<MapPin size={15} />}>{job.location}</Meta>}
-        {job.work_mode ? <Meta icon={<Laptop size={15} />}>{job.work_mode}</Meta> : job.employment_type && <Meta icon={<Briefcase size={15} />}>{job.employment_type}</Meta>}
-        {job.experience && <Meta icon={<Clock3 size={15} />}>{job.experience}</Meta>}
-        {posted && <Meta icon={<CalendarDays size={15} />}>{posted}</Meta>}
-      </div>
-
-      {job.required_skills.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {job.required_skills.slice(0, 5).map((s) => <span key={s} className="rounded-md bg-[var(--cp-brand-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--cp-brand)]">{s}</span>)}
-          {job.required_skills.length > 5 && <span className="text-[11px] text-slate-400">+{job.required_skills.length - 5}</span>}
-        </div>
-      )}
-
-      <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-100 pt-4" style={{ marginTop: "1.25rem" }}>
+    <article className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-row sm:items-center">
+      <DeptIcon job={job} />
+      <div className="min-w-0 flex-1">
         <a
           href={urlWithJob(job.id)}
           onClick={(e) => {
             e.preventDefault();
             onDetails();
           }}
-          className="rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-800 hover:bg-slate-50"
+          className="text-lg font-bold text-slate-900 hover:text-[var(--cp-brand)]"
         >
-          View details
+          {job.title}
         </a>
-        <button onClick={onApply} className="rounded-lg bg-[var(--cp-brand)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[var(--cp-brand-dark)]">
-          Apply now
+        <p className="mt-0.5 text-sm text-slate-600">{meta.join("  |  ")}</p>
+        {job.required_skills.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {job.required_skills.slice(0, 5).map((s) => <span key={s} className="rounded-full bg-[var(--cp-brand-soft)] px-2.5 py-0.5 text-xs font-medium text-[var(--cp-brand)]">{s}</span>)}
+            {job.required_skills.length > 5 && <span className="text-xs text-slate-400">+{job.required_skills.length - 5}</span>}
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-col items-stretch gap-1 sm:items-end">
+        <button onClick={onApply} className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-[var(--cp-brand)] px-4 py-2 text-sm font-semibold text-[var(--cp-brand)] hover:bg-[var(--cp-brand)] hover:text-white">
+          Apply Now <ArrowRight size={15} />
         </button>
+        <span className="text-center text-[11px] text-slate-400 sm:text-right">{[openingsLabel(job.open_positions), posted].filter(Boolean).join(" · ")}</span>
       </div>
     </article>
   );
@@ -267,13 +266,27 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
     setFilters((f) => ({ ...f, [key]: value }));
   };
   const scrollToPositions = () => positionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  /** A button's target: a section on the page ("#about") or a link. From a job page, sections open on the list page. */
+  const goTo = (target: string) => {
+    if (!target) return;
+    if (target.startsWith("#")) {
+      const find = () => document.getElementById(`cp-${target.slice(1)}`) || (overlay?.getRootNode() as Document | ShadowRoot | undefined)?.getElementById?.(`cp-${target.slice(1)}`);
+      const scroll = () => find()?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (viewing) {
+        showJob(null);
+        setTimeout(scroll, 60);
+      } else scroll();
+      return;
+    }
+    window.open(target, "_blank", "noopener,noreferrer");
+  };
 
   const positions = (section: CareerSection) => (
     <section key={section.id} id={`cp-${section.id}`} ref={positionsRef} className="scroll-mt-20">
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">{section.title}</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">{section.title}{!loading && !error && jobs.length > 0 && <span className="text-slate-500"> ({jobs.length})</span>}</h2>
             {section.subtitle && <p className="mt-1 text-sm text-slate-600">{section.subtitle}</p>}
           </div>
           {!loading && !error && (
@@ -329,8 +342,8 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
               )}
             </div>
           )}
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {visible.map((job) => <JobCard key={job.id} job={job} onDetails={() => showJob(job.id)} onApply={() => setApplying(job)} />)}
+          <div className="space-y-3">
+            {visible.map((job) => <JobRow key={job.id} job={job} onDetails={() => showJob(job.id)} onApply={() => setApplying(job)} />)}
           </div>
         </div>
       </div>
@@ -345,20 +358,22 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
       style={{ ...vars, fontFamily: branding?.font_family ? `"${branding.font_family}", Inter, sans-serif` : undefined } as React.CSSProperties}
     >
       {showHeader && content.header.show && (
-        <BrandedHeader content={content} branding={branding} company={companyInfo} homeHref={urlWithJob(null)} onHome={() => { showJob(null); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+        <BrandedHeader content={content} branding={branding} company={companyInfo} homeHref={urlWithJob(null)} onHome={() => { showJob(null); window.scrollTo({ top: 0, behavior: "smooth" }); }} onTarget={goTo} />
       )}
 
       {viewing ? (
         <JobDetailPage
           job={viewing}
+          content={content}
           company={companyInfo}
+          onTarget={goTo}
           shareUrl={new URL(urlWithJob(viewing.id), window.location.href).href}
           onBack={() => showJob(null)}
           onApply={() => setApplying(viewing)}
         />
       ) : (
         <main className="flex-1">
-          <Hero content={content} onCta={scrollToPositions} />
+          <Hero content={content} onCta={scrollToPositions} onTarget={goTo} />
           {shownSections.map((section, i) => (section.type === "open_positions" ? positions(section) : <ContentSection key={section.id} section={section} index={i} />))}
         </main>
       )}

@@ -164,3 +164,18 @@ def test_older_pages_get_the_new_fields():
     assert filled["header"]["cta"] == {"label": "", "target": ""}
     assert filled["hero"]["layout"] == "background" and filled["sections"][0]["stats"] == []
     assert "cta" not in old["header"]                            # the stored copy is left alone
+
+
+@pytest.mark.asyncio
+async def test_create_company_sets_the_careers_headline():
+    from app.services.career_page_service import CareerPageService
+
+    db = FakeDatabase()
+    db["companies"].docs.append({"id": "globex", "name": "Globex", "slug": "globex"})
+    svc = CareerPageService(db)
+    await svc.set_headline("globex", "  Move India's freight  ")
+    page = await svc.get("globex")
+    assert page["draft"]["hero"]["title"] == "Move India's freight"
+    assert page["published"]["hero"]["title"] == "Move India's freight"
+    await svc.set_headline("globex", "")          # nothing given: the default stays
+    assert (await svc.get("globex"))["draft"]["hero"]["title"] == "Move India's freight"

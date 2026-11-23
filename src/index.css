@@ -84,6 +84,15 @@ html.dark {
   color: white;
   border-color: transparent;
 }
+.brand-sidebar .brand-role-badge {
+  background-color: color-mix(in oklab, var(--brand) 35%, var(--sidebar-bg));
+  border: 1px solid color-mix(in oklab, var(--brand) 70%, transparent);
+  color: white;
+}
+.brand-sidebar .brand-promo {
+  background: linear-gradient(160deg, color-mix(in oklab, var(--brand) 45%, var(--sidebar-bg)) 0%, color-mix(in oklab, var(--brand) 18%, var(--sidebar-bg)) 100%);
+  border: 1px solid color-mix(in oklab, var(--sidebar-text) 14%, transparent);
+}
 .brand-sidebar .brand-sidebar-footer {
   background-color: color-mix(in oklab, var(--sidebar-bg) 92%, black) !important;
   border-color: color-mix(in oklab, var(--sidebar-bg) 80%, white) !important;
@@ -276,6 +285,8 @@ html.dark .text-slate-400 {
 html.dark .bg-indigo-50,
 html.dark .bg-indigo-50\/80,
 html.dark .bg-indigo-50\/70,
+html.dark .bg-indigo-50\/60,
+html.dark .bg-indigo-50\/40,
 html.dark .bg-indigo-50\/20 {
   background-color: color-mix(in oklab, var(--brand) 18%, transparent) !important;
 }

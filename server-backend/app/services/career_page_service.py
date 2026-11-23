@@ -357,6 +357,20 @@ class CareerPageService:
         await self.col.update_one({"id": company_id}, {"$setOnInsert": doc}, upsert=True)
         return await self.col.find_one({"id": company_id}) or doc
 
+    async def set_headline(self, company_id: str, title: str) -> None:
+        """A new company's careers headline (Create Company → Branding & Career Page), on the draft and live page."""
+        title = _t(title, 150)
+        if not title:
+            return
+        doc = await self._doc(company_id)
+        changes = {}
+        for key in ("draft", "published"):
+            if doc.get(key):
+                content = copy.deepcopy(doc[key])
+                content.setdefault("hero", {})["title"] = title
+                changes[key] = content
+        await self.col.update_one({"id": company_id}, {"$set": changes})
+
     @staticmethod
     def _view(doc: Dict[str, Any]) -> Dict[str, Any]:
         draft, published = doc.get("draft"), doc.get("published")

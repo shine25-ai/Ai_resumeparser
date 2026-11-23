@@ -321,6 +321,10 @@ export interface NewWorkspace extends CompanyChanges {
   slug?: string;
   email_domains: string[];
   admin?: { full_name: string; email: string; password: string };
+  /** Colours and logo, saved as the new company's branding. */
+  branding?: { colors?: Record<string, string>; logo_url?: string };
+  /** The careers page headline. */
+  career_headline?: string;
 }
 
 /** Super admin: archive (workspace off, careers page gone, hidden from the list) or restore a company. */

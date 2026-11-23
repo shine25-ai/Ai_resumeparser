@@ -246,7 +246,23 @@ None. All answered on 23 Nov 2026 (see §0).
 
 The SRS has 24 mockup images. Every screen must be buildable from the API, so each one was checked against the
 stored fields and endpoints (23 Nov 2026). ✅ = the API has what the screen shows; the phase column says where
-the rest comes from. Layout work (expanded sidebar, top bar with search, full-page wizards) is separate UI work.
+the rest comes from.
+
+**UI matched to the mockups (Phases 1–4):**
+- menu with sub-menus, role badge and company switcher;
+- top bar with Ctrl+K search, help, and the user's name and role;
+- breadcrumbs;
+- Companies list and details panel;
+- Create Company page with live preview;
+- Plans & Billing;
+- Job Openings list and panel;
+- Create / Edit Job Opening page;
+- Career Page Builder;
+- public careers page and job page;
+- Company Settings & Tenant Configuration;
+- Users summary cards.
+
+Still to do: the Super Admin and Company dashboards (Phase 10), Platform Settings as one page (Phase 11), and a Users table restyle.
 
 | Mockup | Data the API gives | Comes later |
 |---|---|---|

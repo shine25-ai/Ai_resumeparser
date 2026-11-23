@@ -21,7 +21,7 @@ from typing_extensions import Annotated
 from app.core.database import get_database
 from app.core.dependencies import require_access, get_current_active_user, is_admin_or_staff_user, is_company_admin
 from app.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
-from app.core.tenant import system_scope
+from app.core.tenant import company_scope, system_scope
 from app.services.audit_service import AUDIT_LOGS_COLLECTION, diff as audit_diff, record_audit
 from app.models.company import SUPERADMIN_ONLY_FIELDS, with_profile_defaults
 from app.repositories.company_repository import CompanyRepository
@@ -481,6 +481,8 @@ class CompanyCreate(CompanyProfileIn):
     slug: Optional[Slug] = Field(default=None, description="Careers page address; made from the name when left out")
     email_domains: List[str] = Field(default_factory=list, max_length=20, description="e.g. ['abc.com']; empty allows any email")
     admin: Optional[CompanyAdmin] = Field(default=None, description="The company's first administrator")
+    branding: Optional[Dict[str, Any]] = Field(default=None, description="Colours and logo (as PUT /branding); the wizard's Branding step")
+    career_headline: Optional[Annotated[str, StringConstraints(max_length=150)]] = Field(default=None, description="The careers page headline")
 
 
 class CompanyUpdate(CompanyProfileIn):
@@ -597,7 +599,20 @@ async def create_company(
     if not current_user.get("is_superadmin"):
         raise AuthorizationError("Only the platform super admin can add companies.")
     payload = await _with_plan_limits(db, body.model_dump(exclude_none=True))
+    branding = payload.pop("branding", None)
+    headline = payload.pop("career_headline", None)
+    if branding:
+        from app.models.branding import clean_branding
+        clean_branding(branding)  # check before anything is created
     data = await service.create_company(payload)
+    if branding:
+        from app.services.branding_service import BrandingService
+        with system_scope():
+            await BrandingService(db).save_company(data["id"], branding)
+    if headline:
+        from app.services.career_page_service import CareerPageService
+        with company_scope(data["id"]):
+            await CareerPageService(db).set_headline(data["id"], headline)
     details = f"Admin: {data['admin']['email']}" if data.get("admin") else ""
     for platform in (True, False):
         await record_audit(db, current_user, "company.created", "company", data["id"], data["name"], details=details,

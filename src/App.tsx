@@ -3,6 +3,7 @@ import { BASE_URL } from "./utils/Api";
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { TopHeader } from "./components/TopHeader";
+import Breadcrumb from "./components/shell/Breadcrumb";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import SessionExpiredModal from "./components/SessionExpiredModal";
 import { FeedbackProvider } from "./components/ui/Feedback";
@@ -17,9 +18,12 @@ import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
 import Settings from "./pages/Settings";
 import Companies from "./pages/Companies";
+import CreateCompany from "./pages/CreateCompany";
+import Plans from "./pages/Plans";
 import ResumeTemplates from "./pages/ResumeTemplates";
 import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
+import JobEditor from "./pages/JobEditor";
 import AuditLog from "./pages/AuditLog";
 import CandidateTracker from "./pages/CandidateTracker";
 import CareerPageBuilder from "./pages/CareerPageBuilder";
@@ -120,6 +124,7 @@ export default function App() {
                   <main className="flex-1 overflow-y-auto relative pb-20 md:pb-0">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-[var(--app-bg)] to-[var(--app-bg)] -z-10" />
                     <div className="p-2 sm:p-4 md:p-6 h-full">
+                      <Breadcrumb />
                       <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/upload" element={<Upload />} />
@@ -131,6 +136,8 @@ export default function App() {
                         <Route path="/evaluation" element={<Navigate to="/database" replace />} />
                         <Route path="/jd-match" element={<JDMatch />} />
                         <Route path="/job-openings" element={<JobOpenings />} />
+                        <Route path="/job-openings/new" element={<JobEditor />} />
+                        <Route path="/job-openings/:id/edit" element={<JobEditor key="edit" />} />
                         <Route path="/interviews" element={<InterviewManagement />} />
                         {/* The Interview Dashboard is now the Interviews page's "Today and Upcoming" view */}
                         <Route path="/interview-dashboard" element={<Navigate to="/interviews" replace />} />
@@ -141,6 +148,8 @@ export default function App() {
                         <Route path="/audit-log" element={<AuditLog />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/companies" element={<Companies />} />
+                        <Route path="/companies/new" element={<CreateCompany />} />
+                        <Route path="/platform/plans" element={<Plans />} />
                         <Route path="/career-page" element={<CareerPageBuilder />} />
                         <Route path="/career-page/integrate" element={<CareerPageIntegrate />} />
                       </Routes>

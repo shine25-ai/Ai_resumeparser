@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug, Database, Palette } from 'lucide-react';
+import { Building2, Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug, Database, Palette } from 'lucide-react';
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST, apiFetch } from "../utils/Api";
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
@@ -10,11 +10,22 @@ import InterviewTypeManagement from '../components/InterviewTypeManagement';
 import IntegrationApiSettings from '../components/IntegrationApiSettings';
 import MasterDataManager from '../components/MasterDataManager';
 import BrandingSettings from '../components/BrandingSettings';
+import CompanySettings from '../components/CompanySettings';
+import UsersOverview from '../components/UsersOverview';
 
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters' | 'branding') || 'config';
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes' | 'integration' | 'masters' | 'branding'>(initialTab);
+  // The super admin in the platform workspace has Platform Settings instead of a company profile.
+  const isPlatformAdmin = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      return (u.is_superadmin || u.role === 'superadmin') && (!u.company_id || u.company_id === 'default');
+    } catch {
+      return false;
+    }
+  })();
+  const initialTab = (searchParams.get('tab') as 'company' | 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters' | 'branding') || 'config';
+  const [activeTab, setActiveTab] = useState<'company' | 'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes' | 'integration' | 'masters' | 'branding'>(initialTab);
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -33,8 +44,8 @@ export default function Settings() {
   const [message, setMessage] = useState({ type: '', text: '' });
 
   useEffect(() => {
-    const tabParam = searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters' | 'branding';
-    if (tabParam && ['config', 'templates', 'roles', 'interviewTypes', 'integration', 'masters', 'branding'].includes(tabParam)) {
+    const tabParam = searchParams.get('tab') as 'company' | 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters' | 'branding';
+    if (tabParam && ['company', 'config', 'templates', 'roles', 'interviewTypes', 'integration', 'masters', 'branding'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
@@ -117,10 +128,22 @@ export default function Settings() {
         <p className="text-slate-500 mt-2 font-medium">Configure system settings, email preferences, and role-based user access</p>
       </div>
 
-      <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl mb-8 border border-slate-200">
+      <div className="flex space-x-1 overflow-x-auto bg-slate-100 p-1 rounded-xl mb-8 border border-slate-200">
+        {!isPlatformAdmin && (
+        <button
+          onClick={() => { setActiveTab('company'); setSearchParams({ tab: 'company' }); }}
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${activeTab === 'company'
+              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+        >
+          <Building2 className="w-4 h-4" />
+          Company
+        </button>
+        )}
         <button
           onClick={() => { setActiveTab('config'); setSearchParams({ tab: 'config' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'config'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'config'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -130,7 +153,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => { setActiveTab('templates'); setSearchParams({ tab: 'templates' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'templates'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'templates'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -140,7 +163,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => { setActiveTab('roles'); setSearchParams({ tab: 'roles' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'roles'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'roles'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -150,7 +173,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => setActiveTab('ai_config')}
-          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'ai_config'
+          className={`flex items-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'ai_config'
               ? 'bg-white text-purple-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -160,7 +183,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => setActiveTab('app_config')}
-          className={`flex items-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'app_config'
+          className={`flex items-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'app_config'
               ? 'bg-white text-emerald-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -170,7 +193,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => { setActiveTab('interviewTypes'); setSearchParams({ tab: 'interviewTypes' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'interviewTypes'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'interviewTypes'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -180,7 +203,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => { setActiveTab('integration'); setSearchParams({ tab: 'integration' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'integration'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'integration'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -190,7 +213,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => { setActiveTab('masters'); setSearchParams({ tab: 'masters' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'masters'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'masters'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -200,7 +223,7 @@ export default function Settings() {
         </button>
         <button
           onClick={() => { setActiveTab('branding'); setSearchParams({ tab: 'branding' }); }}
-          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'branding'
+          className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'branding'
               ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
@@ -210,7 +233,9 @@ export default function Settings() {
         </button>
       </div>
 
-      {activeTab === 'config' ? (
+      {activeTab === 'company' && !isPlatformAdmin ? (
+        <CompanySettings />
+      ) : activeTab === 'config' ? (
         <>
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-6 border-b border-slate-200 pb-4">
@@ -377,7 +402,10 @@ export default function Settings() {
       ) : activeTab === 'templates' ? (
         <MailTemplates />
       ) : activeTab === 'roles' ? (
-        <RoleManagement />
+        <>
+          <UsersOverview />
+          <RoleManagement />
+        </>
       ) : activeTab === 'ai_config' ? (
         <AIConfiguration />
       ) : activeTab === 'app_config' ? (
