@@ -1,5 +1,6 @@
 import { BASE_URL, apiFetch } from "./Api";
 import { readJson } from "../careers/api";
+import type { Branding } from "../theme/ThemeProvider";
 
 // ── Invitations ──────────────────────────────────────────────────────────────
 
@@ -132,3 +133,55 @@ export const downloadAuditCsv = async (f: AuditFilters): Promise<void> => {
   a.click();
   URL.revokeObjectURL(url);
 };
+
+// ── Branding ─────────────────────────────────────────────────────────────────
+
+
+export type BrandingChanges = Partial<Omit<Branding, "colors" | "dark" | "login" | "email">> & {
+  colors?: Partial<Branding["colors"]>;
+  dark?: Partial<Branding["dark"]>;
+  login?: Partial<Branding["login"]>;
+  email?: Partial<NonNullable<Branding["email"]>>;
+};
+
+export interface BrandingData {
+  effective: Branding;
+  company: BrandingChanges;
+  defaults: Branding;
+  warnings: { check: string; ratio: number; needed: number }[];
+  platform_name: string;
+  company_name: string;
+  company_slug: string;
+}
+
+export interface PlatformSettings {
+  platform_name: string;
+  support_email: string;
+  platform_url: string;
+  branding: BrandingChanges;
+}
+
+const BRANDING = `${BASE_URL}/branding`;
+
+export const fetchBranding = async (): Promise<BrandingData> => readJson(await apiFetch(BRANDING));
+
+export const saveBranding = async (changes: BrandingChanges): Promise<BrandingData> =>
+  readJson(await apiFetch(BRANDING, { method: "PUT", ...json(changes) }));
+
+export const resetBranding = async (): Promise<BrandingData> => readJson(await apiFetch(BRANDING, { method: "DELETE" }));
+
+export const uploadBrandingImage = async (
+  kind: "logo" | "logo_dark" | "favicon" | "login_background",
+  file: File,
+  scope: "company" | "platform" = "company"
+): Promise<{ id: string; url: string }> => {
+  const form = new FormData();
+  form.append("kind", kind);
+  form.append("file", file);
+  return readJson(await apiFetch(`${BRANDING}/assets?scope=${scope}`, { method: "POST", body: form }));
+};
+
+export const fetchPlatformSettings = async (): Promise<PlatformSettings> => readJson(await apiFetch(`${BASE_URL}/platform/settings`));
+
+export const savePlatformSettings = async (changes: Partial<PlatformSettings>): Promise<PlatformSettings> =>
+  readJson(await apiFetch(`${BASE_URL}/platform/settings`, { method: "PUT", ...json(changes) }));

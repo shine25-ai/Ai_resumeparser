@@ -17,8 +17,10 @@ class UserResponse(BaseModel):
     is_active: bool
     company_id: Optional[str] = None
     company_name: Optional[str] = None
+    company_slug: Optional[str] = None
     is_superadmin: bool = False
     department: Optional[str] = ""
+    ui_theme: Optional[str] = ""
     created_at: str
     updated_at: str
 
@@ -45,6 +47,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     role: Optional[str] = None
     department: Optional[str] = Field(None, max_length=120)
+    ui_theme: Optional[str] = Field(None, pattern="^(|light|dark)$")
 
 
 class UserRoleUpdate(BaseModel):

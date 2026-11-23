@@ -9,6 +9,7 @@ import {
   refreshSessionToken,
 } from "../utils/session";
 import { useFeedback } from "./ui/Feedback";
+import { loginPath } from "../theme/brandingCache";
 
 // 5 minutes warning before expiration
 const WARNING_THRESHOLD_MS = 5 * 60 * 1000;
@@ -112,7 +113,7 @@ export default function SessionExpiredModal() {
 
   const handleLogin = () => {
     clearSession();
-    navigate("/login", { replace: true, state: { from: location.pathname } });
+    navigate(loginPath(), { replace: true, state: { from: location.pathname } });
   };
 
   // Full screen Modal when session has expired

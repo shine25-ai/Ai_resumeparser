@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # Set to "public-read" only to go back to the old public URLs.
     S3_OBJECT_ACL: str = "private"
     FILE_LINK_TTL_MINUTES: int = 60
+    # Public address of this API (e.g. https://api.example.com), used for logo links inside emails.
+    # Empty: the address of the request that triggered the email.
+    PUBLIC_API_BASE_URL: str = ""
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),

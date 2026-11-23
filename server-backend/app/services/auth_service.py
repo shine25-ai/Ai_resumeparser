@@ -2,6 +2,8 @@
 Authentication service handling user registration, login authentication, token refresh, and password updates.
 """
 
+from typing import Optional
+
 from loguru import logger
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, AuthorizationError, AppException, NotFoundError
@@ -88,9 +90,21 @@ class AuthService:
         if not user.get("is_active", True):
             raise AuthenticationError("User account is deactivated.")
         await self._check_company_open(user)
+        await self._check_login_page(user, payload.company)
 
         logger.info(f"User '{email}' logged in successfully.")
         return self._issue_tokens(user)
+
+    async def _check_login_page(self, user: dict, slug: Optional[str]) -> None:
+        """A company's own sign-in page only lets that company's users in (the super admin may use any)."""
+        if not slug or str(user.get("role", "")).lower() == "superadmin":
+            return
+        with system_scope():
+            company = await self.user_repo.db[COMPANIES_COLLECTION].find_one({"slug": slug.strip().lower()})
+        if not company:
+            return  # unknown page address: treat it as the platform sign-in page
+        if (user.get("company_id") or DEFAULT_COMPANY_ID) != company["id"]:
+            raise AuthenticationError(f"This account doesn't belong to {company.get('name', 'this company')}. Use your own company's sign-in page.")
 
     async def refresh_tokens(self, refresh_token_str: str) -> TokenResponse:
         """Issue new access & refresh token pair using valid refresh token."""

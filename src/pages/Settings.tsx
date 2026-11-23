@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug, Database } from 'lucide-react';
+import { Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug, Database, Palette } from 'lucide-react';
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST, apiFetch } from "../utils/Api";
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
@@ -9,11 +9,12 @@ import AppConfiguration from '../components/AppConfiguration';
 import InterviewTypeManagement from '../components/InterviewTypeManagement';
 import IntegrationApiSettings from '../components/IntegrationApiSettings';
 import MasterDataManager from '../components/MasterDataManager';
+import BrandingSettings from '../components/BrandingSettings';
 
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters') || 'config';
-  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes' | 'integration' | 'masters'>(initialTab);
+  const initialTab = (searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters' | 'branding') || 'config';
+  const [activeTab, setActiveTab] = useState<'config' | 'templates' | 'roles' | 'ai_config' | 'app_config' | 'interviewTypes' | 'integration' | 'masters' | 'branding'>(initialTab);
   const [config, setConfig] = useState({
     smtp_server: '',
     smtp_port: 587,
@@ -32,8 +33,8 @@ export default function Settings() {
   const [message, setMessage] = useState({ type: '', text: '' });
 
   useEffect(() => {
-    const tabParam = searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters';
-    if (tabParam && ['config', 'templates', 'roles', 'interviewTypes', 'integration', 'masters'].includes(tabParam)) {
+    const tabParam = searchParams.get('tab') as 'config' | 'templates' | 'roles' | 'interviewTypes' | 'integration' | 'masters' | 'branding';
+    if (tabParam && ['config', 'templates', 'roles', 'interviewTypes', 'integration', 'masters', 'branding'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
@@ -196,6 +197,16 @@ export default function Settings() {
         >
           <Database className="w-4 h-4" />
           Master Data
+        </button>
+        <button
+          onClick={() => { setActiveTab('branding'); setSearchParams({ tab: 'branding' }); }}
+          className={`flex items-center justify-center gap-2 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'branding'
+              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 font-semibold'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+        >
+          <Palette className="w-4 h-4" />
+          Branding
         </button>
       </div>
 
@@ -375,6 +386,8 @@ export default function Settings() {
         <IntegrationApiSettings />
       ) : activeTab === 'masters' ? (
         <MasterDataManager />
+      ) : activeTab === 'branding' ? (
+        <BrandingSettings />
       ) : (
         <InterviewTypeManagement />
       )}

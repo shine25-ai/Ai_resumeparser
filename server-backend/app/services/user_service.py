@@ -130,13 +130,14 @@ class UserService:
         enriched.update(
             company_id=current_user.get("company_id"),
             company_name=current_user.get("company_name"),
+            company_slug=current_user.get("company_slug"),
             is_superadmin=_is_super(user),
         )
         return UserResponse.model_validate(enriched)
 
     async def update_me(self, current_user: Dict[str, Any], payload: UserUpdate) -> UserResponse:
         """Users can change their own name, email and password, not their role or status."""
-        update_dict = payload.model_dump(exclude_unset=True, include={"full_name", "email", "password"})
+        update_dict = payload.model_dump(exclude_unset=True, include={"full_name", "email", "password", "ui_theme"})
         with system_scope():
             user = await self.user_repo.get_by_id(current_user["id"])
             if not user:

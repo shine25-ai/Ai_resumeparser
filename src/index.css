@@ -1,15 +1,102 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #6366f1;
-  --color-primary-hover: #4f46e5;
+  --color-primary: var(--brand);
+  --color-primary-hover: var(--brand-700);
   --color-secondary: #f8fafc;
-  --color-accent: #0284c7;
-  --color-background: #ffffff;
-  --color-surface: #f8fafc;
+  --color-accent: var(--accent);
+  --color-background: var(--app-bg);
+  --color-surface: var(--surface);
   --color-text-main: #0f172a;
   --color-text-muted: #64748b;
-  --font-sans: "Inter", "Roboto", "Helvetica Neue", sans-serif;
+  --font-sans: var(--brand-font), "Inter", "Roboto", "Helvetica Neue", sans-serif;
+}
+
+/*
+ * ── White-label theme tokens ─────────────────────────────────────────────────
+ * ThemeProvider (src/theme/ThemeProvider.tsx) sets the --brand*, --accent, --sidebar-*, --app-bg, --radius-scale
+ * and --brand-font variables from the company's branding. The defaults below are the platform look (navy sidebar,
+ * teal primary) and are used until the branding loads, and on pages with no branding.
+ *
+ * The whole "indigo" scale is the brand colour: every existing bg-/text-/border-/ring-indigo-* class follows the
+ * company's primary colour without touching the components. Status colours (emerald, rose, amber, sky) keep
+ * their meaning and are not branded.
+ */
+:root {
+  /* ThemeProvider sets the --light-* / --dark-* inputs; these pick the right one for the mode. */
+  --brand: var(--light-brand, #1c7975);
+  --accent: var(--light-accent, #3b82f6);
+  --sidebar-bg: var(--light-sidebar-bg, #0b2240);
+  --sidebar-text: var(--light-sidebar-text, #cbd5e1);
+  --app-bg: var(--light-bg, #f4f7fb);
+  --surface: #ffffff;
+  --brand-font: "Inter";
+  --radius-scale: 1;
+
+  --brand-700: color-mix(in oklab, var(--brand) 82%, black);
+  --color-indigo-50: color-mix(in oklab, var(--brand) 7%, white);
+  --color-indigo-100: color-mix(in oklab, var(--brand) 14%, white);
+  --color-indigo-200: color-mix(in oklab, var(--brand) 28%, white);
+  --color-indigo-300: color-mix(in oklab, var(--brand) 48%, white);
+  --color-indigo-400: color-mix(in oklab, var(--brand) 70%, white);
+  --color-indigo-500: color-mix(in oklab, var(--brand) 88%, white);
+  --color-indigo-600: var(--brand);
+  --color-indigo-700: var(--brand-700);
+  --color-indigo-800: color-mix(in oklab, var(--brand) 66%, black);
+  --color-indigo-900: color-mix(in oklab, var(--brand) 50%, black);
+  --color-indigo-950: color-mix(in oklab, var(--brand) 36%, black);
+
+  /* Corner style: sm / md / lg */
+  --radius-md: calc(0.375rem * var(--radius-scale));
+  --radius-lg: calc(0.5rem * var(--radius-scale));
+  --radius-xl: calc(0.75rem * var(--radius-scale));
+  --radius-2xl: calc(1rem * var(--radius-scale));
+  --radius-3xl: calc(1.5rem * var(--radius-scale));
+}
+
+/* Dark mode keeps the brand but on dark surfaces: tints become translucent, brand text becomes lighter. */
+html.dark {
+  --app-bg: var(--dark-bg, #0b1120);
+  --surface: var(--dark-surface, #111827);
+  --sidebar-bg: var(--dark-sidebar-bg, #070f1f);
+  --brand: var(--dark-brand, var(--light-brand, #1c7975));
+  --brand-text-on-dark: color-mix(in oklab, var(--brand) 55%, white);
+}
+
+/* The branded navigation rail */
+.brand-sidebar {
+  background-color: var(--sidebar-bg) !important;
+  color: var(--sidebar-text);
+  border-color: color-mix(in oklab, var(--sidebar-bg) 80%, white) !important;
+}
+.brand-sidebar .brand-sidebar-muted {
+  color: color-mix(in oklab, var(--sidebar-text) 75%, transparent);
+}
+.brand-sidebar .brand-nav-item {
+  color: var(--sidebar-text);
+}
+.brand-sidebar .brand-nav-item:hover {
+  background-color: color-mix(in oklab, var(--sidebar-text) 10%, transparent);
+  color: white;
+}
+.brand-sidebar .brand-nav-item.active {
+  background-color: var(--brand);
+  color: white;
+  border-color: transparent;
+}
+.brand-sidebar .brand-sidebar-footer {
+  background-color: color-mix(in oklab, var(--sidebar-bg) 92%, black) !important;
+  border-color: color-mix(in oklab, var(--sidebar-bg) 80%, white) !important;
+}
+.brand-sidebar .brand-user-card {
+  background-color: color-mix(in oklab, var(--sidebar-text) 8%, transparent) !important;
+  border-color: color-mix(in oklab, var(--sidebar-text) 14%, transparent) !important;
+}
+.brand-sidebar .brand-user-card .text-slate-800 {
+  color: white !important;
+}
+.brand-sidebar .brand-user-card .text-indigo-600 {
+  color: color-mix(in oklab, var(--brand) 45%, white) !important;
 }
 
 @layer base {
@@ -17,7 +104,8 @@
     color-scheme: light;
   }
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased selection:bg-indigo-500/20;
+    @apply text-slate-900 font-sans antialiased selection:bg-indigo-500/20;
+    background-color: var(--app-bg);
     margin: 0;
     padding: 0;
     min-height: 100vh;
@@ -95,7 +183,7 @@
 }
 
 .quill-dark .ql-picker-item:hover {
-  color: #4f46e5 !important;
+  color: var(--brand) !important;
 }
 
 /* ── Executive Dark Mode Theme Overrides ─────────────────────────────────── */
@@ -103,7 +191,7 @@ html.dark {
   color-scheme: dark;
 }
 html.dark body {
-  background-color: #090e1a;
+  background-color: var(--app-bg);
   color: #f1f5f9;
 }
 
@@ -125,7 +213,7 @@ html.dark .bg-slate-50\/40 {
 html.dark .bg-white,
 html.dark .bg-white\/95,
 html.dark .bg-white\/90 {
-  background-color: #111827 !important;
+  background-color: var(--surface) !important;
 }
 html.dark .bg-slate-100,
 html.dark .bg-slate-100\/90,
@@ -140,9 +228,9 @@ html.dark .bg-slate-200\/60 {
 
 /* Hide light radial gradient wash in dark mode */
 html.dark .from-indigo-100\/40 {
-  --tw-gradient-from: rgba(79, 70, 229, 0.08) !important;
-  --tw-gradient-via: #090e1a !important;
-  --tw-gradient-to: #090e1a !important;
+  --tw-gradient-from: color-mix(in oklab, var(--brand) 8%, transparent) !important;
+  --tw-gradient-via: var(--app-bg) !important;
+  --tw-gradient-to: var(--app-bg) !important;
 }
 
 /* Borders & Dividers */
@@ -184,7 +272,7 @@ html.dark .bg-indigo-50,
 html.dark .bg-indigo-50\/80,
 html.dark .bg-indigo-50\/70,
 html.dark .bg-indigo-50\/20 {
-  background-color: rgba(99, 102, 241, 0.16) !important;
+  background-color: color-mix(in oklab, var(--brand) 18%, transparent) !important;
 }
 html.dark .bg-sky-50,
 html.dark .bg-sky-50\/80 {
@@ -217,7 +305,7 @@ html.dark .border-indigo-200,
 html.dark .border-indigo-200\/80,
 html.dark .border-indigo-200\/70,
 html.dark .border-indigo-200\/90 {
-  border-color: rgba(99, 102, 241, 0.35) !important;
+  border-color: color-mix(in oklab, var(--brand) 40%, transparent) !important;
 }
 html.dark .border-emerald-200,
 html.dark .border-emerald-200\/80,
@@ -249,7 +337,7 @@ html.dark .ring-rose-100\/80 {
 /* High-Contrast Semantic Accent Text in Dark Mode */
 html.dark .text-indigo-600,
 html.dark .text-indigo-700 {
-  color: #818cf8 !important;
+  color: var(--brand-text-on-dark) !important;
 }
 html.dark .text-sky-600,
 html.dark .text-sky-700 {
@@ -283,7 +371,7 @@ html.dark .hover\:bg-slate-100\/80:hover {
   background-color: #1e293b !important;
 }
 html.dark .hover\:bg-indigo-50:hover {
-  background-color: rgba(99, 102, 241, 0.22) !important;
+  background-color: color-mix(in oklab, var(--brand) 24%, transparent) !important;
 }
 html.dark .hover\:bg-rose-50:hover {
   background-color: rgba(244, 63, 94, 0.22) !important;

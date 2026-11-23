@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { getDashboardNotifications } from '../utils/Api';
 import type { DashboardNotification } from '../types/dashboard';
+import { clearBrandingCache, useTheme } from '../theme/ThemeProvider';
+import { loginPath } from '../theme/brandingCache';
 
-const STORAGE_DARK_KEY = 'ats_dark_mode';
 const STORAGE_READ_NOTIFS_KEY = 'dashboard_read_notifs_v1';
 
 const ROUTE_TITLES: Record<string, string> = {
@@ -51,13 +52,8 @@ export function TopHeader() {
   const [userRole, setUserRole] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(STORAGE_DARK_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Dark mode follows the company's setting (off / user's choice / system): see ThemeProvider.
+  const { isDark: darkMode, canToggleDark, toggleDark, branding } = useTheme();
 
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => {
@@ -78,14 +74,6 @@ export function TopHeader() {
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    try {
-      localStorage.setItem(STORAGE_DARK_KEY, String(darkMode));
-    } catch {
-      // ignore
-    }
-  }, [darkMode]);
 
   useEffect(() => {
     try {
@@ -172,9 +160,10 @@ export function TopHeader() {
 
   const handleLogout = () => {
     localStorage.removeItem('access_token');
+    clearBrandingCache();
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
-    navigate('/login');
+    navigate(loginPath());
   };
 
   const initials =
@@ -189,7 +178,7 @@ export function TopHeader() {
 
   return (
     <header className="h-16 shrink-0 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30">
-      {/* Left: Clean Breadcrumb (Home > AI Recruiter > Current Page) */}
+      {/* Left: Clean Breadcrumb (Home > app name > Current Page) */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[13px] min-w-0">
         <button
           type="button"
@@ -197,7 +186,7 @@ export function TopHeader() {
           className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-900 transition-colors shrink-0 cursor-pointer"
         >
           <Home size={14} className="text-slate-400" />
-          <span className="hidden sm:inline font-medium">AI Recruiter</span>
+          <span className="hidden sm:inline font-medium">{branding.app_name}</span>
         </button>
         <ChevronRight size={13} className="text-slate-300 shrink-0" />
         <span className="font-semibold text-slate-900 truncate">{pageTitle}</span>
@@ -205,16 +194,18 @@ export function TopHeader() {
 
       {/* Right: Theme, Notifications Bell, User Avatar */}
       <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-        {/* Theme Toggle */}
+        {/* Theme Toggle (only when the company lets each user choose) */}
+        {canToggleDark && (
         <button
           type="button"
-          onClick={() => setDarkMode((d) => !d)}
+          onClick={toggleDark}
           title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
         >
           {darkMode ? <Sun size={15} className="text-amber-500" /> : <Moon size={15} />}
         </button>
+        )}
 
         {/* Notifications Bell with Unread Badge */}
         <div ref={notifRef} className="relative">

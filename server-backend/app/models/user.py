@@ -21,6 +21,8 @@ class UserDocument(BaseModel):
     is_active: bool = True
     is_deleted: bool = False
     department: str = ""
+    # The user's own light/dark choice, used when the company lets users choose ("" = not chosen).
+    ui_theme: str = ""
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 

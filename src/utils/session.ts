@@ -1,3 +1,4 @@
+import { clearBrandingCache } from "../theme/brandingCache";
 export const SESSION_EXPIRED_EVENT = "session-expired";
 export const SESSION_WARNING_EVENT = "session-warning";
 export const SESSION_REFRESHED_EVENT = "session-refreshed";
@@ -21,6 +22,7 @@ export const getAccessTokenExpiry = (): number | null => {
 
 export const clearSession = () => {
   localStorage.removeItem("access_token");
+  clearBrandingCache();
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
 };

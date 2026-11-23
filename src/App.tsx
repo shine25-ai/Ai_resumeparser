@@ -45,6 +45,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/:company/login" element={<Login />} />
           <Route path="/accept-invite" element={<AcceptInvite />} />
           {/* Public careers page: no login needed */}
           <Route path="/jobs" element={<CareersPage manageTitle />} />
@@ -57,13 +58,13 @@ export default function App() {
             <Route
               path="/*"
               element={
-                <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+                <div className="flex h-screen overflow-hidden bg-[var(--app-bg)] text-slate-900">
                   <SessionExpiredModal />
                   <Sidebar />
                 <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden transition-all duration-300">
                   <TopHeader />
                   <main className="flex-1 overflow-y-auto relative pb-20 md:pb-0">
-                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-slate-50 to-slate-50 -z-10" />
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-[var(--app-bg)] to-[var(--app-bg)] -z-10" />
                     <div className="p-2 sm:p-4 md:p-6 h-full">
                       <Routes>
                         <Route path="/" element={<Dashboard />} />

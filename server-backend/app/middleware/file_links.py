@@ -10,6 +10,7 @@ touched; the file-link endpoint itself and every non-JSON response pass straight
 from typing import Any, Dict, List, Tuple
 
 from app.core.file_access import FILE_LINK_PATH, sign_bucket_urls, unsign_links
+from app.services.mailer import request_base_url
 
 API_PREFIX = "/api/v1/"
 
@@ -44,6 +45,7 @@ class FileLinkMiddleware:
 
         receive = await self._unsign_request(scope, receive)
         base_url = _base_url(scope)
+        request_base_url.set(base_url)  # emails sent during this request use it for logo links
         start: Dict[str, Any] = {}
         chunks: List[bytes] = []
         is_json = False

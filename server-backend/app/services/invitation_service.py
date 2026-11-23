@@ -7,6 +7,7 @@ use. If the company has no email settings (or sending fails), the admin gets the
 """
 
 import asyncio
+import html as html_lib
 import hashlib
 import secrets
 import smtplib
@@ -24,6 +25,7 @@ from app.repositories.role_repository import RoleRepository
 from app.models.settings import EmailConfigModel
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate
+from app.services.mailer import address, branded_html, email_context
 from app.services.user_service import UserService
 from app.utils.constants import COMPANIES_COLLECTION
 from app.utils.encryption import decrypt_password
@@ -121,7 +123,8 @@ class InvitationService:
         config = EmailConfigModel(**doc_config) if doc_config else None
         if config:
             try:
-                await asyncio.to_thread(self._send, config, doc, company, link)
+                ctx = await email_context(self.db, company["id"])
+                await asyncio.to_thread(self._send, config, doc, company, link, ctx)
                 sent = True
             except Exception as e:
                 logger.warning(f"Could not email invitation to {doc['email']}: {e}")
@@ -129,18 +132,25 @@ class InvitationService:
         return {**_public(doc), "email_sent": sent, "invite_link": None if sent else link}
 
     @staticmethod
-    def _send(config: Any, doc: Dict[str, Any], company: Dict[str, Any], link: str) -> None:
+    def _send(config: Any, doc: Dict[str, Any], company: Dict[str, Any], link: str, ctx: Dict[str, Any]) -> None:
         msg = EmailMessage()
-        msg["Subject"] = f"You're invited to join {company.get('name', 'the team')} on the recruitment portal"
-        msg["From"] = f"{config.sender_name} <{config.sender_email}>"
+        msg["Subject"] = f"You're invited to join {company.get('name', 'the team')} on {ctx.get('app_name') or 'the recruitment portal'}"
+        address(msg, config, ctx)
         msg["To"] = doc["email"]
         who = doc.get("invited_by", {}).get("name") or "Your administrator"
-        msg.set_content(
+        text = (
             f"Hello {doc.get('full_name') or ''},\n\n"
             f"{who} invited you to {company.get('name')}'s recruitment workspace.\n\n"
             f"Accept the invitation and choose your password:\n{link}\n\n"
             f"The link works once and expires in {INVITE_DAYS} days."
         )
+        msg.set_content(text)
+        body = (
+            f"<p>Hello {html_lib.escape(doc.get('full_name') or '')},</p>"
+            f"<p><b>{html_lib.escape(who)}</b> invited you to <b>{html_lib.escape(company.get('name', ''))}</b>'s recruitment workspace.</p>"
+            f"<p>Accept the invitation and choose your password. The link works once and expires in {INVITE_DAYS} days.</p>"
+        )
+        msg.add_alternative(branded_html(ctx, body, {"label": "Accept invitation", "url": link}), subtype="html")
         if config.use_ssl:
             server = smtplib.SMTP_SSL(config.smtp_server, config.smtp_port, timeout=30)
         else:

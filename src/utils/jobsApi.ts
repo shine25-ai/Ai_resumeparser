@@ -1,4 +1,5 @@
 import { BASE_URL, apiFetch } from "./Api";
+import { clearBrandingCache } from "../theme/brandingCache";
 
 // Public careers types and calls live in src/careers/api.ts so the careers site can be hosted on its own.
 import { readJson, type CareersPageSettings, type PublicJob } from "../careers/api";
@@ -218,5 +219,6 @@ export const switchCompany = async (companyId: string): Promise<void> => {
   localStorage.setItem("refresh_token", tokens.refresh_token);
   const me = await readJson(await apiFetch(`${BASE_URL}/users/me`));
   localStorage.setItem("user", JSON.stringify(me));
+  clearBrandingCache(); // the new company's branding loads after the reload
   window.location.assign("/");
 };

@@ -56,6 +56,8 @@ export const DASHBOARD_INSIGHTS = `${BASE_URL}/dashboard/insights`;
 export interface LoginPayload {
   email: string;
   password: string;
+  /** Company sign-in page (/<slug>/login): only that company's users may sign in there */
+  company?: string;
 }
 
 export interface UserProfile {

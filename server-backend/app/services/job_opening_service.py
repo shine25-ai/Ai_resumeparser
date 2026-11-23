@@ -58,6 +58,7 @@ from app.services.resume_service import ResumeService
 from app.utils.encryption import decrypt_password
 from app.utils.constants import INTERVIEWS_COLLECTION, RESUMES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import utc_now
+from app.services.mailer import email_context
 
 CODE_TTL_MINUTES = 10
 CODE_RESEND_COOLDOWN_SECONDS = 60
@@ -405,17 +406,25 @@ class JobOpeningService:
         return hmac.new(settings.SECRET_KEY.encode(), f"{email}:{code}".encode(), hashlib.sha256).hexdigest()
 
     @staticmethod
-    def _send_code_email(config: Any, to_email: str, code: str) -> None:
+    def _send_code_email(config: Any, to_email: str, code: str, ctx: Optional[Dict[str, Any]] = None) -> None:
         """Blocking SMTP send, run in a worker thread. Uses the SMTP settings from the Settings page."""
+        from app.services.mailer import DEFAULT_CONTEXT, address, branded_html
+
+        ctx = ctx or dict(DEFAULT_CONTEXT)
         password = decrypt_password(config.smtp_password)
         msg = EmailMessage()
-        msg["Subject"] = "Your verification code"
-        msg["From"] = f"{config.sender_name} <{config.sender_email}>"
+        msg["Subject"] = f"Your verification code for {ctx.get('company_name') or ctx.get('app_name')}"
+        address(msg, config, ctx)
         msg["To"] = to_email
         msg.set_content(
             f"Your verification code is {code}.\n\n"
             f"It expires in {CODE_TTL_MINUTES} minutes. If you did not ask to apply for a job, ignore this email."
         )
+        msg.add_alternative(branded_html(ctx, (
+            "<p>Your verification code is</p>"
+            f'<p style="font-size:28px;font-weight:800;letter-spacing:6px;color:{ctx["primary"]};margin:8px 0 16px;">{code}</p>'
+            f"<p>It expires in {CODE_TTL_MINUTES} minutes. If you did not ask to apply for a job, ignore this email.</p>"
+        )), subtype="html")
         if config.use_ssl:
             server = smtplib.SMTP_SSL(config.smtp_server, config.smtp_port, timeout=30)
         else:
@@ -465,7 +474,9 @@ class JobOpeningService:
         await self.verification_repo.save_code(clean_email, doc.to_dict())
 
         try:
-            await asyncio.to_thread(self._send_code_email, config, clean_email, code)
+            repo = getattr(self, "opening_repo", None)
+            ctx = await email_context(repo.db if repo is not None else None)
+            await asyncio.to_thread(self._send_code_email, config, clean_email, code, ctx)
         except Exception as e:
             logger.error(f"Could not send applicant verification code to '{clean_email}': {e}")
             await self.verification_repo.delete(clean_email)

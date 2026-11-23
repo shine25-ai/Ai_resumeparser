@@ -41,6 +41,8 @@ from app.utils.encryption import decrypt_password
 from app.utils.enums import InterviewStatus
 from app.utils.helpers import utc_now
 from app.utils.validators import validate_uploaded_file
+from app.core.database import get_database
+from app.services.mailer import address, brandify, email_context
 
 
 def build_summary_csv(headers: List[str], rows: List[List[Any]]) -> bytes:
@@ -748,6 +750,7 @@ class InterviewService:
         fb_files = existing.get("interview_feedback_files") or []
         combined_attachment_urls = list(dict.fromkeys([f for f in (doc_files + fb_files) if f and str(f).strip()]))
 
+        mail_ctx = await email_context(get_database())
         replacements = {
             "candidate_name": existing.get("candidate_name", ""),
             "candidate_email": candidate_email or "N/A",
@@ -764,7 +767,8 @@ class InterviewService:
             "interview_type": str(existing.get("interview_type", "")).replace("_", " "),
             "round_number": str(existing.get("round_number", 1)),
             "notes": notes_content,
-            "company_name": config_model.sender_name or "HR Team",
+            "company_name": mail_ctx.get("company_name") or config_model.sender_name or "HR Team",
+            "app_name": mail_ctx.get("app_name") or "",
         }
 
         def render_text(text: str) -> str:
@@ -983,10 +987,10 @@ class InterviewService:
 
                 msg_cand = EmailMessage()
                 msg_cand["Subject"] = cand_subject
-                msg_cand["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+                address(msg_cand, config_model, mail_ctx)
                 msg_cand["To"] = ", ".join(cand_addrs)
                 msg_cand.set_content("Please enable HTML to view this email.")
-                msg_cand.add_alternative(cand_final_html, subtype='html')
+                msg_cand.add_alternative(brandify(cand_final_html, mail_ctx), subtype='html')
 
                 if config_model.use_ssl:
                     server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
@@ -1044,10 +1048,10 @@ class InterviewService:
 
                 msg_int = EmailMessage()
                 msg_int["Subject"] = int_subject
-                msg_int["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+                address(msg_int, config_model, mail_ctx)
                 msg_int["To"] = ", ".join(int_addrs)
                 msg_int.set_content("Please enable HTML to view this email.")
-                msg_int.add_alternative(int_final_html, subtype='html')
+                msg_int.add_alternative(brandify(int_final_html, mail_ctx), subtype='html')
 
                 if config_model.use_ssl:
                     server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
@@ -1220,12 +1224,13 @@ class InterviewService:
 </html>"""
 
         to_addrs = list(dict.fromkeys(str(e) for e in payload.to_emails))
+        mail_ctx = await email_context(get_database())
         msg = EmailMessage()
         msg["Subject"] = f"Interview Status Summary - {len(docs)} Candidate Session{'s' if len(docs) != 1 else ''}"
-        msg["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+        address(msg, config_model, mail_ctx)
         msg["To"] = ", ".join(to_addrs)
         msg.set_content("Please enable HTML to view this email.")
-        msg.add_alternative(email_html, subtype="html")
+        msg.add_alternative(brandify(email_html, mail_ctx), subtype="html")
 
         if payload.attachment_format != "none":
             export_headers = [
