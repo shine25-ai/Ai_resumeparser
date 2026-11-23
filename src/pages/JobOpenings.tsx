@@ -251,6 +251,7 @@ function JobPanel({
           ) : apps.length === 0 ? (
             <p className="text-slate-500">No applications yet.</p>
           ) : (
+            <>
             <ul className="divide-y divide-slate-100">
               {apps.map((a) => (
                 <li key={a.id} className="flex items-center gap-3 py-2.5">
@@ -259,14 +260,12 @@ function JobPanel({
                     <p className="truncate font-semibold text-slate-900">{a.full_name || a.applicant_email}</p>
                     <p className="truncate text-xs text-slate-500">{a.applicant_email} · {fmtDate(a.submitted_at)}{a.heard_from ? ` · ${a.heard_from}` : ""}</p>
                   </div>
-                  {a.candidate_id ? (
-                    <Link to={`/candidates/${a.resume_id}`} className="shrink-0 text-xs font-semibold text-indigo-600 hover:underline">Profile</Link>
-                  ) : (
-                    <span className="shrink-0 text-xs text-slate-500">{a.resume_status === "MERGED" ? "Merged" : a.resume_status}</span>
-                  )}
+                  <Link to={`/applications?job=${job.id}&id=${a.id}`} className="shrink-0 text-xs font-semibold text-indigo-600 hover:underline">Review</Link>
                 </li>
               ))}
             </ul>
+            <Link to={`/applications?job=${job.id}`} className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:underline">Open all in Applications <ChevronRight size={14} /></Link>
+            </>
           )
         )}
 

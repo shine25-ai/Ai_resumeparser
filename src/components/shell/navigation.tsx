@@ -92,6 +92,7 @@ export const COMPANY_NAV: NavItem[] = [
     key: "candidates", label: "Candidates", path: "/database", icon: <Users size={I} />, perm: "database",
     children: [
       { label: "All Candidates", path: "/database" },
+      { label: "Applications", path: "/applications" },
       { label: "Upload Resumes", path: "/upload", perm: "upload" },
       { label: "JD Match", path: "/jd-match", perm: "jd-match" },
     ],

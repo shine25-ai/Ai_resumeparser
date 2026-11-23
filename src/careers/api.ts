@@ -167,24 +167,69 @@ export const heardFromOptions = (companyName = "Shinelogics") => [
 ];
 export const HEARD_FROM_OPTIONS = heardFromOptions();
 
-export const submitApplication = async (
-  jobId: string,
-  applicantToken: string,
-  file: File,
-  details: { heardFrom?: string; note?: string } = {}
-) => {
+// ── The 5-step application (Phase 5) ─────────────────────────────────────────
+
+export interface EducationEntry { degree: string; specialization: string; institution: string; year: string; score: string }
+export interface ExperienceEntry { company: string; designation: string; start: string; end: string; current: boolean; responsibilities: string }
+
+export interface ApplicationForm {
+  personal: { full_name: string; email: string; phone_code: string; phone: string; location: string; linkedin: string; portfolio: string };
+  notice_period: string;
+  expected_ctc: number | null;
+  current_ctc: number | null;
+  currency: string;
+  total_experience_years: number | null;
+  education: EducationEntry[];
+  experience: ExperienceEntry[];
+  skills: string[];
+  certifications: string[];
+  heard_from: string;
+  cover_note: string;
+}
+
+export const emptyApplicationForm = (email = ""): ApplicationForm => ({
+  personal: { full_name: "", email, phone_code: "+91", phone: "", location: "", linkedin: "", portfolio: "" },
+  notice_period: "", expected_ctc: null, current_ctc: null, currency: "INR", total_experience_years: null,
+  education: [], experience: [], skills: [], certifications: [], heard_from: "", cover_note: "",
+});
+
+export interface ResumeDraft {
+  draft_id: string;
+  filename: string;
+  size: number;
+  /** queued / processing: the AI is reading it; done: `extracted` is ready; failed / unavailable: fill in by hand. */
+  parse_status: "queued" | "processing" | "done" | "failed" | "unavailable";
+  parse_error: string;
+  extracted: ApplicationForm | null;
+  confidence: { score: number; level: "high" | "medium" | "low"; fields: Record<string, boolean>; email_matches: boolean } | null;
+  summary: { total_experience_years: number | null; highest_education: string; top_skills: string[] } | null;
+  expires_at: string;
+}
+
+/** Step 1: upload the resume; the AI starts reading it straight away. */
+export const uploadApplicationResume = async (jobId: string, applicantToken: string, file: File): Promise<ResumeDraft> => {
   const form = new FormData();
   form.append("file", file);
-  if (details.heardFrom) form.append("heard_from", details.heardFrom);
-  if (details.note?.trim()) form.append("note", details.note.trim());
-  return readJson(
-    await fetch(`${publicJobsUrl()}/${jobId}/apply`, {
+  return readJson(await fetch(`${publicJobsUrl()}/${jobId}/resume`, { method: "POST", headers: { "X-Applicant-Token": applicantToken }, body: form }));
+};
+
+export const fetchResumeDraft = async (jobId: string, draftId: string, applicantToken: string): Promise<ResumeDraft> =>
+  readJson(await fetch(`${publicJobsUrl()}/${jobId}/drafts/${encodeURIComponent(draftId)}`, { headers: { "X-Applicant-Token": applicantToken } }));
+
+export const submitApplicationForm = async (
+  jobId: string,
+  applicantToken: string,
+  body: { draft_id: string; form: ApplicationForm; consent: boolean }
+): Promise<{ application_id: string; opening_title: string; company_name: string }> =>
+  readJson(
+    await fetch(`${publicJobsUrl()}/${jobId}/applications`, {
       method: "POST",
-      headers: { "X-Applicant-Token": applicantToken },
-      body: form,
+      headers: { "Content-Type": "application/json", "X-Applicant-Token": applicantToken },
+      body: JSON.stringify(body),
     })
   );
-};
+
+export const NOTICE_PERIODS = ["Immediate", "15 Days", "30 Days", "45 Days", "60 Days", "90 Days", "More than 90 Days"];
 
 // ── Career page (builder content, published) ─────────────────────────────────
 

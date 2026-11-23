@@ -65,7 +65,7 @@ from app.services.mailer import email_context
 CODE_TTL_MINUTES = 10
 CODE_RESEND_COOLDOWN_SECONDS = 60
 CODE_MAX_ATTEMPTS = 5
-APPLICANT_TOKEN_MINUTES = 30
+APPLICANT_TOKEN_MINUTES = 120  # long enough to fill in the 5-step form
 PUBLIC_APPLICANT_USER_ID = "public-applicant"
 EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 # Role detail sections shown on the careers page; each is a list of short lines.

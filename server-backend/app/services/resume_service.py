@@ -83,6 +83,7 @@ class ResumeService:
         resume_source_informer_name: Optional[str] = None,
         uploaded_by_name: Optional[str] = None,
         uploaded_by_email: Optional[str] = None,
+        parser_job_id: Optional[str] = None,
     ) -> ResumeResponse:
         """
         Validate file, save to disk, upload to AWS S3, parse resume using resume-parser-pro, and save document in MongoDB with uploader user info.
@@ -171,13 +172,17 @@ class ResumeService:
             user_id=user_id,
             file_path=file_path,
             original_filename=original_filename,
-            content_type=file.content_type or "application/pdf"
+            content_type=file.content_type or "application/pdf",
+            parser_job_id=parser_job_id,
         )
 
         return ResumeResponse.model_validate(created)
 
-    async def _process_ai_parsing_async(self, resume_id: str, user_id: str, file_path: str, original_filename: str, content_type: str):
-        """Background task to run AI parsing via httpx and update MongoDB."""
+    async def _process_ai_parsing_async(self, resume_id: str, user_id: str, file_path: str, original_filename: str, content_type: str,
+                                        parser_job_id: Optional[str] = None):
+        """Background task to run AI parsing via httpx and update MongoDB.
+        parser_job_id: the parser already has this file (the careers apply form sent it for pre-fill), so its
+        result is used instead of parsing the file again."""
         try:
             import httpx
             import asyncio
@@ -201,15 +206,18 @@ class ResumeService:
             else:
                 logger.warning("No AI Configuration found in DB, relying on ai-parser defaults")
                 
-            with open(file_path, "rb") as f:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.post(
-                        settings.AI_PARSER_URL,
-                        files={"file": (original_filename, f, content_type)},
-                        data={"ai_config": json.dumps(config_payload)}
-                    )
-                    response.raise_for_status()
-                    ai_result = response.json()
+            if parser_job_id:
+                ai_result = {"job_id": parser_job_id}
+            else:
+                with open(file_path, "rb") as f:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        response = await client.post(
+                            settings.AI_PARSER_URL,
+                            files={"file": (original_filename, f, content_type)},
+                            data={"ai_config": json.dumps(config_payload)}
+                        )
+                        response.raise_for_status()
+                        ai_result = response.json()
                     
             parsed_data = {}
             ai_evaluation = {}

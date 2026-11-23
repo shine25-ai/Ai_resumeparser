@@ -13,7 +13,8 @@ import {
   type CareerSection,
   type PublicJob,
 } from "./api";
-import { ApplyModal, openingsLabel, postedAgo } from "./components";
+import { openingsLabel, postedAgo } from "./components";
+import ApplyPage from "./ApplyPage";
 import { OverlayContext } from "./overlay";
 import { BrandedFooter, BrandedHeader, ContentSection, Hero, JobDetailPage, brandVars } from "./sections";
 
@@ -25,16 +26,20 @@ import { BrandedFooter, BrandedHeader, ContentSection, Hero, JobDetailPage, bran
  */
 
 const JOB_PARAM = "job";
+const APPLY_PARAM = "apply";
 const COMPANY_PARAM = "company";
 
 const jobFromUrl = () => new URLSearchParams(window.location.search).get(JOB_PARAM);
+const applyFromUrl = () => new URLSearchParams(window.location.search).get(APPLY_PARAM) === "1";
 const companyFromUrl = () => new URLSearchParams(window.location.search).get(COMPANY_PARAM) || "";
 
-/** The current page address with ?job set to id, or removed when id is null. */
-const urlWithJob = (id: string | null) => {
+/** The current page address with ?job set to id (and &apply=1 on the apply page), or both removed when id is null. */
+const urlWithJob = (id: string | null, apply = false) => {
   const url = new URL(window.location.href);
   if (id) url.searchParams.set(JOB_PARAM, id);
   else url.searchParams.delete(JOB_PARAM);
+  if (id && apply) url.searchParams.set(APPLY_PARAM, "1");
+  else url.searchParams.delete(APPLY_PARAM);
   return `${url.pathname}${url.search}${url.hash}`;
 };
 
@@ -156,7 +161,7 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
   const [jobs, setJobs] = useState<PublicJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [applying, setApplying] = useState<PublicJob | null>(null);
+  const [applying, setApplying] = useState<boolean>(preview ? false : applyFromUrl);
   const positionsRef = useRef<HTMLDivElement | null>(null);
 
   // Draft filters change as the user types; the keyword applies on "Search jobs" (or Enter).
@@ -196,7 +201,10 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
   // Back / forward buttons open and close jobs.
   useEffect(() => {
     if (preview) return;
-    const onPop = () => setJobId(jobFromUrl());
+    const onPop = () => {
+      setJobId(jobFromUrl());
+      setApplying(applyFromUrl());
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [preview]);
@@ -208,10 +216,11 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
     Object.entries(vars).forEach(([k, v]) => overlay.style.setProperty(k, v));
   }, [overlay, vars]);
 
-  const showJob = (id: string | null) => {
-    if (id === jobId) return;
-    if (!preview) window.history.pushState(window.history.state, "", urlWithJob(id));
+  const showJob = (id: string | null, apply = false) => {
+    if (id === jobId && apply === applying) return;
+    if (!preview) window.history.pushState(window.history.state, "", urlWithJob(id, apply));
     setJobId(id);
+    setApplying(!!id && apply);
     window.scrollTo({ top: 0 });
   };
 
@@ -343,7 +352,7 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
             </div>
           )}
           <div className="space-y-3">
-            {visible.map((job) => <JobRow key={job.id} job={job} onDetails={() => showJob(job.id)} onApply={() => setApplying(job)} />)}
+            {visible.map((job) => <JobRow key={job.id} job={job} onDetails={() => showJob(job.id)} onApply={() => showJob(job.id, true)} />)}
           </div>
         </div>
       </div>
@@ -361,7 +370,16 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
         <BrandedHeader content={content} branding={branding} company={companyInfo} homeHref={urlWithJob(null)} onHome={() => { showJob(null); window.scrollTo({ top: 0, behavior: "smooth" }); }} onTarget={goTo} />
       )}
 
-      {viewing ? (
+      {viewing && applying ? (
+        <ApplyPage
+          job={viewing}
+          content={content}
+          company={companyInfo}
+          companySlug={company}
+          onBack={() => showJob(viewing.id)}
+          onBrowse={() => { showJob(null); load(); }}
+        />
+      ) : viewing ? (
         <JobDetailPage
           job={viewing}
           content={content}
@@ -369,7 +387,7 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
           onTarget={goTo}
           shareUrl={new URL(urlWithJob(viewing.id), window.location.href).href}
           onBack={() => showJob(null)}
-          onApply={() => setApplying(viewing)}
+          onApply={() => showJob(viewing.id, true)}
         />
       ) : (
         <main className="flex-1">
@@ -380,18 +398,6 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
 
       {showFooter && content.footer.show && <BrandedFooter content={content} branding={branding} company={companyInfo} />}
 
-      {applying && (
-        <ApplyModal
-          job={applying}
-          successTitle={content.texts.success_title}
-          successMessage={content.texts.success_message}
-          companyName={companyInfo?.name}
-          onClose={() => {
-            setApplying(null);
-            load();
-          }}
-        />
-      )}
     </div>
   );
 }

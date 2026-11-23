@@ -24,6 +24,7 @@ import ResumeTemplates from "./pages/ResumeTemplates";
 import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
 import JobEditor from "./pages/JobEditor";
+import Applications from "./pages/Applications";
 import AuditLog from "./pages/AuditLog";
 import CandidateTracker from "./pages/CandidateTracker";
 import CareerPageBuilder from "./pages/CareerPageBuilder";
@@ -129,6 +130,7 @@ export default function App() {
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/upload" element={<Upload />} />
                         <Route path="/database" element={<CandidateDatabase />} />
+                        <Route path="/applications" element={<Applications />} />
                         <Route path="/resume-templates" element={<ResumeTemplates />} />
                         <Route path="/candidates/:id" element={<Evaluation />} />
                         {/* Old profile links */}

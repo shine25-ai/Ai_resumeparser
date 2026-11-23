@@ -110,6 +110,11 @@ CAREERS_PAGE_DEFAULTS: Dict[str, str] = {
 }
 
 
+APPLICATION_STAGE_APPLIED = "APPLIED"
+REVIEW_PENDING = "pending"
+REVIEW_DONE = "reviewed"
+
+
 class JobApplicationDocument(BaseModel):
     """One applicant's application for one opening. The resume lives in the resumes collection."""
 
@@ -123,6 +128,16 @@ class JobApplicationDocument(BaseModel):
     heard_from: Optional[str] = None
     note: Optional[str] = None
     submitted_at: str = Field(default_factory=lambda: utc_now().isoformat())
+    # ── Phase 5 (SRS 4.8, Screen 18): the 5-step application ──
+    stage: str = APPLICATION_STAGE_APPLIED     # the pipeline (Phase 7) moves it on
+    source: str = "Careers page"
+    form: Dict[str, Any] = Field(default_factory=dict)        # what the candidate entered (app.services.application_service)
+    extracted: Dict[str, Any] = Field(default_factory=dict)   # what the AI read from the resume, in the same shape
+    confidence: Dict[str, Any] = Field(default_factory=dict)  # {score, level, fields: {name: bool}}
+    consent: Dict[str, Any] = Field(default_factory=dict)     # {accepted, text, version, at, ip}
+    review: Dict[str, Any] = Field(default_factory=lambda: {"status": REVIEW_PENDING})
+    history: List[Dict[str, Any]] = Field(default_factory=list)  # [{at, action, by, note}]
+    linked_existing_profile: bool = False   # the same resume was already on file; no new profile was made
 
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump()

@@ -52,3 +52,13 @@ class S3Service:
         except Exception as e:
             logger.error(f"Unexpected error uploading to S3: {e}")
             return f"{self.base_url}{folder}/{filename}"
+
+    def download_file(self, url: str) -> bytes:
+        """The bytes of a file this service uploaded (by its URL). Raises when it can't be read."""
+        from app.core.file_access import key_of
+
+        key = key_of(url)
+        if not key:
+            raise ValueError("Not a file in this bucket.")
+        obj = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
+        return obj["Body"].read()

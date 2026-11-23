@@ -188,7 +188,7 @@ Follows SRS §11/§13 order, starting from what is already built. Estimates are 
 | **2. White-label** | §3 complete: tokens + codemod, ThemeProvider, dark mode, branded login, email layout, Branding settings | 2–2.5 wk |
 | **3. Jobs** | Job wizard (5 steps, live preview), job code, statuses + approval workflow, primary/secondary skills, salary/notice/certifications, interview rounds per job, duplicate/reopen/archive, job templates, job list KPIs/filters/side panel | 1.5–2 wk |
 | **4. Career page** | Builder (sections, order, visibility, templates, banner, SEO, desktop/mobile preview, draft/publish); public page + filters + job detail page + sharing; **platform subdomain or custom domain, the company's choice** (wildcard cert + automatic TLS, host → company lookup); **integration guide** (§4) | 3 wk |
-| **5. Applications** | **Candidate/Application split + migration** (§2.2); 5-step application wizard with AI pre-fill and candidate review of extracted data, **keeping the email-code check (no candidate accounts)**, consent, draft kept on the candidate's device; resume review & approve screen with confidence + reprocess | 2.5 wk |
+| **5. Applications** | ~~Candidate/Application split + migration~~ → moved to Phase 6 (see note below); 5-step application wizard with AI pre-fill and candidate review of extracted data, **keeping the email-code check (no candidate accounts)**, consent, draft kept on the candidate's device; resume review & approve screen with confidence + reprocess | 2.5 wk |
 | **6. Candidate management** | Candidate list (columns, AI search, filters, bulk actions, export), Candidate 360 page, notes, tags, recruiter assignment, duplicate detection + merge review | 2 wk |
 | **7. Pipeline** | Configurable workflows/stages + transition rules, Kanban drag-and-drop, stage history with reasons, conversion %, progress vs vacancies | 1.5 wk |
 | **8. Interviews** | **Calendar UI** (day/week/month, drag to reschedule, filter by panel/job/interviewer, colour by round), multi-interviewer scheduling, modes, invites with `.ics` attachment, reminders; **panel management**; **evaluation forms** (criteria, weights, scale), per-member evaluations, recommendations, draft/submit, round-wise scores. Google/Microsoft sync is **not** in this phase | 3 wk |
@@ -234,6 +234,13 @@ Follows SRS §11/§13 order, starting from what is already built. Estimates are 
 
 ---
 
+**Phase 5 as built (24 Nov 2026):**
+- **Applications:** they stay in `job_applications` (one per candidate × job) and are now full records: stage, source, everything the candidate entered, what the AI read (in the same shape) with a confidence score, the consent record (text, version, time, IP), review status and history.
+- **Resume reading:** the resume goes to the AI parser as soon as it is uploaded (step 1), and the form fills in while the candidate types. On submit the profile is built from that same parser job, so the resume is not parsed twice.
+- **Repeat applications:** if the same resume is already on file at the company, the new application is linked to that profile instead of failing.
+- **Not split yet:** the candidate profile is still the `resumes` record. The separate `candidates` / `candidate_documents` collections and the migration move to Phase 6, because every candidate screen reads `resumes` and Phase 6 rebuilds those screens. Splitting in Phase 5 would mean changing every screen twice.
+- **Confidence:** the parser gives no confidence scores, so "confidence" is the share of the usual details it found, plus a check that the resume's email matches the verified one.
+
 ## 6. Later (agreed, not in Phases 1–12)
 - **Online payments:** payment gateway (Razorpay/Stripe), invoices, GST, self-serve plan upgrades. Plugs into `subscriptions.billing_mode = gateway`.
 - **Calendar sync:** Google Calendar / Microsoft 365 two-way sync, interviewer free/busy, auto Meet/Teams links.
@@ -275,7 +282,7 @@ Still to do: the Super Admin and Company dashboards (Phase 10), Platform Setting
 | Career page builder | ✅ Sections (incl. new highlights strip), icons on items, About stats / photo / video, header button, second hero button, badge text, split hero, templates, SEO, brand colours (primary, secondary, accent, text, background), page status and URL | Tablet preview and template thumbnails are UI only |
 | Public careers page | ✅ All of the above | Language switch → later (§6) |
 | Job detail page | ✅ Job ID, posted on, tagline, requirements, good to have, what we offer, skills, About with stats and video, closing banner text | – |
-| Application form | Email code, resume upload | 5-step form with AI pre-fill → Phase 5 |
+| Application form | ✅ 5-step form (Phase 5): email code, resume upload with AI pre-fill and summary, education, experience, skills, review, consent, draft on device; staff Applications review screen | – |
 | Candidates, profile 360°, pipeline, interviews, panels, evaluation, skill matrix | – | Phases 6–9 |
 | Users & role permissions | ✅ `GET /users/stats` (totals, pending invites, by role, by department), roles with `users_count`, user phone / photo / last sign-in, permission matrix, audit log | Teams; access policies → Phase 12 |
 | Reports & analytics | – | Phase 10 |

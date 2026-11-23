@@ -135,6 +135,77 @@ async def confirm_verification_code(body: CodeConfirmRequest, service: JobOpenin
     return success_response(data=data, message="Email verified.")
 
 
+class ApplicationSubmit(BaseModel):
+    draft_id: str = Field(..., min_length=8, max_length=64, description="From the resume upload step")
+    form: Dict[str, Any] = Field(default_factory=dict, description="personal, education, experience, skills, …")
+    consent: bool = Field(False, description="The candidate accepted the privacy policy and confirmed their details")
+
+
+async def _accepting_opening(service: JobOpeningService, opening_id: str):
+    """The job (entering its company's workspace) and its company, if it takes applications."""
+    from app.models.company import COMPANY_STATUS_INACTIVE
+    from app.services.job_management import is_accepting
+
+    opening = await service._enter_opening_company(opening_id)
+    if not opening or not is_accepting(opening):
+        raise BadRequestError("This role is no longer accepting applications.")
+    company = await service.company_by_id(opening.get("company_id"))
+    if company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:
+        raise BadRequestError("This role is no longer accepting applications.")
+    return opening, company
+
+
+def get_applications(db: AsyncIOMotorDatabase = Depends(get_database)):
+    from app.services.application_service import ApplicationService
+
+    resume_repo = ResumeRepository(db)
+    return ApplicationService(db, ResumeService(resume_repo, resume_log_repo=ResumeLogRepository(db)))
+
+
+@public_router.post("/{opening_id}/resume", summary="Upload the resume (step 1). The AI starts reading it to pre-fill the form.")
+async def upload_application_resume(
+    opening_id: str,
+    file: UploadFile = File(...),
+    x_applicant_token: str = Header(..., alias="X-Applicant-Token"),
+    service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    email = service._email_from_token(x_applicant_token)
+    opening, _company = await _accepting_opening(service, opening_id)
+    data = await get_applications(db).upload_resume(opening, email, file)
+    return success_response(data=data, message="Resume uploaded. We're reading it now.")
+
+
+@public_router.get("/{opening_id}/drafts/{draft_id}", summary="The resume upload: reading status and the details found")
+async def get_application_draft(
+    opening_id: str,
+    draft_id: str,
+    x_applicant_token: str = Header(..., alias="X-Applicant-Token"),
+    service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    email = service._email_from_token(x_applicant_token)
+    await service._enter_opening_company(opening_id)
+    return success_response(data=await get_applications(db).draft(draft_id, email), message="Resume status.")
+
+
+@public_router.post("/{opening_id}/applications", status_code=status.HTTP_201_CREATED, summary="Submit the application (step 5)")
+async def submit_application(
+    opening_id: str,
+    body: ApplicationSubmit,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_applicant_token: str = Header(..., alias="X-Applicant-Token"),
+    service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    email = service._email_from_token(x_applicant_token)
+    opening, company = await _accepting_opening(service, opening_id)
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "") or "").split(",")[0].strip()
+    data = await get_applications(db).submit(opening, company, email, body.model_dump(), background_tasks, ip=ip)
+    return success_response(data=data, message="Application submitted.", status_code=status.HTTP_201_CREATED)
+
+
 @public_router.post(
     "/{opening_id}/apply",
     status_code=status.HTTP_201_CREATED,
