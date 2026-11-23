@@ -29,7 +29,55 @@ export interface Company {
   /** Super admin list only */
   users_count?: number;
   resumes_count?: number;
+  interviews_count?: number;
+  // Profile (SRS 3.3)
+  logo_url: string;
+  website: string;
+  industry: string;
+  description: string;
+  company_size: string;
+  timezone: string;
+  address: CompanyAddress;
+  contact: CompanyContact;
+  // Plan, set by the super admin (0 = no limit)
+  plan: string;
+  billing_mode: "manual" | "gateway";
+  limits: CompanyLimits;
+  archived_at: string | null;
+  is_archived: boolean;
+  created_at?: string;
 }
+
+export interface CompanyAddress {
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  country: string;
+  pincode: string;
+}
+
+export interface CompanyContact {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+export interface CompanyLimits {
+  users: number;
+  active_jobs: number;
+  storage_mb: number;
+  ai_parses_per_month: number;
+}
+
+/** Fields the company form can send. Plan, limits, domains and is_active are the super admin's. */
+export type CompanyChanges = Partial<
+  Pick<
+    Company,
+    | "name" | "slug" | "status" | "email_domains" | "is_active" | "logo_url" | "website" | "industry"
+    | "description" | "company_size" | "timezone" | "plan"
+  > & { address: Partial<CompanyAddress>; contact: Partial<CompanyContact>; limits: Partial<CompanyLimits> }
+>;
 
 export interface JobApplicationRow {
   id: string;
@@ -60,7 +108,7 @@ export const fetchCompanies = async (): Promise<Company[]> => readJson(await api
 
 export const updateCompany = async (
   id: string,
-  payload: Partial<Pick<Company, "name" | "slug" | "status" | "email_domains" | "is_active">>
+  payload: CompanyChanges
 ): Promise<Company> =>
   readJson(
     await apiFetch(`${COMPANIES}/${id}`, {
@@ -134,14 +182,19 @@ export const updateCareersPageSettings = async (
 // ── Super admin: company workspaces ─────────────────────────────────────────
 
 /** Every company, with user and resume counts (super admin). */
-export const fetchAllCompanies = async (): Promise<Company[]> => readJson(await apiFetch(`${COMPANIES}?all=true`));
+export const fetchAllCompanies = async (includeArchived = false): Promise<Company[]> =>
+  readJson(await apiFetch(`${COMPANIES}?all=true${includeArchived ? "&include_archived=true" : ""}`));
 
-export interface NewWorkspace {
+export interface NewWorkspace extends CompanyChanges {
   name: string;
   slug?: string;
   email_domains: string[];
   admin?: { full_name: string; email: string; password: string };
 }
+
+/** Super admin: archive (workspace off, careers page gone, hidden from the list) or restore a company. */
+export const setCompanyArchived = async (id: string, archived: boolean): Promise<Company> =>
+  readJson(await apiFetch(`${COMPANIES}/${id}/${archived ? "archive" : "restore"}`, { method: "POST" }));
 
 export const createWorkspace = async (payload: NewWorkspace): Promise<Company> =>
   readJson(

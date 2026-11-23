@@ -1,3 +1,4 @@
+from app.core.dependencies import require_access
 from fastapi import APIRouter, Depends, Query
 from typing import Any, Optional
 from app.schemas.common import ApiResponse
@@ -6,7 +7,9 @@ from app.services.analytics_service import AnalyticsService
 from app.controllers.analytics_controller import AnalyticsController
 from app.core.dependencies import get_current_user
 
-router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
+
+_REPORTS_ACCESS = require_access("reports", {})
+router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"], dependencies=[Depends(_REPORTS_ACCESS)])
 
 def get_analytics_controller() -> AnalyticsController:
     service = AnalyticsService()

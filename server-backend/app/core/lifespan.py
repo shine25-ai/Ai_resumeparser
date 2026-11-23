@@ -69,6 +69,20 @@ async def lifespan(app: FastAPI):
         logger.error(f"Could not move older data into company workspaces: {e}")
 
     try:
+        from app.services.master_service import bootstrap_masters
+        added = await bootstrap_masters(db)
+        if added:
+            logger.info(f"Master data: added {added} default platform entries")
+    except Exception as e:
+        logger.warning(f"Could not set up master data: {e}")
+
+    try:
+        from app.services.audit_service import ensure_audit_indexes
+        await ensure_audit_indexes(db)
+    except Exception as e:
+        logger.warning(f"Could not create audit log indexes: {e}")
+
+    try:
         await fail_interrupted_parses(db)
     except Exception as e:
         logger.warning(f"Could not check for interrupted resume parses: {e}")
@@ -77,7 +91,15 @@ async def lifespan(app: FastAPI):
     try:
         import asyncio
         from app.services.dashboard_service import DashboardService
-        asyncio.create_task(DashboardService().get_dashboard_metrics())
+        # Warm the platform company's dashboard only: every cache entry belongs to one company.
+        from app.core.tenant import company_scope
+        from app.models.company import DEFAULT_COMPANY_ID
+
+        async def _warm() -> None:
+            with company_scope(DEFAULT_COMPANY_ID):
+                await DashboardService().get_dashboard_metrics()
+
+        asyncio.create_task(_warm())
     except Exception as e:
         logger.warning(f"Could not warm dashboard cache: {e}")
 

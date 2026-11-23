@@ -21,6 +21,11 @@ from app.routes import transcription, skills_evaluation, resume_templates, inter
 from app.routes import integration, integration_settings
 from app.routes import job_openings
 from app.routes import ats_operations
+from app.routes import masters as masters_routes
+from app.routes import files as files_routes
+from app.routes import invitations as invitation_routes
+from app.middleware.file_links import FileLinkMiddleware
+from app.routes import audit as audit_routes
 
 
 def create_application() -> FastAPI:
@@ -62,6 +67,8 @@ def create_application() -> FastAPI:
     # Enable Request Duration Logger Middleware
     app.add_middleware(RequestLoggerMiddleware)
     app.add_middleware(IntegrationLoggerMiddleware)
+    # File URLs leave the API as signed, expiring links and come back as stored URLs.
+    app.add_middleware(FileLinkMiddleware)
     # Outermost: the public careers endpoints allow any origin (the page can be opened from a file).
     app.add_middleware(PublicCorsMiddleware)
 
@@ -95,6 +102,11 @@ def create_application() -> FastAPI:
     app.include_router(job_openings.companies_router)
     app.include_router(ats_operations.router)
     app.include_router(ats_operations.public_track_router)
+    app.include_router(masters_routes.router)
+    app.include_router(files_routes.router)
+    app.include_router(invitation_routes.router)
+    app.include_router(invitation_routes.public_router)
+    app.include_router(audit_routes.router)
     # ── Serve Frontend Static Files ──────────────────────────────────────────────
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dist_path = os.path.join(os.path.dirname(BASE_DIR), "dist")

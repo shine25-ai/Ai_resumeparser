@@ -130,3 +130,60 @@ def test_merging_into_an_existing_profile_keeps_every_company_and_role():
     # A staff upload (no company) merged into a careers applicant keeps the applicant's company.
     kept = carry_applied_jobs(existing, {})
     assert kept["company_name"] == "Shinelogics" and kept["company_ids"] == ["default"]
+
+
+# ── Phase 1: company profile, plan limits, archive ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_company_profile_fields_saved_and_cleaned(svc):
+    acme = await svc.create_company({
+        "name": "Acme",
+        "website": "acme.com",
+        "industry": " IT Services ",
+        "address": {"city": "Chennai", "country": "India", "pincode": "600001"},
+        "contact": {"name": "Ravi", "email": "HR@Acme.com", "phone": "+91 98400"},
+        "limits": {"users": 25, "active_jobs": 10},
+        "plan": "Starter",
+    })
+    assert acme["website"] == "https://acme.com"
+    assert acme["industry"] == "IT Services"
+    assert acme["address"]["city"] == "Chennai" and acme["address"]["line1"] == ""
+    assert acme["contact"]["email"] == "hr@acme.com"
+    assert acme["limits"] == {"users": 25, "active_jobs": 10, "storage_mb": 0, "ai_parses_per_month": 0}
+    assert acme["plan"] == "Starter" and acme["billing_mode"] == "manual"
+    assert acme["is_archived"] is False
+
+
+@pytest.mark.asyncio
+async def test_company_bad_contact_email_and_negative_limit(svc):
+    with pytest.raises(BadRequestError):
+        await svc.create_company({"name": "X", "contact": {"email": "not-an-email"}})
+    acme = await svc.create_company({"name": "Acme"})
+    with pytest.raises(BadRequestError):
+        await svc.update_company(acme["id"], {"limits": {"users": -1}})
+
+
+@pytest.mark.asyncio
+async def test_old_company_gets_profile_defaults(svc):
+    svc.company_repo.docs["old"] = {"id": "old", "name": "Old Co", "slug": "old-co", "status": "ACTIVE"}
+    old = await svc.company_by_id("old")
+    assert old["address"]["city"] == "" and old["limits"]["users"] == 0 and old["is_archived"] is False
+
+
+@pytest.mark.asyncio
+async def test_archive_turns_off_workspace_and_careers_page(svc):
+    acme = await svc.create_company({"name": "Acme"})
+    archived = await svc.set_archived(acme["id"], True)
+    assert archived["is_archived"] and archived["is_active"] is False
+    with pytest.raises(NotFoundError):
+        await svc.public_company("acme")
+    restored = await svc.set_archived(acme["id"], False)
+    assert restored["is_archived"] is False
+    assert restored["is_active"] is False  # stays off until turned on again
+
+
+@pytest.mark.asyncio
+async def test_default_company_cannot_be_archived(svc):
+    with pytest.raises(BadRequestError):
+        await svc.set_archived(DEFAULT_COMPANY_ID, True)

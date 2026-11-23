@@ -6,12 +6,18 @@ from fastapi import APIRouter, Depends, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.interview_type_controller import InterviewTypeController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import require_access, get_current_active_user
 from app.repositories.interview_type_repository import InterviewTypeRepository
 from app.schemas.interview_type import InterviewTypeCreate, InterviewTypeUpdate
 from app.services.interview_type_service import InterviewTypeService
 
-router = APIRouter(prefix="/api/v1/interview-types", tags=["Interview Types"])
+
+_INTERVIEWS_ACCESS = require_access("interviews", {
+    ("POST", "/api/v1/interview-types"): "settings:edit",
+    ("PUT", "/api/v1/interview-types/{id_val}"): "settings:edit",
+    ("DELETE", "/api/v1/interview-types/{id_val}"): "settings:edit",
+})
+router = APIRouter(prefix="/api/v1/interview-types", tags=["Interview Types"], dependencies=[Depends(_INTERVIEWS_ACCESS)])
 
 
 def get_interview_type_controller(

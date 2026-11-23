@@ -27,16 +27,18 @@ class S3Service:
 
     def upload_file(self, file_content: bytes, filename: str, content_type: str = "application/octet-stream", folder: str = "resumes") -> str:
         """
-        Upload file content to S3 bucket and return public/access URL.
+        Upload file content to S3 and return its URL. Objects are private unless S3_OBJECT_ACL is "public-read";
+        the API turns this URL into a signed, expiring link (app.core.file_access).
         """
         try:
             object_name = f"{folder}/{filename}"
+            extra = {"ACL": "public-read"} if settings.S3_OBJECT_ACL == "public-read" else {}
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=object_name,
                 Body=file_content,
                 ContentType=content_type,
-                ACL="public-read",
+                **extra,
             )
             
             s3_url = f"{self.base_url}{object_name}"

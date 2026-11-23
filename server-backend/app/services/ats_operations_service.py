@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.core.database import get_database
+from app.core.tenant import company_scope, system_scope
+from app.models.company import DEFAULT_COMPANY_ID
 from app.utils.constants import RESUMES_COLLECTION, INTERVIEWS_COLLECTION, RESUME_LOGS_COLLECTION
 from app.utils.hiring_stage import STAGES, stage_of
 from app.services.dashboard_service import DashboardService
@@ -658,7 +660,18 @@ class AtsOperationsService:
         return {"candidate_id": candidate_id, "token": token, "path": f"/track/{token}"}
 
     async def get_public_tracking_status(self, token: str) -> Optional[Dict[str, Any]]:
+        """Public link: the token says which candidate (and so which company); the rest runs in that company."""
+        if not token or len(token) < 16:
+            return None
         db = get_database()
+        with system_scope():
+            owner = await db[RESUMES_COLLECTION].find_one({"tracking_token": token}, {"_id": 0, "company_id": 1})
+        if not owner:
+            return None
+        with company_scope(owner.get("company_id") or DEFAULT_COMPANY_ID):
+            return await self._public_tracking_status(db, token)
+
+    async def _public_tracking_status(self, db: Any, token: str) -> Optional[Dict[str, Any]]:
         r = await db[RESUMES_COLLECTION].find_one(
             {"tracking_token": token},
             {
@@ -746,11 +759,24 @@ class AtsOperationsService:
             {}, {"_id": 0, "applicant_email": 1, "opening_title": 1, "submitted_at": 1}
         ).sort("submitted_at", -1).limit(80).to_list(length=80)
 
-        ats_logs, res_logs, invs, apps = await asyncio.gather(
-            ats_logs_task, res_logs_task, invs_task, apps_task
+        central_task = db["audit_logs"].find({}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(length=200)
+
+        ats_logs, res_logs, invs, apps, central = await asyncio.gather(
+            ats_logs_task, res_logs_task, invs_task, apps_task, central_task
         )
 
         combined: List[Dict[str, Any]] = []
+        for log in central:
+            actor_info = log.get("actor") or {}
+            changed = ", ".join((log.get("changes") or {}).keys())
+            combined.append({
+                "id": str(log.get("id") or uuid.uuid4()),
+                "action": str(log.get("action") or "EVENT").upper().replace(".", "_"),
+                "user": str(actor_info.get("name") or actor_info.get("email") or "System"),
+                "target": str(log.get("entity_label") or log.get("entity_id") or log.get("entity_type") or ""),
+                "details": str(log.get("details") or (f"Changed: {changed}" if changed else "")),
+                "created_at": str(log.get("created_at") or ""),
+            })
         for log in ats_logs:
             combined.append({
                 "id": str(log.get("id") or uuid.uuid4()),

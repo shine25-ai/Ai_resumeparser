@@ -9,6 +9,7 @@ from app.models.role import RoleDocument
 from app.repositories.role_repository import RoleRepository
 from app.schemas.role import RoleCreate, RoleResponse, RoleUpdate
 from app.utils.helpers import utc_now
+from app.core.permissions import clean_permissions
 
 
 
@@ -42,7 +43,7 @@ class RoleService:
             name=payload.name.strip(),
             slug=slug,
             description=payload.description or "",
-            permissions=payload.permissions,
+            permissions=clean_permissions(payload.permissions),
             is_system=False,
         )
 
@@ -79,6 +80,8 @@ class RoleService:
 
         if "name" in update_dict and update_dict["name"]:
             update_dict["name"] = update_dict["name"].strip()
+        if "permissions" in update_dict and update_dict["permissions"] is not None:
+            update_dict["permissions"] = clean_permissions(update_dict["permissions"])
 
         update_dict["updated_at"] = utc_now().isoformat()
         updated_role = await self.role_repo.update(role_id, update_dict)

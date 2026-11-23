@@ -8,21 +8,18 @@ import {
 } from "../utils/Api";
 import type { RoleItem, UserProfile } from "../utils/Api";
 import { useFeedback } from "./ui/Feedback";
+import PermissionMatrix, { summarizePermissions, usePermissionMatrix } from "./PermissionMatrix";
+import InvitationsPanel, { useDepartments } from "./InvitationsPanel";
 
-const AVAILABLE_PERMISSIONS = [
-  { id: "dashboard", label: "Dashboard", desc: "Access to overall analytics dashboard" },
-  { id: "upload", label: "Upload Resume", desc: "Upload and parse candidate resumes" },
-  { id: "database", label: "Candidate Database", desc: "Search and filter talent repository" },
-  { id: "evaluation", label: "Evaluation", desc: "Detailed candidate scoring and evaluation" },
-  { id: "jd-match", label: "JD Matching", desc: "Match resumes against Job Descriptions" },
-  { id: "interviews", label: "Interviews", desc: "Schedule and manage candidate interviews" },
-  { id: "analytics", label: "Analytics & Reports", desc: "Export and view hiring reports" },
-  { id: "settings", label: "Settings", desc: "System settings and email configuration" },
-  { id: "role-management", label: "Role & User Access", desc: "Manage roles, permissions, and user access" },
-];
+
+/** Module permissions a role really has (old page names already expanded by the API). */
+const matrixPermsOf = (role: RoleItem) =>
+  (role.effective_permissions && role.effective_permissions.length ? role.effective_permissions : role.permissions || []).filter((p) => p.includes(":"));
 
 export default function RoleManagement() {
   const { confirm } = useFeedback();
+  const { data: matrix } = usePermissionMatrix();
+  const departments = useDepartments();
 
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -55,12 +52,14 @@ export default function RoleManagement() {
     password: string;
     role: string;
     is_active: boolean;
+    department: string;
   }>({
     full_name: "",
     email: "",
     password: "",
     role: "",
     is_active: true,
+    department: "",
   });
   const [savingUser, setSavingUser] = useState<boolean>(false);
 
@@ -100,26 +99,30 @@ export default function RoleManagement() {
   };
 
   const handleOpenEditRoleModal = (role: RoleItem) => {
-    setEditingRole(role);
-    setRoleForm({
-      name: role.name,
-      slug: role.slug,
-      description: role.description || "",
-      permissions: role.permissions || [],
-    });
+    // Built-in roles are shared by every company and cannot be changed: edit a copy instead.
+    if (role.is_system) {
+      setEditingRole(null);
+      setRoleForm({
+        name: `${role.name} (custom)`,
+        slug: "",
+        description: role.description || "",
+        permissions: matrixPermsOf(role),
+      });
+    } else {
+      setEditingRole(role);
+      setRoleForm({
+        name: role.name,
+        slug: role.slug,
+        description: role.description || "",
+        permissions: matrixPermsOf(role),
+      });
+    }
     setIsRoleModalOpen(true);
   };
 
-  const togglePermission = (permId: string) => {
-    setRoleForm((prev) => {
-      const exists = prev.permissions.includes(permId);
-      return {
-        ...prev,
-        permissions: exists
-          ? prev.permissions.filter((p) => p !== permId)
-          : [...prev.permissions, permId],
-      };
-    });
+  const startFromDefault = (slug: string) => {
+    const preset = matrix?.default_roles.find((r) => r.slug === slug);
+    if (preset) setRoleForm((prev) => ({ ...prev, permissions: [...preset.permissions] }));
   };
 
   const handleSaveRole = async (e: React.FormEvent) => {
@@ -211,6 +214,7 @@ export default function RoleManagement() {
       password: "",
       role: roles.length > 0 ? roles[0].slug : "",
       is_active: true,
+      department: "",
     });
     setIsUserModalOpen(true);
   };
@@ -223,6 +227,7 @@ export default function RoleManagement() {
       password: "",
       role: user.role,
       is_active: user.is_active,
+      department: user.department || "",
     });
     setIsUserModalOpen(true);
   };
@@ -241,6 +246,7 @@ export default function RoleManagement() {
           email: userForm.email,
           role: userForm.role,
           is_active: userForm.is_active,
+          department: userForm.department,
           password: userForm.password ? userForm.password : undefined,
         });
         setMessage({ type: "success", text: `User "${userForm.full_name}" updated successfully.` });
@@ -256,6 +262,7 @@ export default function RoleManagement() {
           password: userForm.password,
           role: userForm.role,
           is_active: userForm.is_active,
+          department: userForm.department,
         });
         setMessage({ type: "success", text: `User "${userForm.full_name}" created successfully.` });
       }
@@ -415,13 +422,16 @@ export default function RoleManagement() {
                     </td>
                     <td className="p-4 align-top">
                       <div className="flex flex-wrap gap-1.5 max-w-md">
-                        {role.permissions && role.permissions.length > 0 ? (
-                          role.permissions.map((perm) => (
+                        {isAdministratorRole(role) && ["admin", "superadmin"].includes((role.slug || "").toLowerCase()) ? (
+                          <span className="px-2 py-1 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">Full access</span>
+                        ) : summarizePermissions(matrixPermsOf(role), matrix?.modules).length > 0 ? (
+                          summarizePermissions(matrixPermsOf(role), matrix?.modules).map((m) => (
                             <span
-                              key={perm}
+                              key={m.label}
+                              title={m.full ? "All actions" : `${m.count} action(s)`}
                               className="px-2 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200"
                             >
-                              {AVAILABLE_PERMISSIONS.find((p) => p.id === perm)?.label || perm}
+                              {m.label}{m.full ? "" : ` (${m.count})`}
                             </span>
                           ))
                         ) : (
@@ -458,6 +468,7 @@ export default function RoleManagement() {
       )}
 
       {/* USER ACCOUNTS TABLE VIEW & CRUD */}
+      {activeTab === "users" && <InvitationsPanel roles={roles} />}
       {activeTab === "users" && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
@@ -485,7 +496,10 @@ export default function RoleManagement() {
                       </div>
                     </td>
 
-                    <td className="p-4 text-sm text-slate-600 align-top truncate max-w-xs">{u.email}</td>
+                    <td className="p-4 text-sm text-slate-600 align-top truncate max-w-xs">
+                      {u.email}
+                      {u.department && <div className="text-[11px] text-slate-400">{u.department}</div>}
+                    </td>
 
                     <td className="p-4 align-top">
                       {lockedForViewer(u) ? (
@@ -624,55 +638,30 @@ export default function RoleManagement() {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
-                    Module Access Permissions ({roleForm.permissions.length}/{AVAILABLE_PERMISSIONS.length})
+                    Permissions by module
                   </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRoleForm({
-                        ...roleForm,
-                        permissions:
-                          roleForm.permissions.length === AVAILABLE_PERMISSIONS.length
-                            ? []
-                            : AVAILABLE_PERMISSIONS.map((p) => p.id),
-                      })
-                    }
-                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium cursor-pointer"
-                  >
-                    {roleForm.permissions.length === AVAILABLE_PERMISSIONS.length
-                      ? "Deselect All"
-                      : "Select All"}
-                  </button>
+                  {matrix && (
+                    <select
+                      value=""
+                      onChange={(e) => startFromDefault(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700"
+                    >
+                      <option value="">Start from a default role…</option>
+                      {matrix.default_roles.map((r) => (
+                        <option key={r.slug} value={r.slug}>{r.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
-                  {AVAILABLE_PERMISSIONS.map((perm) => {
-                    const isChecked = roleForm.permissions.includes(perm.id);
-                    return (
-                      <div
-                        key={perm.id}
-                        onClick={() => togglePermission(perm.id)}
-                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${isChecked
-                          ? "bg-indigo-50/70 border-indigo-300 text-indigo-900"
-                          : "bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700"
-                          }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => { }}
-                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none"
-                        />
-                        <div>
-                          <div className="font-semibold text-xs">{perm.label}</div>
-                          <div className="text-[11px] text-slate-500">{perm.desc}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <PermissionMatrix
+                  value={roleForm.permissions}
+                  onChange={(permissions) => setRoleForm((prev) => ({ ...prev, permissions }))}
+                />
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Any action also allows viewing that module. Company admins always have full access.
+                </p>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
@@ -790,6 +779,26 @@ export default function RoleManagement() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Department
+                </label>
+                <select
+                  value={userForm.department}
+                  onChange={(e) => setUserForm({ ...userForm, department: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                >
+                  <option value="">No department</option>
+                  {userForm.department && !departments.some((d) => d.name === userForm.department) && (
+                    <option value={userForm.department}>{userForm.department}</option>
+                  )}
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400">Add departments under Settings → Master Data.</p>
               </div>
 
               <div className="pt-2 flex items-center justify-between">

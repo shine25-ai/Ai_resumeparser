@@ -9,33 +9,32 @@ from app.core.security import hash_password
 from app.utils.constants import ROLES_COLLECTION, USERS_COLLECTION, SKILLS_EVALUATION_COLLECTION
 from app.utils.helpers import generate_uuid, utc_now
 from app.models.company import DEFAULT_COMPANY_ID
+from app.core.permissions import ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS, DEFAULT_ROLES_INFO
 
 
+_LEGACY_PAGES = ["dashboard", "upload", "database", "evaluation", "jd-match", "interviews", "analytics", "settings", "role-management"]
+
+# Built-in roles, shared by every company (company_id None) and read-only for them. Companies copy one to make
+# their own. Permissions are module:action pairs (app.core.permissions); the admin roles also keep the old
+# page names so older screens keep working.
 DEFAULT_SYSTEM_ROLES = [
     {
-        "name": "Administrator",
-        "slug": "admin",
-        "description": "System administrator with full permissions across all tools and configurations.",
-        "permissions": [
-            "dashboard", "upload", "database", "evaluation",
-            "jd-match", "interviews",
-            "analytics", "settings", "role-management"
-        ],
+        "name": name,
+        "slug": slug,
+        "description": desc,
+        "permissions": (DEFAULT_ROLE_PERMISSIONS[slug] + _LEGACY_PAGES) if slug == "admin" else DEFAULT_ROLE_PERMISSIONS[slug],
         "is_system": True,
-    },
+    }
+    for slug, name, desc in DEFAULT_ROLES_INFO
+] + [
     {
         "name": "Super Admin",
         "slug": "superadmin",
         "description": "Platform owner: manages companies and can open any company's workspace.",
-        "permissions": [
-            "dashboard", "upload", "database", "evaluation",
-            "jd-match", "interviews",
-            "analytics", "settings", "role-management", "companies"
-        ],
+        "permissions": ALL_PERMISSIONS + _LEGACY_PAGES + ["companies"],
         "is_system": True,
     },
 ]
-
 
 
 async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:
@@ -56,6 +55,19 @@ async def bootstrap_default_roles(db: AsyncIOMotorDatabase) -> None:
             }
             await roles_collection.insert_one(role_doc)
             logger.info(f"Bootstrapped system role: {default_role['name']} ({default_role['slug']})")
+        elif sorted(existing.get("permissions") or []) != sorted(default_role["permissions"]) or existing.get("name") != default_role["name"]:
+            # Built-in roles follow the code: companies cannot change them, so updating them changes nobody's custom role.
+            await roles_collection.update_one(
+                {"slug": default_role["slug"], "company_id": None},
+                {"$set": {
+                    "name": default_role["name"],
+                    "description": default_role["description"],
+                    "permissions": default_role["permissions"],
+                    "is_system": True,
+                    "updated_at": utc_now().isoformat(),
+                }},
+            )
+            logger.info(f"Updated system role permissions: {default_role['name']} ({default_role['slug']})")
 
 
 async def bootstrap_default_skills(db: AsyncIOMotorDatabase, company_id: str = DEFAULT_COMPANY_ID) -> None:

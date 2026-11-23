@@ -37,11 +37,20 @@ TENANT_COLLECTIONS = frozenset({
     "settings",
     "mail_templates",
     "resume_templates",
+    "masters",
+    "audit_logs",
+    "user_invitations",
+    # ATS hub (pipeline, offers, onboarding, scorecards, automation templates, its audit trail)
+    "ats_audit_logs",
+    "ats_automation_templates",
+    "ats_offers",
+    "ats_onboarding",
+    "ats_scorecards",
 })
 
-# In these, documents with no company (the built-in system roles) can be read by every company,
-# but only changed from system scope.
-SHARED_READ_COLLECTIONS = frozenset({"roles"})
+# In these, documents with no company (built-in system roles, platform master data) can be read by every
+# company, but only changed from system scope.
+SHARED_READ_COLLECTIONS = frozenset({"roles", "masters"})
 
 _SYSTEM = "__system__"
 _scope: ContextVar[Optional[str]] = ContextVar("company_scope", default=None)

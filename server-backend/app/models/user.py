@@ -20,6 +20,7 @@ class UserDocument(BaseModel):
     company_id: Optional[str] = None
     is_active: bool = True
     is_deleted: bool = False
+    department: str = ""
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 

@@ -18,6 +18,7 @@ class UserResponse(BaseModel):
     company_id: Optional[str] = None
     company_name: Optional[str] = None
     is_superadmin: bool = False
+    department: Optional[str] = ""
     created_at: str
     updated_at: str
 
@@ -32,6 +33,7 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=6)
     role: str = "user"
     is_active: bool = True
+    department: Optional[str] = Field(default="", max_length=120)
 
 
 class UserUpdate(BaseModel):
@@ -42,6 +44,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=6)
     is_active: Optional[bool] = None
     role: Optional[str] = None
+    department: Optional[str] = Field(None, max_length=120)
 
 
 class UserRoleUpdate(BaseModel):

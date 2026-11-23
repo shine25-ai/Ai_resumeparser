@@ -1,3 +1,4 @@
+from app.core.dependencies import require_access
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -6,7 +7,23 @@ from app.schemas.common import ApiResponse
 from app.core.dependencies import get_current_user
 from app.services.ats_operations_service import AtsOperationsService
 
-router = APIRouter(prefix="/api/v1/ats", tags=["ATS Operations"])
+
+_PIPELINE_ACCESS = require_access("pipeline", {
+    ("POST", "/api/v1/ats/candidates/bulk-action"): "pipeline:edit",
+    ("PUT", "/api/v1/ats/candidates/{candidate_id}/tags"): "candidates:edit",
+    ("POST", "/api/v1/ats/candidates/{candidate_id}/notes"): "candidates:edit",
+    ("GET", "/api/v1/ats/duplicates"): "candidates:view",
+    ("POST", "/api/v1/ats/duplicates/merge"): "candidates:edit",
+    ("GET", "/api/v1/ats/scorecards"): "evaluations:view",
+    ("POST", "/api/v1/ats/scorecards"): "evaluations:create",
+    ("POST", "/api/v1/ats/offers"): "pipeline:edit",
+    ("PATCH", "/api/v1/ats/offers/{offer_id}/status"): "pipeline:edit",
+    ("PUT", "/api/v1/ats/onboarding/{candidate_id}"): "pipeline:edit",
+    ("PUT", "/api/v1/ats/automation-templates/{template_id}"): "settings:edit",
+    ("POST", "/api/v1/ats/candidates/{candidate_id}/tracking-link"): "pipeline:edit",
+    ("GET", "/api/v1/ats/audit-logs"): "audit_logs:view",
+})
+router = APIRouter(prefix="/api/v1/ats", tags=["ATS Operations"], dependencies=[Depends(_PIPELINE_ACCESS)])
 public_track_router = APIRouter(prefix="/api/v1/public", tags=["Public Candidate Tracking"])
 
 _service = AtsOperationsService()

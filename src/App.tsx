@@ -12,6 +12,7 @@ import JDMatch from "./pages/JDMatch";
 import InterviewManagement from "./pages/InterviewManagement";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
+import AcceptInvite from "./pages/AcceptInvite";
 import Settings from "./pages/Settings";
 import Companies from "./pages/Companies";
 import ResumeTemplates from "./pages/ResumeTemplates";
@@ -44,6 +45,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
           {/* Public careers page: no login needed */}
           <Route path="/jobs" element={<CareersPage manageTitle />} />
           <Route path="/jobs/:jobId" element={<RedirectToJob />} />

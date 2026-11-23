@@ -53,7 +53,12 @@ DEFAULT_COMPANY_COLLECTIONS = [
     "integration_api_logs",
     "mail_templates",
     "resume_templates",
+    "ats_audit_logs",
+    "ats_automation_templates",
 ]
+
+# ATS records that belong to a candidate follow that candidate's company.
+ATS_CANDIDATE_COLLECTIONS = ["ats_offers", "ats_onboarding", "ats_scorecards"]
 
 # The AI provider settings are the platform's, not a company's.
 PLATFORM_SETTING_TYPES = ["ai_config"]
@@ -271,6 +276,8 @@ async def migrate_to_companies(db: AsyncIOMotorDatabase) -> Dict[str, int]:
     stats[RESUME_LOGS_COLLECTION] = await _follow_resume(db, RESUME_LOGS_COLLECTION, ["resume_id"], cache)
     stats[INTERVIEWS_COLLECTION] = await _follow_resume(db, INTERVIEWS_COLLECTION, ["resume_id", "candidate_id"], cache)
     stats[MEANING_COLLECTION] = await _follow_resume(db, MEANING_COLLECTION, ["_id"], cache)
+    for name in ATS_CANDIDATE_COLLECTIONS:
+        stats[name] = await _follow_resume(db, name, ["candidate_id", "resume_id"], cache)
 
     for name in DEFAULT_COMPANY_COLLECTIONS:
         result = await db[name].update_many(NO_COMPANY, {"$set": {"company_id": DEFAULT_COMPANY_ID}})

@@ -69,6 +69,7 @@ export interface UserProfile {
   company_id?: string;
   company_name?: string;
   is_superadmin?: boolean;
+  department?: string;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +80,7 @@ export interface UserCreatePayload {
   password: string;
   role?: string;
   is_active?: boolean;
+  department?: string;
 }
 
 export interface UserUpdatePayload {
@@ -87,6 +89,7 @@ export interface UserUpdatePayload {
   password?: string;
   role?: string;
   is_active?: boolean;
+  department?: string;
 }
 
 export interface RoleItem {
@@ -98,6 +101,8 @@ export interface RoleItem {
   is_system: boolean;
   created_at: string;
   updated_at: string;
+  /** Module permissions ("jobs:view") the role really has, with old page names expanded. */
+  effective_permissions?: string[];
 }
 
 export interface RoleCreatePayload {

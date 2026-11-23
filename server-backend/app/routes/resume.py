@@ -8,14 +8,24 @@ from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.controllers.resume_controller import ResumeController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, is_admin_or_staff_user
+from app.core.dependencies import require_access, get_current_active_user, is_admin_or_staff_user
 from app.repositories.resume_repository import ResumeRepository
 from app.schemas.resume import ResumeUpdateRequest
 from app.services.resume_service import ResumeService
 from app.utils.enums import UserRole
 from app.repositories.resume_log_repository import ResumeLogRepository
 
-router = APIRouter(prefix="/api/v1/resumes", tags=["Resumes"])
+
+_CANDIDATES_ACCESS = require_access("candidates", {
+    ("POST", "/api/v1/resumes/prompt-match"): "candidates:view",
+    ("GET", "/api/v1/resumes/export"): "candidates:export",
+    ("POST", "/api/v1/resumes/{resume_id}/merge"): "candidates:edit",
+    ("POST", "/api/v1/resumes/{resume_id}/documents"): "candidates:edit",
+    ("POST", "/api/v1/resumes/{resume_id}/profile-picture"): "candidates:edit",
+    ("DELETE", "/api/v1/resumes/{resume_id}/profile-picture"): "candidates:edit",
+    ("POST", "/api/v1/resumes/{resume_id}/generate-questions"): "interviews:view",
+})
+router = APIRouter(prefix="/api/v1/resumes", tags=["Resumes"], dependencies=[Depends(_CANDIDATES_ACCESS)])
 
 
 def is_admin_or_staff(user: dict) -> bool:

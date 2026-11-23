@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
     DEFAULT_ADMIN_PASSWORD: str = "Admin@123"
     DEFAULT_ADMIN_ROLE: str = "admin"
+    # Role permission checks on the API: "warn" logs a missing permission and lets the request through,
+    # "enforce" refuses it. Start with "warn" on existing data, check the logs, then switch.
+    PERMISSIONS_MODE: str = "warn"
 
     UPLOAD_FOLDER: str = "uploads"
     OPENAI_API_KEY: str = "sk-placeholder-api-key"
@@ -57,6 +60,10 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-south-1"
     AWS_BUCKET_NAME: str = "farm2bagv4live"
     S3_UR: str = "https://farm2bagv4live.s3.ap-south-1.amazonaws.com/"
+    # New uploads are private; the API hands out signed links that expire (app.core.file_access).
+    # Set to "public-read" only to go back to the old public URLs.
+    S3_OBJECT_ACL: str = "private"
+    FILE_LINK_TTL_MINUTES: int = 60
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),

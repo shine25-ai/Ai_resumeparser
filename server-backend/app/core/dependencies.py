@@ -4,10 +4,13 @@ FastAPI dependency injectors for database access, JWT user authentication, and R
 
 import time
 from typing import Callable, Dict, List, Optional, Tuple
-from fastapi import Depends
+from fastapi import Depends, Request
+from loguru import logger
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.core.config import settings
 from app.core.database import get_database
+from app.core.permissions import expand_permissions
 from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.core.security import decode_jwt_token
 from app.core.tenant import set_company, system_scope
@@ -71,14 +74,19 @@ async def _enrich_user_permissions(user: dict, db: AsyncIOMotorDatabase) -> dict
         except Exception:
             pass
 
-    role_doc = await db[ROLES_COLLECTION].find_one({"$or": role_query_or})
+    # The company's own role wins over a built-in role with the same name (built-in roles have no company_id).
+    role_doc = await db[ROLES_COLLECTION].find_one(
+        {"$or": role_query_or, "is_deleted": {"$ne": True}}, sort=[("company_id", -1)]
+    )
 
     if role_doc and "permissions" in role_doc:
-        user["permissions"] = role_doc.get("permissions", [])
+        stored = role_doc.get("permissions", [])
     elif user.get("permissions") is not None and isinstance(user.get("permissions"), list):
-        user["permissions"] = user.get("permissions", [])
+        stored = user.get("permissions", [])
     else:
-        user["permissions"] = []
+        stored = []
+    user["stored_permissions"] = list(stored)
+    user["permissions"] = expand_permissions(stored)
 
     return user
 
@@ -132,7 +140,7 @@ async def enter_user_company(user: dict, requested_company_id: Optional[str], db
     company = await db[COMPANIES_COLLECTION].find_one({"id": company_id})
     if not company:
         raise AuthenticationError("Your company workspace no longer exists.")
-    if company.get("is_active") is False and not is_superadmin(user):
+    if (company.get("is_active") is False or company.get("archived_at")) and not is_superadmin(user):
         raise AuthenticationError("Your company's workspace has been turned off. Please contact support.")
 
     set_company(company_id)
@@ -231,6 +239,60 @@ def require_permission(required_perm: str) -> Callable:
 
     return permission_checker
 
+
+
+# ── Module / action permission checks (see app.core.permissions) ──────────────
+
+_METHOD_ACTION = {"GET": "view", "HEAD": "view", "POST": "create", "PUT": "edit", "PATCH": "edit", "DELETE": "delete"}
+
+
+def can(user: dict, permission: str) -> bool:
+    """True when the user may do `permission` ("module:action"). Company admins and the super admin may do anything."""
+    if not user:
+        return False
+    if str(user.get("role", "")).strip().lower() in ("admin", "superadmin"):
+        return True
+    return permission in (user.get("permissions") or [])
+
+
+def check_access(user: dict, permission: str, where: str = "") -> None:
+    if can(user, permission):
+        return
+    if str(getattr(settings, "PERMISSIONS_MODE", "warn")).lower() == "enforce":
+        raise AuthorizationError(f"You don't have permission to do this ({permission}).")
+    logger.warning(
+        f"[permissions:warn] user={user.get('id')} role={user.get('role')} company={user.get('company_id')} "
+        f"missing={permission} at {where}"
+    )
+
+
+def require_access(module: str, overrides: Optional[Dict[Tuple[str, str], str]] = None) -> Callable:
+    """
+    Router-wide check. The action comes from the HTTP method (GET=view, POST=create, PUT/PATCH=edit,
+    DELETE=delete). `overrides` maps (METHOD, route path) to "module:action" for routes that differ,
+    e.g. a POST that only searches, or an export.
+    """
+    overrides = {(m.upper(), p): v for (m, p), v in (overrides or {}).items()}
+
+    async def access_checker(request: Request, current_user: dict = Depends(get_current_active_user)) -> dict:
+        route = request.scope.get("route")
+        path = getattr(route, "path", request.url.path)
+        method = request.method.upper()
+        permission = overrides.get((method, path)) or f"{module}:{_METHOD_ACTION.get(method, 'view')}"
+        check_access(current_user, permission, f"{method} {path}")
+        return current_user
+
+    return access_checker
+
+
+def require_can(permission: str) -> Callable:
+    """Check one permission on a single route."""
+
+    async def checker(request: Request, current_user: dict = Depends(get_current_active_user)) -> dict:
+        check_access(current_user, permission, f"{request.method} {request.url.path}")
+        return current_user
+
+    return checker
 
 
 def is_company_admin(user: dict) -> bool:

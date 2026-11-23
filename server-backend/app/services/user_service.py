@@ -11,7 +11,7 @@ from app.models.user import UserDocument
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
-from app.utils.constants import COMPANIES_COLLECTION
+from app.utils.constants import COMPANIES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import utc_now
 
 SUPERADMIN = "superadmin"
@@ -44,8 +44,11 @@ class UserService:
         if not permissions and user_dict.get("permissions"):
             permissions = user_dict.get("permissions", [])
 
+        from app.core.permissions import expand_permissions
+
         user_dict_copy = dict(user_dict)
-        user_dict_copy["permissions"] = permissions
+        # Module permissions plus the page names the screens check (old roles keep their access).
+        user_dict_copy["permissions"] = expand_permissions(permissions)
         return user_dict_copy
 
 
@@ -59,6 +62,22 @@ class UserService:
         if not email_allowed(company, email):
             domains = ", ".join("@" + d for d in company.get("email_domains") or [])
             raise BadRequestError(f"{company.get('name', 'This company')} only allows email addresses at {domains}.")
+
+    async def check_user_limit(self, extra: int = 0) -> None:
+        """The company's plan may limit its users (limits.users, 0 = no limit). `extra` counts pending invitations."""
+        company_id = current_company_id()
+        if not company_id:
+            return
+        company = await self.user_repo.db[COMPANIES_COLLECTION].find_one({"id": company_id}) or {}
+        limit = int(((company.get("limits") or {}).get("users")) or 0)
+        if not limit:
+            return
+        used = await self.user_repo.db[USERS_COLLECTION].count_documents({"is_deleted": {"$ne": True}})
+        if used + extra >= limit:
+            raise BadRequestError(
+                f"{company.get('name', 'This company')}'s plan allows {limit} users. "
+                "Remove a user or ask the platform admin to raise the limit."
+            )
 
     @staticmethod
     def _check_role_change(actor: Optional[Dict[str, Any]], role: Optional[str]) -> None:
@@ -78,6 +97,7 @@ class UserService:
             raise ConflictError(f"User with email '{payload.email}' already exists.")
         self._check_role_change(actor, payload.role)
         await self._check_email(email)
+        await self.check_user_limit()
 
         user_doc = UserDocument(
             full_name=payload.full_name.strip(),
@@ -85,6 +105,7 @@ class UserService:
             password=hash_password(payload.password),
             role=payload.role or "user",
             is_active=payload.is_active,
+            department=(payload.department or "").strip(),
         )
 
         created = await self.user_repo.create(user_doc.to_dict())

@@ -10,14 +10,17 @@ with no company they show the default company, so careers links shared before co
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, File, Form, Header, Query, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr, Field, StringConstraints
 from typing_extensions import Annotated
 
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user, is_admin_or_staff_user, is_company_admin
+from app.core.dependencies import require_access, get_current_active_user, is_admin_or_staff_user, is_company_admin
 from app.core.exceptions import AuthorizationError
+from app.core.tenant import system_scope
+from app.services.audit_service import diff as audit_diff, record_audit
+from app.models.company import SUPERADMIN_ONLY_FIELDS
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.job_repository import (
     ApplicantVerificationRepository,
@@ -33,7 +36,13 @@ from app.utils.constants import ERROR_FORBIDDEN
 from app.utils.response import success_response
 
 public_router = APIRouter(prefix="/api/v1/public/jobs", tags=["Public Jobs"])
-router = APIRouter(prefix="/api/v1/job-openings", tags=["Job Openings"])
+
+_JOBS_ACCESS = require_access("jobs", {
+    ("GET", "/api/v1/job-openings/page-settings"): "career_page:view",
+    ("PUT", "/api/v1/job-openings/page-settings"): "career_page:edit",
+    ("GET", "/api/v1/job-openings/applications"): "candidates:view",
+})
+router = APIRouter(prefix="/api/v1/job-openings", tags=["Job Openings"], dependencies=[Depends(_JOBS_ACCESS)])
 companies_router = APIRouter(prefix="/api/v1/companies", tags=["Companies"])
 
 CompanyParam = Query(None, max_length=60, description="Company page address (slug). Leave out for the default company.")
@@ -265,14 +274,53 @@ class CompanyAdmin(BaseModel):
     password: str = Field(..., min_length=6)
 
 
-class CompanyCreate(BaseModel):
+Short = Annotated[str, StringConstraints(max_length=120)]
+
+
+class CompanyAddressIn(BaseModel):
+    line1: Short = ""
+    line2: Short = ""
+    city: Short = ""
+    state: Short = ""
+    country: Short = ""
+    pincode: Annotated[str, StringConstraints(max_length=12)] = ""
+
+
+class CompanyContactIn(BaseModel):
+    name: Short = ""
+    email: Short = ""
+    phone: Annotated[str, StringConstraints(max_length=30)] = ""
+
+
+class CompanyLimitsIn(BaseModel):
+    users: int = Field(default=0, ge=0)
+    active_jobs: int = Field(default=0, ge=0)
+    storage_mb: int = Field(default=0, ge=0)
+    ai_parses_per_month: int = Field(default=0, ge=0)
+
+
+class CompanyProfileIn(BaseModel):
+    """Company details (SRS 3.3). All optional."""
+    logo_url: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
+    website: Optional[Annotated[str, StringConstraints(max_length=200)]] = None
+    industry: Optional[Short] = None
+    description: Optional[Annotated[str, StringConstraints(max_length=4000)]] = None
+    company_size: Optional[Annotated[str, StringConstraints(max_length=40)]] = None
+    timezone: Optional[Annotated[str, StringConstraints(max_length=60)]] = None
+    address: Optional[CompanyAddressIn] = None
+    contact: Optional[CompanyContactIn] = None
+    plan: Optional[Annotated[str, StringConstraints(max_length=60)]] = Field(default=None, description="Super admin only")
+    limits: Optional[CompanyLimitsIn] = Field(default=None, description="Super admin only; 0 = no limit")
+
+
+class CompanyCreate(CompanyProfileIn):
     name: str = Field(..., min_length=1, max_length=120)
     slug: Optional[Slug] = Field(default=None, description="Careers page address; made from the name when left out")
     email_domains: List[str] = Field(default_factory=list, max_length=20, description="e.g. ['abc.com']; empty allows any email")
     admin: Optional[CompanyAdmin] = Field(default=None, description="The company's first administrator")
 
 
-class CompanyUpdate(BaseModel):
+class CompanyUpdate(CompanyProfileIn):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     slug: Optional[Slug] = None
     status: Optional[str] = Field(default=None, pattern="^(ACTIVE|INACTIVE)$")
@@ -283,23 +331,32 @@ class CompanyUpdate(BaseModel):
 @companies_router.get("", summary="List companies with role counts (staff)")
 async def list_companies(
     all: bool = Query(False, description="Super admin: every company, with user and resume counts"),
+    include_archived: bool = Query(False, description="Super admin: also list archived companies"),
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
 ):
     _require_staff(current_user)
-    data = await service.list_companies(all_companies=bool(current_user.get("is_superadmin")) and all)
+    data = await service.list_companies(
+        all_companies=bool(current_user.get("is_superadmin")) and all, include_archived=include_archived
+    )
     return success_response(data=data, message="Companies retrieved successfully.")
 
 
 @companies_router.post("", status_code=status.HTTP_201_CREATED, summary="Add a company (staff)")
 async def create_company(
     body: CompanyCreate,
+    request: Request,
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     if not current_user.get("is_superadmin"):
         raise AuthorizationError("Only the platform super admin can add companies.")
-    data = await service.create_company(body.model_dump())
+    data = await service.create_company(body.model_dump(exclude_none=True))
+    details = f"Admin: {data['admin']['email']}" if data.get("admin") else ""
+    for platform in (True, False):
+        await record_audit(db, current_user, "company.created", "company", data["id"], data["name"], details=details,
+                           request=request, platform=platform, target_company_id=data["id"])
     return success_response(data=data, message="Company added.", status_code=status.HTTP_201_CREATED)
 
 
@@ -307,15 +364,59 @@ async def create_company(
 async def update_company(
     company_id: str,
     body: CompanyUpdate,
+    request: Request,
     current_user: dict = Depends(get_current_active_user),
     service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     changes = body.model_dump(exclude_unset=True)
     if not current_user.get("is_superadmin"):
         # A company admin may rename their own company and change its careers page, nothing else.
         if not is_company_admin(current_user) or company_id != current_user.get("company_id"):
             raise AuthorizationError("You can only change your own company.")
-        if {"email_domains", "is_active"} & set(changes):
-            raise AuthorizationError("Only the platform super admin can change email domains or turn a workspace off.")
+        if SUPERADMIN_ONLY_FIELDS & set(changes):
+            raise AuthorizationError("Only the platform super admin can change email domains, plans or limits, or turn a workspace off.")
+    before = await service.company_repo.get_by_id(company_id)
     data = await service.update_company(company_id, changes)
+    changed = audit_diff(before, data, sorted(changes))
+    if changed:
+        for platform in (True, False):
+            await record_audit(db, current_user, "company.updated", "company", company_id, data.get("name", ""),
+                               changes=changed, request=request, platform=platform, target_company_id=company_id)
     return success_response(data=data, message="Company updated.")
+
+
+@companies_router.post("/{company_id}/archive", summary="Archive a company (super admin)")
+async def archive_company(
+    company_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    if not current_user.get("is_superadmin"):
+        raise AuthorizationError("Only the platform super admin can archive companies.")
+    with system_scope():
+        data = await service.set_archived(company_id, True)
+    for platform in (True, False):
+        await record_audit(db, current_user, "company.archived", "company", company_id, data.get("name", ""),
+                           request=request, platform=platform, target_company_id=company_id)
+    return success_response(data=data, message="Company archived. Its users can no longer sign in and its careers page is off.")
+
+
+@companies_router.post("/{company_id}/restore", summary="Restore an archived company (super admin)")
+async def restore_company(
+    company_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    if not current_user.get("is_superadmin"):
+        raise AuthorizationError("Only the platform super admin can restore companies.")
+    with system_scope():
+        data = await service.set_archived(company_id, False)
+    for platform in (True, False):
+        await record_audit(db, current_user, "company.restored", "company", company_id, data.get("name", ""),
+                           request=request, platform=platform, target_company_id=company_id)
+    return success_response(data=data, message="Company restored. Turn the workspace on when it should be used again.")

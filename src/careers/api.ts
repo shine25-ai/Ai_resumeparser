@@ -77,6 +77,10 @@ export const readJson = async (response: Response) => {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = body?.message || body?.detail;
+    // "Validation failed" alone doesn't say what to fix: show the first field error, without the "body -> " path.
+    const first = Array.isArray(body?.errors) && typeof body.errors[0] === "string" ? body.errors[0] : "";
+    const field = first ? first.replace(/^body -> /, "").replace(/ -> /g, " ") : "";
+    if (field && detail === "Validation failed") throw new Error(`Please check ${field}`);
     throw new Error(typeof detail === "string" ? detail : "Request failed. Please try again.");
   }
   return body.data ?? body;

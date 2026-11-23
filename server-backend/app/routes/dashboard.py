@@ -1,3 +1,4 @@
+from app.core.dependencies import require_access
 from fastapi import APIRouter, Depends, Query
 from typing import Any, Dict, Optional
 
@@ -15,7 +16,9 @@ from app.services.dashboard_service import DashboardService
 from app.controllers.dashboard_controller import DashboardController
 from app.core.dependencies import get_current_user
 
-router = APIRouter(prefix="/api/v1/dashboard", tags=["Dashboard"])
+
+_DASHBOARD_ACCESS = require_access("dashboard", {})
+router = APIRouter(prefix="/api/v1/dashboard", tags=["Dashboard"], dependencies=[Depends(_DASHBOARD_ACCESS)])
 
 _dashboard_service = DashboardService()
 

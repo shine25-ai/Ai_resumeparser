@@ -2,11 +2,12 @@
 Authentication routes for registration, login, logout, token refresh, and password management.
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 from app.controllers.auth_controller import AuthController
 from app.core.database import get_database
+from app.services.audit_service import record_audit
 from app.core.dependencies import get_current_active_user
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RefreshTokenRequest, RegisterRequest
@@ -102,8 +103,17 @@ class SwitchCompanyRequest(BaseModel):
 )
 async def switch_company(
     payload: SwitchCompanyRequest,
+    request: Request,
     current_user: dict = Depends(get_current_active_user),
     controller: AuthController = Depends(get_auth_controller),
+    audit_db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     tokens = await controller.auth_service.switch_company(current_user, payload.company_id)
+    # Both the platform log and the company's own log show that the super admin opened the workspace.
+    for platform in (True, False):
+        await record_audit(
+            audit_db, current_user, "workspace.opened", "company", payload.company_id,
+            details=f"Super admin opened this workspace (from {current_user.get('company_name') or current_user.get('company_id')})",
+            request=request, platform=platform, target_company_id=payload.company_id,
+        )
     return success_response(data=tokens.model_dump(), message="Company switched.")

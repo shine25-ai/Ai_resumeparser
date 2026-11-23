@@ -1,3 +1,4 @@
+from app.core.dependencies import require_access
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Body
 from app.controllers.transcription_controller import TranscriptionController
 from app.core.config import settings
@@ -6,10 +7,12 @@ from app.core.dependencies import get_current_active_user
 
 # Logged-in users only. Moved under /api/v1 like every other router (the
 # Interview Questions panel already called /api/v1/transcription and got a 404).
+
+_EVALUATIONS_ACCESS = require_access("evaluations", {})
 router = APIRouter(
     prefix="/api/v1/transcription",
     tags=["Transcription"],
-    dependencies=[Depends(get_current_active_user)],
+    dependencies=[Depends(_EVALUATIONS_ACCESS), Depends(get_current_active_user)],
 )
 
 @router.post("/transcribe", summary="Transcribe Audio")

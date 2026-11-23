@@ -27,8 +27,13 @@ from app.models.company import (
     COMPANY_STATUS_ACTIVE,
     COMPANY_STATUS_INACTIVE,
     DEFAULT_COMPANY_ID,
+    COMPANY_PROFILE_FIELDS,
+    CompanyAddress,
+    CompanyContact,
     CompanyDocument,
+    CompanyLimits,
     company_ref,
+    with_profile_defaults,
     default_company_doc,
     slugify,
 )
@@ -51,7 +56,7 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.settings_repository import SettingsRepository
 from app.services.resume_service import ResumeService
 from app.utils.encryption import decrypt_password
-from app.utils.constants import RESUMES_COLLECTION, USERS_COLLECTION
+from app.utils.constants import INTERVIEWS_COLLECTION, RESUMES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import utc_now
 
 CODE_TTL_MINUTES = 10
@@ -104,9 +109,9 @@ class JobOpeningService:
         repo = getattr(self, "company_repo", None)
         company = await repo.get_by_id(company_id) if repo else None
         if company:
-            return company
+            return with_profile_defaults(company)
         if company_id == DEFAULT_COMPANY_ID:
-            return default_company_doc()
+            return with_profile_defaults(default_company_doc())
         raise NotFoundError("Company not found.")
 
     async def public_company(self, slug: Optional[str]) -> Dict[str, Any]:
@@ -117,7 +122,12 @@ class JobOpeningService:
             return await self.company_by_id(DEFAULT_COMPANY_ID)
         repo = getattr(self, "company_repo", None)
         company = await repo.get_by_slug(slug) if repo else None
-        if not company or company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:
+        if (
+            not company
+            or company.get("status") == COMPANY_STATUS_INACTIVE
+            or company.get("is_active") is False
+            or company.get("archived_at")
+        ):
             raise NotFoundError("This careers page was not found.")
         set_company(company["id"])
         return company
@@ -129,12 +139,16 @@ class JobOpeningService:
             return {"$or": [{"company_id": company_id}, {"company_id": {"$exists": False}}]}
         return {"company_id": company_id}
 
-    async def list_companies(self, all_companies: bool = False) -> List[Dict[str, Any]]:
-        """The request's own company, or every company for the super admin (all_companies)."""
+    async def list_companies(self, all_companies: bool = False, include_archived: bool = False) -> List[Dict[str, Any]]:
+        """The request's own company, or every company for the super admin (all_companies).
+        Archived companies are left out unless include_archived."""
         await self.company_repo.ensure_default()
+        interview_counts: Dict[str, int] = {}
         if all_companies:
             with system_scope():
                 companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500)
+                if not include_archived:
+                    companies = [c for c in companies if not c.get("archived_at")]
                 roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=100000)
                 users = await self.resume_repo.db[USERS_COLLECTION].aggregate([
                     {"$match": {"is_deleted": {"$ne": True}}},
@@ -144,18 +158,22 @@ class JobOpeningService:
                     {"$match": {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}},
                     {"$group": {"_id": "$company_id", "n": {"$sum": 1}}},
                 ]).to_list(length=None)
+                interviews = await self.resume_repo.db[INTERVIEWS_COLLECTION].aggregate([
+                    {"$group": {"_id": "$company_id", "n": {"$sum": 1}}},
+                ]).to_list(length=None)
+            interview_counts = {i["_id"]: i["n"] for i in interviews}
             user_counts = {u["_id"]: u["n"] for u in users}
             resume_counts = {r["_id"]: r["n"] for r in resumes}
         else:
             companies = [await self.company_by_id(None)]
             roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=10000)
             user_counts, resume_counts = {}, {}
+        companies = [with_profile_defaults(c) for c in companies]
         for c in companies:
-            c.setdefault("email_domains", [])
-            c.setdefault("is_active", True)
             if all_companies:
                 c["users_count"] = user_counts.get(c["id"], 0)
                 c["resumes_count"] = resume_counts.get(c["id"], 0)
+                c["interviews_count"] = interview_counts.get(c["id"], 0)
             mine = [r for r in roles if (r.get("company_id") or DEFAULT_COMPANY_ID) == c["id"]]
             c["roles_count"] = len(mine)
             c["open_roles_count"] = sum(1 for r in mine if r.get("status") == JOB_STATUS_OPEN)
@@ -198,7 +216,13 @@ class JobOpeningService:
             if await users.get_by_email(admin_email):
                 raise ConflictError(f"User with email '{admin_email}' already exists.")
 
-        doc = CompanyDocument(name=name, slug=await self._clean_slug(data.get("slug") or name), email_domains=domains)
+        doc = CompanyDocument(
+            name=name,
+            slug=await self._clean_slug(data.get("slug") or name),
+            email_domains=domains,
+            **self._clean_profile(data),
+            **self._clean_plan(data),
+        )
         created = await self.company_repo.create(doc.to_dict())
         created_admin = None
         with company_scope(created["id"]):
@@ -210,8 +234,8 @@ class JobOpeningService:
                     actor={"role": "superadmin"},
                 )
         return {
-            **created, "roles_count": 0, "open_roles_count": 0, "is_default": False,
-            "users_count": 1 if created_admin else 0, "resumes_count": 0,
+            **with_profile_defaults(created), "roles_count": 0, "open_roles_count": 0, "is_default": False,
+            "users_count": 1 if created_admin else 0, "resumes_count": 0, "interviews_count": 0,
             "admin": created_admin.model_dump() if created_admin else None,
         }
 
@@ -241,14 +265,62 @@ class JobOpeningService:
             if company_id == DEFAULT_COMPANY_ID and changes["is_active"] is False:
                 raise BadRequestError("The platform's own company cannot be turned off.")
             clean["is_active"] = bool(changes["is_active"])
+        clean.update(self._clean_profile({k: v for k, v in changes.items() if k != "name"}))
+        clean.update(self._clean_plan(changes))
         if not clean:
-            return existing
+            return with_profile_defaults(existing)
         clean["updated_at"] = utc_now().isoformat()
         updated = await self.company_repo.update(company_id, clean)
         if clean.get("name") and clean["name"] != existing["name"]:
             with company_scope(company_id):
                 await self._rename_company_everywhere(company_id, clean["name"])
-        return updated
+        return with_profile_defaults(updated)
+
+    @staticmethod
+    def _clean_profile(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Profile fields from a create/update body, trimmed; only the ones given."""
+        out: Dict[str, Any] = {}
+        for key in COMPANY_PROFILE_FIELDS - {"name", "address", "contact"}:
+            if key in data and data[key] is not None:
+                out[key] = str(data[key]).strip()
+        if out.get("website") and not re.match(r"^https?://", out["website"], re.I):
+            out["website"] = "https://" + out["website"]
+        if data.get("address") is not None:
+            out["address"] = CompanyAddress(**{k: str(v or "").strip() for k, v in dict(data["address"]).items()}).model_dump()
+        if data.get("contact") is not None:
+            contact = {k: str(v or "").strip() for k, v in dict(data["contact"]).items()}
+            contact["email"] = contact.get("email", "").lower()
+            if contact["email"] and not EMAIL_PATTERN.fullmatch(contact["email"]):
+                raise BadRequestError("Contact email is not a valid email address.")
+            out["contact"] = CompanyContact(**contact).model_dump()
+        return out
+
+    @staticmethod
+    def _clean_plan(data: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if data.get("plan") is not None:
+            out["plan"] = str(data["plan"]).strip()
+        if data.get("limits") is not None:
+            limits = dict(data["limits"])
+            if any(int(v or 0) < 0 for v in limits.values()):
+                raise BadRequestError("Limits cannot be negative (0 means no limit).")
+            out["limits"] = CompanyLimits(**{k: int(v or 0) for k, v in limits.items()}).model_dump()
+        return out
+
+    async def set_archived(self, company_id: str, archived: bool) -> Dict[str, Any]:
+        """Super admin: archive a company (workspace off, careers page gone, hidden from the list) or restore it.
+        Nothing is deleted. Restoring keeps the workspace off until it is turned on again."""
+        existing = await self.company_repo.get_by_id(company_id)
+        if not existing:
+            raise NotFoundError("Company not found.")
+        if company_id == DEFAULT_COMPANY_ID and archived:
+            raise BadRequestError("The platform's own company cannot be archived.")
+        now = utc_now().isoformat()
+        changes: Dict[str, Any] = {"archived_at": now if archived else None, "updated_at": now}
+        if archived:
+            changes["is_active"] = False
+        updated = await self.company_repo.update(company_id, changes)
+        return with_profile_defaults(updated)
 
     async def _rename_company_everywhere(self, company_id: str, name: str) -> None:
         """Roles, applications and resumes keep a copy of the company name for lists and filters."""
