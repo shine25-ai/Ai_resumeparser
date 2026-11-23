@@ -43,6 +43,16 @@ export interface PublicJob {
   preferred_skills: string[];
   open_positions: number;
   created_at: string;
+  // Newer fields; older API versions leave them out.
+  code?: string;
+  category?: string;
+  work_mode?: string;
+  certifications?: string[];
+  what_we_offer?: string[];
+  tags?: string[];
+  salary?: { min: number | null; max: number | null; currency: string } | null;
+  closing_date?: string | null;
+  posted_at?: string;
 }
 
 /** Editable text on the careers page. The header and footer are fixed. */

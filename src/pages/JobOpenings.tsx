@@ -1,21 +1,70 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Pencil, Plus, RefreshCw, X } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Bookmark,
+  CheckCircle2,
+  Copy,
+  Eye,
+  FileText,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Send,
+  ShieldCheck,
+  Trash2,
+  X,
+  XCircle,
+} from "lucide-react";
 import CareersPageSettingsPanel from "../components/jobs/CareersPageSettingsPanel";
 import CompanyBar from "../components/jobs/CompanyBar";
+import JobWizard from "../components/jobs/JobWizard";
+import { useFeedback } from "../components/ui/Feedback";
 import {
-  createJobOpening,
+  deleteJobTemplate,
+  duplicateJob,
   fetchCompanies,
   fetchJobApplications,
   fetchJobOpenings,
-  updateJobOpening,
+  fetchJobSettings,
+  fetchJobTemplates,
+  jobAction,
+  saveJobSettings,
+  saveJobTemplate,
   type Company,
+  type JobAction,
   type JobApplicationRow,
   type JobOpening,
+  type JobStatus,
+  type JobTemplate,
 } from "../utils/jobsApi";
+
+/** Jobs & Openings (SRS Screen 5): KPIs, search and filters, the job list with actions, and a details panel. */
 
 const PAGE_SIZE = 20;
 const COMPANY_KEY = "jobOpenings.companyId";
+
+const STATUS_STYLE: Record<JobStatus, string> = {
+  DRAFT: "bg-slate-100 text-slate-700",
+  PENDING_APPROVAL: "bg-amber-50 text-amber-700",
+  OPEN: "bg-emerald-50 text-emerald-700",
+  CLOSED: "bg-rose-50 text-rose-700",
+  ARCHIVED: "bg-slate-100 text-slate-500",
+};
+const STATUS_LABEL: Record<JobStatus, string> = {
+  DRAFT: "Draft",
+  PENDING_APPROVAL: "Pending approval",
+  OPEN: "Published",
+  CLOSED: "Closed",
+  ARCHIVED: "Archived",
+};
+
+const filterClass = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none";
 
 const readSavedCompany = () => {
   try {
@@ -25,395 +74,543 @@ const readSavedCompany = () => {
   }
 };
 
-// Role sections shown in the careers "View Details" pop-up. Typed one item per line.
-const SECTIONS = [
-  { key: "responsibilities", label: "Key responsibilities", hint: "One per line", placeholder: "Build and maintain user-facing features\nWrite clean, tested, reviewable code" },
-  { key: "required_skills", label: "Required skills", hint: "One per line or comma separated; shown as tags", placeholder: "JavaScript / TypeScript, HTML & CSS, REST APIs" },
-  { key: "qualifications", label: "Qualifications", hint: "One per line", placeholder: "Degree in Computer Science or equivalent practical experience" },
-  { key: "preferred_skills", label: "Preferred skills", hint: "One per line", placeholder: "Cloud deployment experience\nAutomated testing" },
-] as const;
-type SectionKey = (typeof SECTIONS)[number]["key"];
+/** What the signed-in user may do with jobs (the API checks too). */
+function useJobPermissions() {
+  return useMemo(() => {
+    try {
+      const me = JSON.parse(localStorage.getItem("user") || "{}");
+      const role = String(me.role || "").toLowerCase();
+      const perms: string[] = me.permissions || [];
+      const all = role === "admin" || role === "superadmin" || perms.length === 0;
+      const can = (p: string) => all || perms.includes(p);
+      return {
+        create: can("jobs:create"),
+        edit: can("jobs:edit"),
+        publish: can("jobs:publish"),
+        approve: can("jobs:approve"),
+        remove: can("jobs:delete"),
+        settings: all || can("settings:edit"),
+      };
+    } catch {
+      return { create: true, edit: true, publish: true, approve: true, remove: true, settings: true };
+    }
+  }, []);
+}
 
-/** Skills may be comma separated; the other sections are one item per line. */
-const toList = (key: SectionKey, text: string) =>
-  text
-    .split(key === "required_skills" ? /[\n,]/ : /\n/)
-    .map((line) => line.trim().replace(/^[-•*]\s*/, ""))
-    .filter(Boolean);
-
-const fieldClass = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none";
-
-const emptyForm = {
-  title: "", department: "", location: "", employment_type: "", experience: "", description: "", open_positions: "1",
-  responsibilities: "", required_skills: "", qualifications: "", preferred_skills: "",
+const daysBetween = (from?: string | null, to?: string | null) => {
+  if (!from) return null;
+  const a = new Date(from).getTime();
+  const b = to ? new Date(to).getTime() : Date.now();
+  return Math.max(0, Math.round((b - a) / 86_400_000));
 };
 
-function Field({ label, hint, className = "", children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
+const fmtDate = (d?: string | null) => (d ? new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
+
+function StatusPill({ status }: { status: JobStatus }) {
+  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[status]}`}>{STATUS_LABEL[status]}</span>;
+}
+
+function Progress({ label, value, of, color }: { label: string; value: number; of: number; color: string }) {
+  const pct = of > 0 ? Math.min(100, Math.round((value / of) * 100)) : 0;
   return (
-    <label className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-xs font-medium text-slate-600">
-        {label} {hint && <span className="font-normal text-slate-400">· {hint}</span>}
-      </span>
-      {children}
-    </label>
+    <div>
+      <div className="mb-1 flex justify-between text-xs"><span className="text-slate-600">{label}</span><span className="font-semibold text-slate-800">{value}</span></div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} /></div>
+    </div>
+  );
+}
+
+type Act = (job: JobOpening, action: JobAction) => void;
+
+/** The actions a job offers now, given its status and the user's permissions. */
+function actionsFor(job: JobOpening, perms: ReturnType<typeof useJobPermissions>, requireApproval: boolean) {
+  const list: { action: JobAction; label: string; icon: React.ReactNode; danger?: boolean }[] = [];
+  const s = job.status;
+  if (s === "DRAFT" && perms.publish) list.push({ action: "publish", label: requireApproval && !perms.approve ? "Submit for approval" : "Publish", icon: <Send size={14} /> });
+  if (s === "PENDING_APPROVAL" && perms.approve) {
+    list.push({ action: "approve", label: "Approve & publish", icon: <ShieldCheck size={14} /> });
+    list.push({ action: "reject", label: "Send back", icon: <RotateCcw size={14} /> });
+  }
+  if (s === "OPEN" && perms.publish) list.push({ action: "close", label: "Close job", icon: <XCircle size={14} /> });
+  if (s === "CLOSED" && perms.publish) list.push({ action: "reopen", label: "Reopen job", icon: <RotateCcw size={14} /> });
+  if (["DRAFT", "CLOSED", "PENDING_APPROVAL"].includes(s) && perms.remove) list.push({ action: "archive", label: "Archive", icon: <Archive size={14} />, danger: true });
+  if (s === "ARCHIVED" && perms.edit) list.push({ action: "restore", label: "Restore as draft", icon: <ArchiveRestore size={14} /> });
+  return list;
+}
+
+function JobPanel({
+  job,
+  perms,
+  requireApproval,
+  onClose,
+  onEdit,
+  onAct,
+  onDuplicate,
+  onTemplate,
+  onApplications,
+}: {
+  job: JobOpening;
+  perms: ReturnType<typeof useJobPermissions>;
+  requireApproval: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onAct: Act;
+  onDuplicate: () => void;
+  onTemplate: () => void;
+  onApplications: () => void;
+}) {
+  const vacancies = Math.max(job.open_positions, 1);
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30" onClick={onClose}>
+      <aside className="h-full w-full max-w-xl overflow-y-auto bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 border-b border-slate-100 bg-white px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-slate-400">{job.code}</p>
+              <h2 className="text-lg font-bold text-slate-900">{job.title}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <StatusPill status={job.status} />
+                {job.department && <span>{job.department}</span>}
+                {job.location && <span>· {job.location}</span>}
+                {job.work_mode && <span>· {job.work_mode}</span>}
+              </div>
+            </div>
+            <button onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {perms.edit && job.status !== "ARCHIVED" && (
+              <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white"><Pencil size={13} /> Edit</button>
+            )}
+            {actionsFor(job, perms, requireApproval).map((a) => (
+              <button key={a.action} onClick={() => onAct(job, a.action)} className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium ${a.danger ? "border-rose-200 text-rose-700 hover:bg-rose-50" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
+                {a.icon} {a.label}
+              </button>
+            ))}
+            {perms.create && <button onClick={onDuplicate} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"><Copy size={13} /> Duplicate</button>}
+            {perms.create && <button onClick={onTemplate} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"><Bookmark size={13} /> Save as template</button>}
+          </div>
+        </div>
+
+        <div className="space-y-6 p-5 text-sm">
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Hiring progress</h3>
+            <div className="space-y-3 rounded-xl bg-slate-50 p-4">
+              <Progress label="Applications" value={job.applications_count} of={Math.max(job.applications_count, 1)} color="bg-indigo-500" />
+              <Progress label="Interviews" value={job.interviews_count} of={Math.max(job.applications_count, job.interviews_count, 1)} color="bg-sky-500" />
+              <Progress label={`Selected (of ${job.open_positions} vacancies)`} value={job.selected_count} of={vacancies} color="bg-emerald-500" />
+            </div>
+            <button onClick={onApplications} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"><Eye size={12} /> View applications</button>
+          </section>
+
+          <section className="grid grid-cols-2 gap-3">
+            {[
+              ["Experience", job.experience || "—"],
+              ["Vacancies", String(job.open_positions)],
+              ["Employment", job.employment_type || "—"],
+              ["Closing date", fmtDate(job.closing_date)],
+              ["Hiring manager", job.hiring_manager?.name || "—"],
+              ["Salary", job.salary_min || job.salary_max ? `${job.salary_min ?? "—"} – ${job.salary_max ?? "—"} ${job.salary_currency}${job.show_salary ? "" : " (hidden)"}` : "—"],
+            ].map(([k, v]) => (
+              <div key={k}><p className="text-xs text-slate-500">{k}</p><p className="font-medium text-slate-800">{v}</p></div>
+            ))}
+          </section>
+
+          {job.description && (
+            <section>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Job description</h3>
+              <p className="whitespace-pre-line text-slate-700">{job.description}</p>
+            </section>
+          )}
+          {job.responsibilities.length > 0 && (
+            <section>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Responsibilities</h3>
+              <ul className="list-disc space-y-0.5 pl-5 text-slate-700">{job.responsibilities.map((r) => <li key={r}>{r}</li>)}</ul>
+            </section>
+          )}
+          <section>
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Skills</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {job.primary_skills.map((s) => <span key={s} className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{s}</span>)}
+              {job.secondary_skills.map((s) => <span key={s} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{s}</span>)}
+              {!job.primary_skills.length && !job.secondary_skills.length && <span className="text-slate-400">—</span>}
+            </div>
+          </section>
+          {job.rounds.length > 0 && (
+            <section>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Interview rounds</h3>
+              <ol className="space-y-1">
+                {job.rounds.map((r, i) => (
+                  <li key={i} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-1.5 text-xs">
+                    <span><b className="mr-1 text-slate-400">{i + 1}.</b>{r.name}</span><span className="text-slate-500">{r.duration_minutes} min</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+          <section>
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">History</h3>
+            <ol className="space-y-2 border-l border-slate-200 pl-4">
+              {[...job.status_history].reverse().map((h, i) => (
+                <li key={i} className="text-xs">
+                  <p className="font-medium text-slate-700">{h.from ? `${STATUS_LABEL[h.from]} → ${STATUS_LABEL[h.to]}` : STATUS_LABEL[h.to]}</p>
+                  <p className="text-slate-500">{h.by?.name || "System"} · {new Date(h.at).toLocaleString()}</p>
+                  {h.note && <p className="mt-0.5 rounded bg-amber-50 px-2 py-1 text-amber-800">{h.note}</p>}
+                </li>
+              ))}
+              {job.status_history.length === 0 && <li className="text-xs text-slate-400">No changes recorded.</li>}
+            </ol>
+          </section>
+        </div>
+      </aside>
+    </div>
   );
 }
 
 export default function JobOpenings() {
+  const { toast, confirm } = useFeedback();
+  const [ask, setAsk] = useState<null | { title: string; message: string; placeholder: string; confirmLabel: string; value: string; resolve: (v: string | null) => void }>(null);
+  /** A small in-page text dialog (send-back reason, template name). */
+  const prompt = (o: { title: string; message: string; placeholder?: string; confirmLabel: string; value?: string }) =>
+    new Promise<string | null>((resolve) => setAsk({ placeholder: "", value: "", ...o, resolve }));
+  const perms = useJobPermissions();
   const [searchParams, setSearchParams] = useSearchParams();
-  const formRef = useRef<HTMLFormElement | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState<string>(readSavedCompany);
   const company = companies.find((c) => c.id === companyId) ?? companies[0];
-  const [openings, setOpenings] = useState<JobOpening[]>([]);
+  const [jobs, setJobs] = useState<JobOpening[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [templates, setTemplates] = useState<JobTemplate[]>([]);
+  const [wizard, setWizard] = useState<{ job: JobOpening | null; template?: JobTemplate } | null>(null);
+  const [panelId, setPanelId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  // Filters
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<"" | JobStatus>("");
+  const [department, setDepartment] = useState("");
+  const [location, setLocation] = useState("");
+  const [experience, setExperience] = useState("");
+  // Applications
+  const [selectedId, setSelectedId] = useState("");
   const [applications, setApplications] = useState<JobApplicationRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [form, setForm] = useState(emptyForm);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const loadCompanies = async () => {
-    try {
-      setCompanies(await fetchCompanies());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load companies.");
-    }
-  };
-
-  const selectCompany = (id: string) => {
-    setCompanyId(id);
-    setSelectedId("");
-    setPage(1);
-    setEditingId(null);
-    setForm(emptyForm);
-    try {
-      localStorage.setItem(COMPANY_KEY, id);
-    } catch {
-      // Remembering the company is only a convenience.
-    }
-  };
-
-  const loadOpenings = async () => {
-    if (!company) return;
+  const loadJobs = useCallback(async () => {
     setLoading(true);
     try {
-      setOpenings(await fetchJobOpenings(company.id));
-      setError("");
+      setJobs(await fetchJobOpenings(undefined, showArchived));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load job openings.");
+      toast(e instanceof Error ? e.message : "Could not load jobs.", "error");
     } finally {
       setLoading(false);
     }
-  };
+  }, [showArchived, toast]);
 
-  const loadApplications = async () => {
-    if (!company) return;
+  const loadApplications = useCallback(async () => {
     try {
-      const data = await fetchJobApplications(selectedId, page, PAGE_SIZE, company.id);
+      const data = await fetchJobApplications(selectedId, page, PAGE_SIZE, company?.id);
       setApplications(data.items);
       setTotal(data.total);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load applications.");
+    } catch {
+      setApplications([]);
     }
-  };
+  }, [selectedId, page, company?.id]);
 
   useEffect(() => {
-    loadCompanies();
+    fetchCompanies().then(setCompanies).catch(() => undefined);
+    fetchJobSettings().then((s) => setRequireApproval(s.require_approval)).catch(() => undefined);
+    fetchJobTemplates().then(setTemplates).catch(() => undefined);
   }, []);
-
   useEffect(() => {
-    loadOpenings();
-  }, [company?.id]);
+    loadJobs();
+  }, [loadJobs]);
+  useEffect(() => {
+    loadApplications();
+  }, [loadApplications]);
 
-  // Honor Dashboard deep-links: ?jobId=<id> selects that role; ?action=new scrolls to the create form
+  // Dashboard links: ?jobId=<id> opens that job; ?action=new opens the wizard.
   useEffect(() => {
     const jobIdParam = searchParams.get("jobId");
-    const actionParam = searchParams.get("action");
-
-    if (jobIdParam && openings.some((o) => o.id === jobIdParam)) {
-      setSelectedId(jobIdParam);
-      setPage(1);
-    }
-    if (actionParam === "new") {
-      setEditingId(null);
-      setForm(emptyForm);
-      setTimeout(() => {
-        formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        const firstInput = formRef.current?.querySelector("input");
-        if (firstInput instanceof HTMLInputElement) firstInput.focus();
-      }, 150);
+    if (jobIdParam && jobs.some((j) => j.id === jobIdParam)) setPanelId(jobIdParam);
+    if (searchParams.get("action") === "new" && perms.create) {
+      setWizard({ job: null });
       const next = new URLSearchParams(searchParams);
       next.delete("action");
       setSearchParams(next, { replace: true });
     }
-  }, [searchParams, openings, setSearchParams]);
+  }, [searchParams, jobs, perms.create, setSearchParams]);
 
-  useEffect(() => {
-    loadApplications();
-  }, [selectedId, page, company?.id]);
+  const replaceJob = (job: JobOpening) => setJobs((list) => (list.some((j) => j.id === job.id) ? list.map((j) => (j.id === job.id ? job : j)) : [job, ...list]));
 
-  const savePositions = async (opening: JobOpening) => {
-    const value = Number(draft[opening.id] ?? opening.open_positions);
-    if (!Number.isInteger(value) || value < 0) {
-      setError("Open positions must be a whole number, 0 or more.");
-      return;
+  const askText = (title: string, message: string) => prompt({ title, message, placeholder: "What should change?", confirmLabel: "Send back" });
+
+  const act: Act = async (job, action) => {
+    setMenuId(null);
+    let note = "";
+    if (action === "reject") {
+      const reason = await askText(`Send "${job.title}" back?`, "Tell the author what to change.");
+      if (!reason?.trim()) return;
+      note = reason.trim();
     }
+    if (action === "archive" && !(await confirm({ title: `Archive ${job.code}?`, message: "It disappears from the list and the careers page. You can restore it later.", confirmLabel: "Archive", danger: true }))) return;
+    if (action === "close" && !(await confirm({ title: `Close ${job.code}?`, message: "It stops taking applications and leaves the careers page.", confirmLabel: "Close job" }))) return;
     try {
-      await updateJobOpening(opening.id, { open_positions: value });
-      setDraft((d) => {
-        const next = { ...d };
-        delete next[opening.id];
-        return next;
-      });
-      await loadOpenings();
+      const updated = await jobAction(job.id, action, note);
+      replaceJob(updated);
+      if (updated.status === "ARCHIVED" && !showArchived) setPanelId(null);
+      toast(`${updated.code} is now ${updated.status_label.toLowerCase()}.`, "success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not update the opening.");
+      toast(e instanceof Error ? e.message : "Could not update the job.", "error");
     }
   };
 
-  const toggleStatus = async (opening: JobOpening) => {
+  const duplicate = async (job: JobOpening) => {
+    setMenuId(null);
     try {
-      await updateJobOpening(opening.id, { status: opening.status === "OPEN" ? "CLOSED" : "OPEN" });
-      await loadOpenings();
+      const copy = await duplicateJob(job.id);
+      replaceJob(copy);
+      toast(`Copied as ${copy.code} (draft).`, "success");
+      setPanelId(copy.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not update the opening.");
+      toast(e instanceof Error ? e.message : "Could not copy the job.", "error");
     }
   };
 
-  const startEdit = (opening: JobOpening) => {
-    setEditingId(opening.id);
-    setForm({
-      title: opening.title,
-      department: opening.department || "",
-      location: opening.location || "",
-      employment_type: opening.employment_type || "",
-      experience: opening.experience || "",
-      description: opening.description || "",
-      open_positions: String(opening.open_positions),
-      responsibilities: (opening.responsibilities || []).join("\n"),
-      required_skills: (opening.required_skills || []).join("\n"),
-      qualifications: (opening.qualifications || []).join("\n"),
-      preferred_skills: (opening.preferred_skills || []).join("\n"),
+  const saveAsTemplate = async (job: JobOpening) => {
+    setMenuId(null);
+    const name = await prompt({ title: "Save as template", message: "Name the template so you can start new jobs from it.", value: job.title, confirmLabel: "Save template" });
+    if (!name?.trim()) return;
+    try {
+      const t = await saveJobTemplate(name.trim(), { from_job_id: job.id });
+      setTemplates((list) => [...list, t].sort((a, b) => a.name.localeCompare(b.name)));
+      toast(`Template "${t.name}" saved.`, "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save the template.", "error");
+    }
+  };
+
+  const toggleApproval = async () => {
+    try {
+      const s = await saveJobSettings(!requireApproval);
+      setRequireApproval(s.require_approval);
+      toast(s.require_approval ? "Jobs now need approval before they are published." : "Jobs can be published without approval.", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not change the setting.", "error");
+    }
+  };
+
+  const showApplications = (job: JobOpening) => {
+    setPanelId(null);
+    setSelectedId(job.id);
+    setPage(1);
+    setTimeout(() => document.getElementById("job-applications")?.scrollIntoView({ behavior: "smooth" }), 50);
+  };
+
+  const departments = useMemo(() => [...new Set(jobs.map((j) => j.department).filter(Boolean))].sort(), [jobs]);
+  const locations = useMemo(() => [...new Set(jobs.map((j) => j.location).filter(Boolean))].sort(), [jobs]);
+
+  const shown = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return jobs.filter((j) => {
+      if (status && j.status !== status) return false;
+      if (department && j.department !== department) return false;
+      if (location && j.location !== location) return false;
+      if (experience) {
+        const [lo, hi] = experience.split("-").map(Number);
+        const min = j.experience_min ?? 0;
+        if (min < lo || (hi && min > hi)) return false;
+      }
+      return !term || [j.title, j.code, j.department, ...j.primary_skills].some((v) => (v || "").toLowerCase().includes(term));
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, [jobs, q, status, department, location, experience]);
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-  };
+  const kpis = useMemo(() => {
+    const live = jobs.filter((j) => j.status !== "ARCHIVED");
+    const closed = live.filter((j) => j.status === "CLOSED" && j.published_at && j.closed_at);
+    const avg = closed.length ? Math.round(closed.reduce((n, j) => n + (daysBetween(j.published_at, j.closed_at) || 0), 0) / closed.length) : null;
+    return [
+      ["Total jobs", live.length],
+      ["Published", live.filter((j) => j.status === "OPEN").length],
+      ["Drafts", live.filter((j) => j.status === "DRAFT").length],
+      ["Pending approval", live.filter((j) => j.status === "PENDING_APPROVAL").length],
+      ["Closed", live.filter((j) => j.status === "CLOSED").length],
+      ["Applications", live.reduce((n, j) => n + j.applications_count, 0)],
+      ["Avg. days open", avg ?? "—"],
+    ] as [string, number | string][];
+  }, [jobs]);
 
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    setSaving(true);
-    const payload = {
-      title: form.title.trim(),
-      department: form.department.trim(),
-      location: form.location.trim(),
-      employment_type: form.employment_type.trim(),
-      experience: form.experience.trim(),
-      description: form.description.trim(),
-      open_positions: Number(form.open_positions) || 0,
-      responsibilities: toList("responsibilities", form.responsibilities),
-      required_skills: toList("required_skills", form.required_skills),
-      qualifications: toList("qualifications", form.qualifications),
-      preferred_skills: toList("preferred_skills", form.preferred_skills),
-    };
-    try {
-      if (editingId) await updateJobOpening(editingId, payload);
-      else await createJobOpening({ ...payload, company_id: company?.id });
-      setEditingId(null);
-      setForm(emptyForm);
-      setError("");
-      await Promise.all([loadOpenings(), loadCompanies()]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : editingId ? "Could not update the opening." : "Could not create the opening.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  const hasFilters = !!(q || status || department || location || experience);
+  const panelJob = jobs.find((j) => j.id === panelId) || null;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="space-y-6 font-sans text-slate-800">
+    <div className="space-y-5 font-sans text-slate-800">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Job openings</h1>
-          <p className="text-sm text-slate-500">Your company's roles, careers page text and careers page link.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Jobs & Openings</h1>
+          <p className="text-sm text-slate-500">Create, approve and publish jobs on your careers page, and follow their hiring progress.</p>
         </div>
-        <button onClick={() => Promise.all([loadCompanies(), loadOpenings(), loadApplications()])} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
-          <RefreshCw size={16} /> Refresh
-        </button>
-      </div>
-
-      {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-
-      <CompanyBar
-        companies={companies}
-        selected={company}
-        onSelect={selectCompany}
-        onChanged={(changed) => {
-          setCompanies((list) =>
-            list.some((c) => c.id === changed.id)
-              ? list.map((c) => (c.id === changed.id ? { ...c, ...changed } : c))
-              : [...list, changed]
-          );
-          // A rename shows on the roles and applications too.
-          loadOpenings();
-          loadApplications();
-        }}
-      />
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="font-semibold">{editingId ? `Edit role: ${openings.find((o) => o.id === editingId)?.title ?? ""}` : `Add a role${company ? ` at ${company.name}` : ""}`}</h2>
-          {editingId && (
-            <button type="button" onClick={cancelEdit} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-              <X size={14} /> Cancel edit
-            </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => { loadJobs(); loadApplications(); }} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"><RefreshCw size={15} /> Refresh</button>
+          <button onClick={() => setShowTemplates((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"><FileText size={15} /> Templates ({templates.length})</button>
+          {perms.create && (
+            <button onClick={() => setWizard({ job: null })} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={16} /> Create job</button>
           )}
         </div>
-        <form ref={formRef} onSubmit={create} className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            <Field label="Job title" className="lg:col-span-2">
-              <input required maxLength={200} placeholder="Fullstack Developer" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={fieldClass} />
-            </Field>
-            <Field label="Department">
-              <input maxLength={200} placeholder="Software Development" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className={fieldClass} />
-            </Field>
-            <Field label="Location">
-              <input maxLength={200} placeholder="Remote" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={fieldClass} />
-            </Field>
-            <Field label="Employment type">
-              <input maxLength={100} placeholder="Full Time" value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })} className={fieldClass} />
-            </Field>
-            <Field label="Experience">
-              <input maxLength={100} placeholder="2–4 years" value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} className={fieldClass} />
-            </Field>
-          </div>
+      </div>
 
-          <Field label="About the role" hint="Blank lines start a new paragraph">
-            <textarea
-              placeholder="Build and ship product features across the stack. Collaborate with design and product on the candidate experience."
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={3}
-              maxLength={5000}
-              className={fieldClass}
-            />
-          </Field>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            {SECTIONS.map((section) => (
-              <Field key={section.key} label={section.label} hint={section.hint}>
-                <textarea
-                  placeholder={section.placeholder}
-                  value={form[section.key]}
-                  onChange={(e) => setForm({ ...form, [section.key]: e.target.value })}
-                  rows={4}
-                  className={fieldClass}
-                />
-              </Field>
-            ))}
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+        {kpis.map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-2xl font-bold text-slate-900">{typeof value === "number" ? value.toLocaleString() : value}</p>
+            <p className="text-xs text-slate-500">{label}</p>
           </div>
-
-          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-4">
-            <Field label="Open positions">
-              <input type="number" min={0} value={form.open_positions} onChange={(e) => setForm({ ...form, open_positions: e.target.value })} className={`${fieldClass} w-28`} />
-            </Field>
-            <div className="flex gap-2">
-              {editingId && (
-                <button type="button" onClick={cancelEdit} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  Cancel
-                </button>
-              )}
-              <button disabled={saving} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-                {editingId ? "Save changes" : <><Plus size={16} /> Add role</>}
-              </button>
-            </div>
-          </div>
-        </form>
+        ))}
       </section>
 
-      {company && <CareersPageSettingsPanel key={company.id} companyId={company.id} companyName={company.name} />}
-
-      <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-slate-50 text-left text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Open positions</th>
-              <th className="px-4 py-3">Applications</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr><td className="px-4 py-6 text-slate-500" colSpan={5}>Loading…</td></tr>
-            )}
-            {!loading && openings.length === 0 && (
-              <tr><td className="px-4 py-6 text-slate-500" colSpan={5}>No roles yet. Add one above.</td></tr>
-            )}
-            {openings.map((o) => (
-              <tr key={o.id} className="border-t border-slate-100">
-                <td className="px-4 py-3">
-                  <button onClick={() => { setSelectedId(o.id); setPage(1); }} className={`text-left font-medium hover:underline ${selectedId === o.id ? "text-indigo-700" : "text-slate-900"}`}>
-                    {o.title}
-                  </button>
-                  <div className="text-xs text-slate-500">{[o.department, o.location, o.employment_type, o.experience].filter(Boolean).join(" · ")}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${o.status === "OPEN" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                    {o.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      aria-label={`Open positions for ${o.title}`}
-                      value={draft[o.id] ?? o.open_positions}
-                      onChange={(e) => setDraft({ ...draft, [o.id]: e.target.value })}
-                      className="w-20 rounded-lg border border-slate-300 px-2 py-1"
-                    />
-                    {draft[o.id] !== undefined && draft[o.id] !== "" && Number(draft[o.id]) !== o.open_positions && (
-                      <button onClick={() => savePositions(o)} className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white">Save</button>
+      {showTemplates && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-bold">Job templates</h2>
+            <button onClick={() => setShowTemplates(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={14} /></button>
+          </div>
+          {templates.length === 0 ? (
+            <p className="text-xs text-slate-500">No templates yet. Open a job and choose "Save as template".</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 text-sm">
+              {templates.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                  <span><b>{t.name}</b> <span className="text-xs text-slate-500">· {t.job.department || "—"} · {(t.job.primary_skills || []).slice(0, 4).join(", ")}</span></span>
+                  <span className="flex gap-1">
+                    {perms.create && <button onClick={() => setWizard({ job: null, template: t })} className="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">Use</button>}
+                    {perms.remove && (
+                      <button
+                        onClick={async () => {
+                          if (!(await confirm({ title: `Delete template "${t.name}"?`, confirmLabel: "Delete", danger: true }))) return;
+                          await deleteJobTemplate(t.id).catch((e) => toast(e instanceof Error ? e.message : "Could not delete.", "error"));
+                          setTemplates((list) => list.filter((x) => x.id !== t.id));
+                        }}
+                        className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50"
+                        aria-label={`Delete ${t.name}`}
+                      ><Trash2 size={13} /></button>
                     )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 font-semibold">{o.applications_count}</td>
-                <td className="space-x-3 whitespace-nowrap px-4 py-3 text-right">
-                  <button onClick={() => startEdit(o)} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline">
-                    <Pencil size={12} /> Edit
-                  </button>
-                  <button onClick={() => toggleStatus(o)} className="text-xs font-medium text-indigo-600 hover:underline">
-                    {o.status === "OPEN" ? "Close role" : "Reopen role"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <section className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search job title, code or skill" className={`${filterClass} w-full pl-9`} />
+        </div>
+        <select value={status} onChange={(e) => setStatus(e.target.value as JobStatus | "")} className={filterClass} aria-label="Status">
+          <option value="">All statuses</option>
+          {(Object.keys(STATUS_LABEL) as JobStatus[]).filter((s) => showArchived || s !== "ARCHIVED").map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+        </select>
+        <select value={department} onChange={(e) => setDepartment(e.target.value)} className={filterClass} aria-label="Department">
+          <option value="">All departments</option>
+          {departments.map((d) => <option key={d}>{d}</option>)}
+        </select>
+        <select value={location} onChange={(e) => setLocation(e.target.value)} className={filterClass} aria-label="Location">
+          <option value="">All locations</option>
+          {locations.map((d) => <option key={d}>{d}</option>)}
+        </select>
+        <select value={experience} onChange={(e) => setExperience(e.target.value)} className={filterClass} aria-label="Experience">
+          <option value="">Any experience</option>
+          <option value="0-2">0–2 years</option>
+          <option value="2-5">2–5 years</option>
+          <option value="5-10">5–10 years</option>
+          <option value="10-">10+ years</option>
+        </select>
+        <label className="inline-flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="accent-indigo-600" /> Show archived</label>
+        {hasFilters && <button onClick={() => { setQ(""); setStatus(""); setDepartment(""); setLocation(""); setExperience(""); }} className="text-xs font-medium text-indigo-600 hover:underline">Reset filters</button>}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-          <h2 className="font-semibold">
-            Applications {selectedId ? `for ${openings.find((o) => o.id === selectedId)?.title ?? "selected role"}` : `(all ${company?.name ?? ""} roles)`}
-          </h2>
-          <div className="flex items-center gap-2">
-            {selectedId && (
-              <button onClick={() => { setSelectedId(""); setPage(1); }} className="text-sm text-slate-500 hover:underline">Show all</button>
-            )}
+      <section className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Job ID</th>
+                <th className="px-4 py-3">Job title</th>
+                <th className="px-4 py-3">Department</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Experience</th>
+                <th className="px-4 py-3 text-right">Applicants</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Closing date</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr><td colSpan={9} className="px-4 py-6 text-slate-500"><Loader2 size={14} className="mr-2 inline animate-spin" />Loading jobs…</td></tr>
+              ) : shown.length === 0 ? (
+                <tr><td colSpan={9} className="px-4 py-6 text-slate-500">{jobs.length ? "No jobs match these filters." : "No jobs yet. Create your first job."}</td></tr>
+              ) : (
+                shown.map((j) => (
+                  <tr key={j.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setPanelId(j.id)}>
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">{j.code}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900">{j.title}</p>
+                      <p className="text-xs text-slate-500">{[j.employment_type, j.work_mode].filter(Boolean).join(" · ")}</p>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{j.department || "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{j.location || "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{j.experience || "—"}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{j.applications_count}</td>
+                    <td className="px-4 py-3"><StatusPill status={j.status} />{j.status === "OPEN" && !j.accepting && <p className="mt-0.5 text-[10px] text-amber-700">Not taking applications</p>}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(j.closing_date)}</td>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative flex justify-end gap-1">
+                        <button onClick={() => setPanelId(j.id)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" title="View" aria-label={`View ${j.title}`}><Eye size={15} /></button>
+                        {perms.edit && j.status !== "ARCHIVED" && <button onClick={() => setWizard({ job: j })} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" title="Edit" aria-label={`Edit ${j.title}`}><Pencil size={15} /></button>}
+                        <button onClick={() => setMenuId(menuId === j.id ? null : j.id)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" title="More" aria-label={`More actions for ${j.title}`}><MoreHorizontal size={15} /></button>
+                        {menuId === j.id && (
+                          <div className="absolute right-0 top-8 z-20 w-52 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                            {actionsFor(j, perms, requireApproval).map((a) => (
+                              <button key={a.action} onClick={() => act(j, a.action)} className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 ${a.danger ? "text-rose-600" : "text-slate-700"}`}>{a.icon} {a.label}</button>
+                            ))}
+                            {perms.create && <button onClick={() => duplicate(j)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Copy size={14} /> Duplicate</button>}
+                            {perms.create && <button onClick={() => saveAsTemplate(j)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Bookmark size={14} /> Save as template</button>}
+                            <button onClick={() => { setMenuId(null); showApplications(j); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Eye size={14} /> View applications</button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {perms.settings && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div>
+            <h2 className="text-sm font-bold">Job approval</h2>
+            <p className="text-xs text-slate-500">
+              {requireApproval ? "Jobs are reviewed by someone who can approve (e.g. a Hiring Manager) before they go live." : "Anyone who can publish jobs puts them live straight away."}
+            </p>
           </div>
+          <button onClick={toggleApproval} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium ${requireApproval ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-700"}`}>
+            <CheckCircle2 size={14} /> {requireApproval ? "Approval required" : "No approval needed"}
+          </button>
+        </section>
+      )}
+
+      <section id="job-applications" className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+          <h2 className="font-semibold">Applications {selectedId ? `for ${jobs.find((o) => o.id === selectedId)?.title ?? "selected job"}` : "(all jobs)"}</h2>
+          {selectedId && <button onClick={() => { setSelectedId(""); setPage(1); }} className="text-sm text-slate-500 hover:underline">Show all</button>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
@@ -421,16 +618,14 @@ export default function JobOpenings() {
               <tr>
                 <th className="px-4 py-3">Applicant</th>
                 <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Job</th>
                 <th className="px-4 py-3">Submitted</th>
                 <th className="px-4 py-3">How they heard</th>
                 <th className="px-4 py-3">Resume</th>
               </tr>
             </thead>
             <tbody>
-              {applications.length === 0 && (
-                <tr><td className="px-4 py-6 text-slate-500" colSpan={6}>No applications yet.</td></tr>
-              )}
+              {applications.length === 0 && <tr><td className="px-4 py-6 text-slate-500" colSpan={6}>No applications yet.</td></tr>}
               {applications.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100">
                   <td className="px-4 py-3">{a.full_name || "—"}{a.phone && <div className="text-xs text-slate-500">{a.phone}</div>}</td>
@@ -439,15 +634,11 @@ export default function JobOpenings() {
                   <td className="px-4 py-3">{new Date(a.submitted_at).toLocaleString()}</td>
                   <td className="max-w-[240px] px-4 py-3">
                     {a.heard_from || <span className="text-slate-400">—</span>}
-                    {a.note && (
-                      <div className="mt-0.5 line-clamp-2 text-xs text-slate-500" title={a.note}>“{a.note}”</div>
-                    )}
+                    {a.note && <div className="mt-0.5 line-clamp-2 text-xs text-slate-500" title={a.note}>“{a.note}”</div>}
                   </td>
                   <td className="px-4 py-3">
                     {a.candidate_id ? (
-                      <Link to={`/candidates/${a.resume_id}`} className="text-indigo-600 hover:underline">
-                        {a.candidate_id} · {a.resume_status}
-                      </Link>
+                      <Link to={`/candidates/${a.resume_id}`} className="text-indigo-600 hover:underline">{a.candidate_id} · {a.resume_status}</Link>
                     ) : (
                       <span className="text-slate-500">{a.resume_status === "MERGED" ? "Merged into existing profile" : a.resume_status}</span>
                     )}
@@ -465,6 +656,78 @@ export default function JobOpenings() {
           </div>
         )}
       </section>
+
+      <CompanyBar
+        companies={companies}
+        selected={company}
+        onSelect={(id) => {
+          setCompanyId(id);
+          try {
+            localStorage.setItem(COMPANY_KEY, id);
+          } catch {
+            // only a convenience
+          }
+        }}
+        onChanged={(changed) => setCompanies((list) => list.map((c) => (c.id === changed.id ? { ...c, ...changed } : c)))}
+      />
+      {company && <CareersPageSettingsPanel key={company.id} companyId={company.id} companyName={company.name} />}
+
+      {wizard && (
+        <JobWizard
+          job={wizard.job}
+          template={wizard.template}
+          templates={templates}
+          requireApproval={requireApproval}
+          canPublish={perms.approve}
+          onClose={() => setWizard(null)}
+          onSaved={(job, published) => {
+            replaceJob(job);
+            setWizard(null);
+            setPanelId(job.id);
+            toast(
+              published ? (job.status === "PENDING_APPROVAL" ? `${job.code} was sent for approval.` : `${job.code} is published.`) : `${job.code} saved.`,
+              "success"
+            );
+          }}
+        />
+      )}
+      {ask && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); ask.resolve(ask.value); setAsk(null); }}
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+          >
+            <h3 className="text-base font-bold text-slate-900">{ask.title}</h3>
+            <p className="mt-1 text-sm text-slate-500">{ask.message}</p>
+            <textarea
+              autoFocus
+              rows={3}
+              maxLength={500}
+              value={ask.value}
+              placeholder={ask.placeholder}
+              onChange={(e) => setAsk({ ...ask, value: e.target.value })}
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => { ask.resolve(null); setAsk(null); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
+              <button disabled={!ask.value.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{ask.confirmLabel}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {panelJob && (
+        <JobPanel
+          job={panelJob}
+          perms={perms}
+          requireApproval={requireApproval}
+          onClose={() => setPanelId(null)}
+          onEdit={() => { setPanelId(null); setWizard({ job: panelJob }); }}
+          onAct={act}
+          onDuplicate={() => duplicate(panelJob)}
+          onTemplate={() => saveAsTemplate(panelJob)}
+          onApplications={() => showApplications(panelJob)}
+        />
+      )}
     </div>
   );
 }

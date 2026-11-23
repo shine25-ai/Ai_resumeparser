@@ -5,11 +5,72 @@ import { clearBrandingCache } from "../theme/brandingCache";
 import { readJson, type CareersPageSettings, type PublicJob } from "../careers/api";
 export type { CareersPageSettings, PublicJob };
 
+export type JobStatus = "DRAFT" | "PENDING_APPROVAL" | "OPEN" | "CLOSED" | "ARCHIVED";
+export type JobAction = "submit" | "publish" | "approve" | "reject" | "close" | "reopen" | "archive" | "restore";
+
+export interface JobRound {
+  order?: number;
+  name: string;
+  interview_type: string;
+  duration_minutes: number;
+}
+
+export interface JobHistoryEntry {
+  from: JobStatus | null;
+  to: JobStatus;
+  action?: JobAction;
+  at: string;
+  by: { id?: string; name?: string };
+  note?: string;
+}
+
+/** A job as staff see it (SRS Screens 5 and 6). "OPEN" is Published. */
 export interface JobOpening extends PublicJob {
-  status: "OPEN" | "CLOSED";
+  status: JobStatus;
+  status_label: string;
   applications_count: number;
+  interviews_count: number;
+  selected_count: number;
+  accepting: boolean;
   company_id: string;
   company_name?: string | null;
+  code: string;
+  category: string;
+  work_mode: "" | "Onsite" | "Hybrid" | "Remote";
+  experience_min: number | null;
+  experience_max: number | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string;
+  show_salary: boolean;
+  notice_period: string;
+  certifications: string[];
+  primary_skills: string[];
+  secondary_skills: string[];
+  what_we_offer: string[];
+  tags: string[];
+  additional_requirements: string;
+  rounds: JobRound[];
+  closing_date: string | null;
+  hiring_manager: { id: string; name: string } | null;
+  notify_emails: string[];
+  send_candidate_confirmation: boolean;
+  accept_applications: boolean;
+  status_history: JobHistoryEntry[];
+  created_by?: { id?: string; name?: string } | null;
+  published_at?: string | null;
+  closed_at?: string | null;
+  updated_at?: string;
+}
+
+/** The fields of the job form. */
+export type JobForm = Partial<Omit<JobOpening, "id" | "status" | "status_label" | "applications_count" | "interviews_count" | "selected_count" | "accepting" | "status_history" | "code" | "company_id" | "company_name">>;
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  job: JobForm;
+  created_at: string;
 }
 
 /** A company with its own roles, careers page text and careers page address. */
@@ -119,39 +180,43 @@ export const updateCompany = async (
     })
   );
 
-export const fetchJobOpenings = async (companyId?: string): Promise<JobOpening[]> =>
-  readJson(await apiFetch(`${JOB_OPENINGS}${withCompany(companyId)}`));
+export const fetchJobOpenings = async (_companyId?: string, includeArchived = false): Promise<JobOpening[]> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}${includeArchived ? "?include_archived=true" : ""}`));
 
-export const createJobOpening = async (payload: {
-  title: string;
-  company_id?: string;
-  department?: string;
-  location?: string;
-  employment_type?: string;
-  experience?: string;
-  description?: string;
-  responsibilities?: string[];
-  required_skills?: string[];
-  qualifications?: string[];
-  preferred_skills?: string[];
-  open_positions: number;
-}) =>
-  readJson(
-    await apiFetch(JOB_OPENINGS, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-  );
+export const fetchJobOpening = async (id: string): Promise<JobOpening> => readJson(await apiFetch(`${JOB_OPENINGS}/${id}`));
 
-export const updateJobOpening = async (id: string, payload: Partial<JobOpening>) =>
-  readJson(
-    await apiFetch(`${JOB_OPENINGS}/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-  );
+const jsonBody = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+/** New jobs are drafts; `publish: true` also publishes (or sends for approval). */
+export const createJobOpening = async (payload: JobForm & { publish?: boolean }): Promise<JobOpening> =>
+  readJson(await apiFetch(JOB_OPENINGS, jsonBody("POST", payload)));
+
+export const updateJobOpening = async (id: string, payload: JobForm & { status?: JobStatus }): Promise<JobOpening> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/${id}`, jsonBody("PATCH", payload)));
+
+export const jobAction = async (id: string, action: JobAction, note = ""): Promise<JobOpening> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/${id}/actions/${action}`, jsonBody("POST", { note })));
+
+export const duplicateJob = async (id: string): Promise<JobOpening> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/${id}/duplicate`, { method: "POST" }));
+
+export const fetchJobSettings = async (): Promise<{ require_approval: boolean }> => readJson(await apiFetch(`${JOB_OPENINGS}/settings`));
+
+export const saveJobSettings = async (require_approval: boolean): Promise<{ require_approval: boolean }> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/settings`, jsonBody("PUT", { require_approval })));
+
+export const fetchJobTemplates = async (): Promise<JobTemplate[]> => readJson(await apiFetch(`${JOB_OPENINGS}/templates`));
+
+export const saveJobTemplate = async (name: string, from: { from_job_id?: string; job?: JobForm }): Promise<JobTemplate> =>
+  readJson(await apiFetch(`${JOB_OPENINGS}/templates`, jsonBody("POST", { name, ...from })));
+
+export const deleteJobTemplate = async (id: string): Promise<void> => {
+  await readJson(await apiFetch(`${JOB_OPENINGS}/templates/${id}`, { method: "DELETE" }));
+};
 
 export const fetchJobApplications = async (
   openingId: string | "",

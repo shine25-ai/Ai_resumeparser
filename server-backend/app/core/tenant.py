@@ -40,6 +40,7 @@ TENANT_COLLECTIONS = frozenset({
     "masters",
     "audit_logs",
     "user_invitations",
+    "job_templates",
     # ATS hub (pipeline, offers, onboarding, scorecards, automation templates, its audit trail)
     "ats_audit_logs",
     "ats_automation_templates",

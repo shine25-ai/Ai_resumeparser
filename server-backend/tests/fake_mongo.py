@@ -121,14 +121,31 @@ class FakeCollection:
                 d.update(copy.deepcopy(update.get("$set", {})))
                 for field in update.get("$unset", {}):
                     d.pop(field, None)
+                for field, value in update.get("$push", {}).items():
+                    d.setdefault(field, []).append(copy.deepcopy(value))
+                for field, value in update.get("$inc", {}).items():
+                    d[field] = d.get(field, 0) + value
                 return _Result(matched_count=1, modified_count=1, upserted_id=None)
         if upsert:
             new = {k2: v for k2, v in query.items() if not k2.startswith("$") and not isinstance(v, dict)}
             new.update(update.get("$setOnInsert", {}))
             new.update(update.get("$set", {}))
+            for field, value in update.get("$inc", {}).items():
+                new[field] = new.get(field, 0) + value
             self.docs.append(copy.deepcopy(new))
             return _Result(matched_count=0, modified_count=0, upserted_id=new.get("id") or "new")
         return _Result(matched_count=0, modified_count=0, upserted_id=None)
+
+    async def find_one_and_update(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, **k: Any):
+        await self.update_one(query, update, upsert=upsert)
+        return await self.find_one(query)
+
+    async def delete_one(self, query: Dict[str, Any], *a: Any, **k: Any):
+        for i, d in enumerate(self.docs):
+            if matches(d, query):
+                self.docs.pop(i)
+                return _Result(deleted_count=1)
+        return _Result(deleted_count=0)
 
     async def create_index(self, *a: Any, **k: Any):
         return "idx"

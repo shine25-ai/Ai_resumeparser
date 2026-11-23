@@ -368,7 +368,10 @@ class JobOpeningService:
     # ── Public: listing ───────────────────────────────────────────────────────
 
     async def list_public_openings(self, slug: Optional[str] = None) -> List[Dict[str, Any]]:
-        """A company's roles that are open and still have positions left."""
+        """A company's published roles that are taking applications (positions left, not past the closing date)."""
+        from app.models.job_opening import with_job_defaults
+        from app.services.job_management import is_accepting
+
         company = await self.public_company(slug)
         openings = await self.opening_repo.find_many(
             query={"status": JOB_STATUS_OPEN, "open_positions": {"$gt": 0}, **self._company_query(company["id"])},
@@ -376,21 +379,37 @@ class JobOpeningService:
             descending=False,
             limit=500,
         )
-        return [
-            {
+        out = []
+        for raw in openings:
+            o = with_job_defaults(raw)
+            if not is_accepting(o):
+                continue
+            out.append({
                 "id": o["id"],
                 "title": o["title"],
+                "code": o.get("code", ""),
                 "department": o.get("department", ""),
+                "category": o.get("category", ""),
                 "location": o.get("location", ""),
                 "employment_type": o.get("employment_type", ""),
+                "work_mode": o.get("work_mode", ""),
                 "experience": o.get("experience", ""),
                 "description": o.get("description", ""),
                 **{field: o.get(field) or [] for field in LIST_FIELDS},
+                "certifications": o.get("certifications") or [],
+                "what_we_offer": o.get("what_we_offer") or [],
+                "tags": o.get("tags") or [],
+                # Salary only when the company chose to show it.
+                "salary": (
+                    {"min": o.get("salary_min"), "max": o.get("salary_max"), "currency": o.get("salary_currency") or "INR"}
+                    if o.get("show_salary") and (o.get("salary_min") or o.get("salary_max")) else None
+                ),
+                "closing_date": o.get("closing_date"),
                 "open_positions": o.get("open_positions", 0),
                 "created_at": o.get("created_at", ""),
-            }
-            for o in openings
-        ]
+                "posted_at": o.get("published_at") or o.get("created_at", ""),
+            })
+        return out
 
     # ── Public: email verification ────────────────────────────────────────────
 
@@ -540,7 +559,9 @@ class JobOpeningService:
 
         # The opening decides the company: the resume goes to that company's workspace only.
         opening = await self._enter_opening_company(opening_id)
-        if not opening or opening.get("status") != JOB_STATUS_OPEN or opening.get("open_positions", 0) <= 0:
+        from app.services.job_management import is_accepting
+
+        if not opening or not is_accepting(opening):
             raise BadRequestError("This role is no longer accepting applications.")
         company = await self.company_by_id(opening.get("company_id"))
         if company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:

@@ -31,6 +31,7 @@ from app.repositories.job_repository import (
 from app.repositories.resume_log_repository import ResumeLogRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.job_opening_service import JobOpeningService
+from app.services.job_management import JobManagementService
 from app.services.resume_service import ResumeService
 from app.utils.constants import ERROR_FORBIDDEN
 from app.utils.response import success_response
@@ -38,6 +39,11 @@ from app.utils.response import success_response
 public_router = APIRouter(prefix="/api/v1/public/jobs", tags=["Public Jobs"])
 
 _JOBS_ACCESS = require_access("jobs", {
+    # The service checks the permission each action needs (publish / approve / delete).
+    ("POST", "/api/v1/job-openings/{opening_id}/actions/{action}"): "jobs:view",
+    ("POST", "/api/v1/job-openings/{opening_id}/duplicate"): "jobs:create",
+    ("PUT", "/api/v1/job-openings/settings"): "settings:edit",
+    ("DELETE", "/api/v1/job-openings/templates/{template_id}"): "jobs:delete",
     ("GET", "/api/v1/job-openings/page-settings"): "career_page:view",
     ("PUT", "/api/v1/job-openings/page-settings"): "career_page:edit",
     ("GET", "/api/v1/job-openings/applications"): "candidates:view",
@@ -144,57 +150,96 @@ async def apply_for_role(
 DetailLine = Annotated[str, StringConstraints(max_length=300)]
 
 
-class JobOpeningCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-    company_id: Optional[str] = Field(default=None, max_length=64, description="Leave out for the default company")
-    department: Optional[str] = Field(default="", max_length=200)
-    location: Optional[str] = Field(default="", max_length=200)
-    employment_type: Optional[str] = Field(default="", max_length=100)
-    experience: Optional[str] = Field(default="", max_length=100)
-    description: Optional[str] = Field(default="", max_length=5000)
-    responsibilities: List[DetailLine] = Field(default_factory=list, max_length=30)
-    required_skills: List[DetailLine] = Field(default_factory=list, max_length=30)
-    qualifications: List[DetailLine] = Field(default_factory=list, max_length=30)
-    preferred_skills: List[DetailLine] = Field(default_factory=list, max_length=30)
-    open_positions: int = Field(default=1, ge=0, le=10000)
+def get_jobs(db: AsyncIOMotorDatabase = Depends(get_database)) -> JobManagementService:
+    return JobManagementService(db)
 
 
-class JobOpeningUpdate(BaseModel):
-    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    company_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    department: Optional[str] = Field(default=None, max_length=200)
-    location: Optional[str] = Field(default=None, max_length=200)
-    employment_type: Optional[str] = Field(default=None, max_length=100)
-    experience: Optional[str] = Field(default=None, max_length=100)
-    description: Optional[str] = Field(default=None, max_length=5000)
-    responsibilities: Optional[List[DetailLine]] = Field(default=None, max_length=30)
-    required_skills: Optional[List[DetailLine]] = Field(default=None, max_length=30)
-    qualifications: Optional[List[DetailLine]] = Field(default=None, max_length=30)
-    preferred_skills: Optional[List[DetailLine]] = Field(default=None, max_length=30)
-    open_positions: Optional[int] = Field(default=None, ge=0, le=10000)
-    status: Optional[str] = Field(default=None, pattern="^(OPEN|CLOSED)$")
+class JobAction(BaseModel):
+    note: str = Field(default="", max_length=500, description="Required when sending a job back")
 
 
-@router.get("", summary="List job openings with application counts, optionally for one company (staff)")
+class JobSettingsIn(BaseModel):
+    require_approval: bool
+
+
+class TemplateIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    from_job_id: Optional[str] = Field(default=None, max_length=64, description="Save this job as the template")
+    job: Optional[Dict[str, Any]] = Field(default=None, description="Or the job form fields")
+
+
+@router.get("", summary="Job openings with hiring progress (archived ones only when asked)")
 async def list_openings(
-    company_id: Optional[str] = Query(None, max_length=64),
+    include_archived: bool = Query(False),
+    company_id: Optional[str] = Query(None, max_length=64, description="Ignored: always the signed-in company"),
     current_user: dict = Depends(get_current_active_user),
-    service: JobOpeningService = Depends(get_job_service),
+    jobs: JobManagementService = Depends(get_jobs),
 ):
-    _require_staff(current_user)
-    data = await service.list_openings(company_id)
+    data = await jobs.list(include_archived=include_archived)
     return success_response(data=data, message="Job openings retrieved successfully.")
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, summary="Create a job opening (staff)")
+@router.post("", status_code=status.HTTP_201_CREATED, summary="Create a job (a draft; publish: true also publishes)")
 async def create_opening(
-    body: JobOpeningCreate,
+    body: Dict[str, Any],
+    request: Request,
     current_user: dict = Depends(get_current_active_user),
-    service: JobOpeningService = Depends(get_job_service),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
-    _require_staff(current_user)
-    data = await service.create_opening(body.model_dump())
-    return success_response(data=data, message="Job opening created.", status_code=status.HTTP_201_CREATED)
+    data = await jobs.create(body, current_user)
+    await record_audit(db, current_user, "job.created", "job", data["id"], f"{data['code']} {data['title']}", request=request)
+    return success_response(data=data, message="Job created.", status_code=status.HTTP_201_CREATED)
+
+
+@router.get("/settings", summary="Job settings: whether publishing needs approval")
+async def get_job_settings(current_user: dict = Depends(get_current_active_user), jobs: JobManagementService = Depends(get_jobs)):
+    return success_response(data=await jobs.settings(), message="Job settings retrieved.")
+
+
+@router.put("/settings", summary="Turn job approval on or off")
+async def save_job_settings(
+    body: JobSettingsIn,
+    request: Request,
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    data = await jobs.save_settings(body.require_approval)
+    await record_audit(db, current_user, "job.settings_updated", "job", "", "Job approval",
+                       {"require_approval": {"to": body.require_approval}}, request=request)
+    return success_response(data=data, message="Job settings saved.")
+
+
+@router.get("/templates", summary="Job templates")
+async def list_templates(current_user: dict = Depends(get_current_active_user), jobs: JobManagementService = Depends(get_jobs)):
+    return success_response(data=await jobs.list_templates(), message="Job templates retrieved.")
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED, summary="Save a job template")
+async def save_template(
+    body: TemplateIn,
+    request: Request,
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    data = await jobs.save_template(body.name, body.job or {}, current_user, from_job=body.from_job_id)
+    await record_audit(db, current_user, "job.template_saved", "job_template", data["id"], data["name"], request=request)
+    return success_response(data=data, message="Template saved.", status_code=status.HTTP_201_CREATED)
+
+
+@router.delete("/templates/{template_id}", summary="Delete a job template")
+async def delete_template(
+    template_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    await jobs.delete_template(template_id)
+    await record_audit(db, current_user, "job.template_deleted", "job_template", template_id, request=request)
+    return success_response(data=None, message="Template deleted.")
 
 
 class CareersPageSettingsUpdate(BaseModel):
@@ -250,17 +295,55 @@ async def list_applications(
     return success_response(data=data, message="Applications retrieved successfully.")
 
 
-@router.patch("/{opening_id}", summary="Update role details, open positions, or status (staff)")
+@router.get("/{opening_id}", summary="One job with its hiring progress and history")
+async def get_opening(opening_id: str, current_user: dict = Depends(get_current_active_user), jobs: JobManagementService = Depends(get_jobs)):
+    return success_response(data=await jobs.get(opening_id), message="Job retrieved.")
+
+
+@router.patch("/{opening_id}", summary="Edit a job (status changes go through the job actions)")
 async def update_opening(
     opening_id: str,
-    body: JobOpeningUpdate,
+    body: Dict[str, Any],
+    request: Request,
     current_user: dict = Depends(get_current_active_user),
-    service: JobOpeningService = Depends(get_job_service),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
-    _require_staff(current_user)
-    changes: Dict[str, Any] = body.model_dump(exclude_unset=True)
-    data = await service.update_opening(opening_id, changes)
-    return success_response(data=data, message="Job opening updated.")
+    data = await jobs.update(opening_id, body, current_user)
+    await record_audit(db, current_user, "job.updated", "job", opening_id, f"{data['code']} {data['title']}",
+                       {k: {"to": v} for k, v in body.items() if k not in ("description",)}, request=request)
+    return success_response(data=data, message="Job updated.")
+
+
+@router.post("/{opening_id}/actions/{action}", summary="Submit, publish, approve, reject, close, reopen, archive or restore")
+async def job_action(
+    opening_id: str,
+    action: str,
+    request: Request,
+    body: Optional[JobAction] = None,
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    data = await jobs.act(opening_id, action, current_user, (body.note if body else ""))
+    last = (data.get("status_history") or [{}])[-1]
+    await record_audit(db, current_user, f"job.{last.get('action', action)}", "job", opening_id, f"{data['code']} {data['title']}",
+                       {"status": {"from": last.get("from"), "to": last.get("to")}}, details=last.get("note", ""), request=request)
+    return success_response(data=data, message=f"Job {data['status_label'].lower()}.")
+
+
+@router.post("/{opening_id}/duplicate", status_code=status.HTTP_201_CREATED, summary="Copy a job as a new draft")
+async def duplicate_opening(
+    opening_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    data = await jobs.duplicate(opening_id, current_user)
+    await record_audit(db, current_user, "job.duplicated", "job", data["id"], f"{data['code']} {data['title']}",
+                       details=f"Copied from {opening_id}", request=request)
+    return success_response(data=data, message="Job copied as a draft.", status_code=status.HTTP_201_CREATED)
 
 
 # ── Companies (staff) ─────────────────────────────────────────────────────────
