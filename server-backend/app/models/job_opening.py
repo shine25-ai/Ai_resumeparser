@@ -22,6 +22,7 @@ JOB_STATUS_LABELS = {
     JOB_STATUS_ARCHIVED: "Archived",
 }
 WORK_MODES = ("Onsite", "Hybrid", "Remote")
+SALARY_PERIODS = ("year", "month", "hour")
 
 
 class JobOpeningDocument(BaseModel):
@@ -54,6 +55,7 @@ class JobOpeningDocument(BaseModel):
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     salary_currency: str = "INR"
+    salary_period: str = "year"         # "Per annum" in the mockups
     show_salary: bool = False
     notice_period: str = ""
     certifications: List[str] = Field(default_factory=list)
@@ -61,6 +63,10 @@ class JobOpeningDocument(BaseModel):
     primary_skills: List[str] = Field(default_factory=list)
     secondary_skills: List[str] = Field(default_factory=list)
     what_we_offer: List[str] = Field(default_factory=list)
+    # Job page (Screen 17): one line under the title, the "Requirements" and "Good to have" bullet lists.
+    tagline: str = ""
+    requirements: List[str] = Field(default_factory=list)
+    nice_to_have: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     additional_requirements: str = ""
     rounds: List[Dict[str, Any]] = Field(default_factory=list)  # [{order, name, interview_type, duration_minutes}]

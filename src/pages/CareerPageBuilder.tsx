@@ -48,6 +48,7 @@ const LABELS: Record<CareerSectionType, string> = {
   faq: "FAQs",
   gallery: "Workplace gallery",
   video: "Culture video",
+  highlights: "Highlights strip",
 };
 
 const me = () => {

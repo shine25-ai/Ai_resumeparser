@@ -19,6 +19,8 @@ class RoleResponse(BaseModel):
     updated_at: str
     # Module permissions this role really has (old page names expanded), for the role editor.
     effective_permissions: List[str] = Field(default_factory=list)
+    # How many of the company's users have this role (role list).
+    users_count: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

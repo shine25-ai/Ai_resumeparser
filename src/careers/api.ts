@@ -56,9 +56,14 @@ export interface PublicJob {
   certifications?: string[];
   what_we_offer?: string[];
   tags?: string[];
-  salary?: { min: number | null; max: number | null; currency: string } | null;
+  salary?: { min: number | null; max: number | null; currency: string; period?: "year" | "month" | "hour" } | null;
   closing_date?: string | null;
   posted_at?: string;
+  /** One line under the title on the job page. */
+  tagline?: string;
+  /** "Requirements" and "Good to have" bullet lists on the job page. */
+  requirements?: string[];
+  nice_to_have?: string[];
 }
 
 /** Editable text on the careers page. The header and footer are fixed. */
@@ -189,7 +194,14 @@ export interface CareerLink {
 }
 
 export type CareerSectionType =
-  | "open_positions" | "about" | "culture" | "life" | "benefits" | "testimonials" | "faq" | "gallery" | "video";
+  | "open_positions" | "about" | "culture" | "life" | "benefits" | "testimonials" | "faq" | "gallery" | "video"
+  | "highlights";
+
+/** Where a button goes: a section on the page ("#open_positions") or a link. */
+export interface CareerButton {
+  label: string;
+  target: string;
+}
 
 export interface CareerItem {
   title?: string;
@@ -201,6 +213,8 @@ export interface CareerItem {
   photo_url?: string;
   q?: string;
   a?: string;
+  /** Icon name (lucide, kebab-case) for benefits, highlights and life items. */
+  icon?: string;
 }
 
 export interface CareerSection {
@@ -214,14 +228,28 @@ export interface CareerSection {
   items?: CareerItem[];
   images?: string[];
   url?: string;
+  /** About: figures such as {value: "200+", label: "Team members"}, at most 4, and a photo or video. */
+  stats?: { value: string; label: string }[];
+  video_url?: string;
 }
 
 export interface CareerPageContent {
   template: "classic" | "modern" | "minimal";
-  header: { show: boolean; links: CareerLink[] };
-  hero: { eyebrow: string; title: string; subtitle: string; banner_url: string; cta_label: string };
+  header: { show: boolean; links: CareerLink[]; cta?: CareerButton };
+  hero: {
+    eyebrow: string; title: string; subtitle: string; banner_url: string; cta_label: string;
+    secondary_cta_label?: string; secondary_cta_target?: string;
+    /** Short handwritten-style text over the banner ("People · Products · Impact"). */
+    badge_text?: string;
+    /** background: the banner fills the hero; split: text on the left, photo on the right. */
+    layout?: "background" | "split";
+  };
   sections: CareerSection[];
-  texts: { search_placeholder: string; empty_message: string; success_title: string; success_message: string };
+  texts: {
+    search_placeholder: string; empty_message: string; success_title: string; success_message: string;
+    /** The job page's closing banner. */
+    job_cta_title?: string; job_cta_text?: string;
+  };
   footer: { show: boolean; text: string; website: string; email: string; linkedin: string; links: CareerLink[] };
   seo: { title: string; description: string; share_image_url: string };
 }
@@ -229,7 +257,7 @@ export interface CareerPageContent {
 /** The company's branding as the careers page needs it (no email settings). */
 export interface CareerBranding {
   app_name: string;
-  colors: { primary: string; accent: string; sidebar_bg: string; sidebar_text: string; background: string };
+  colors: { primary: string; accent: string; sidebar_bg: string; sidebar_text: string; background: string; secondary?: string; text?: string };
   font_family?: string;
   radius?: string;
   logo_url: string;
@@ -244,6 +272,8 @@ export interface CareerCompany {
   industry: string;
   description: string;
   city: string;
+  short_name?: string;
+  company_size?: string;
 }
 
 export interface PublicCareerPage {

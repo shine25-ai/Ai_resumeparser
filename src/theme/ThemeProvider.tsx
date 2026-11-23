@@ -15,7 +15,7 @@ export { clearBrandingCache } from "./brandingCache";
 
 export interface Branding {
   app_name: string;
-  colors: { primary: string; accent: string; sidebar_bg: string; sidebar_text: string; background: string };
+  colors: { primary: string; secondary: string; accent: string; text: string; sidebar_bg: string; sidebar_text: string; background: string };
   dark: { primary: string; background: string; surface: string; sidebar_bg: string };
   dark_mode: "off" | "user_choice" | "system";
   font_family: string;
@@ -29,7 +29,7 @@ export interface Branding {
 
 export const DEFAULT_BRANDING: Branding = {
   app_name: "HireLogics",
-  colors: { primary: "#1c7975", accent: "#3b82f6", sidebar_bg: "#0b2240", sidebar_text: "#cbd5e1", background: "#f4f7fb" },
+  colors: { primary: "#1c7975", secondary: "#2563eb", accent: "#3b82f6", text: "#111827", sidebar_bg: "#0b2240", sidebar_text: "#cbd5e1", background: "#f4f7fb" },
   dark: { primary: "", background: "#0b1120", surface: "#111827", sidebar_bg: "#070f1f" },
   dark_mode: "user_choice",
   font_family: "Inter",

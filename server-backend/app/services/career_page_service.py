@@ -42,8 +42,18 @@ SECTION_TYPES = {
     "faq": "FAQs",
     "gallery": "Workplace gallery",
     "video": "Culture video",
+    "highlights": "Highlights strip",
 }
-ITEM_TYPES = {"life", "benefits", "testimonials", "faq"}
+ITEM_TYPES = {"life", "benefits", "testimonials", "faq", "highlights"}
+ICON_TYPES = {"benefits", "highlights", "life"}
+ICON = re.compile(r"^[a-z0-9-]{1,40}$")
+HERO_LAYOUTS = ("background", "split")
+MAX_STATS = 4
+# Job page closing banner ("Be part of our journey").
+EXTRA_TEXTS = {
+    "job_cta_title": "Be part of our journey",
+    "job_cta_text": "Work on meaningful products, grow your skills and make an impact.",
+}
 MAX_SECTIONS = 20
 MAX_ITEMS = 12
 ASSET_PREFIX = "/api/v1/public/branding/assets/"
@@ -68,6 +78,30 @@ def _url(value: Any, field: str, allow_asset: bool = True) -> str:
     raise BadRequestError(f"{field} must be a link starting with https://.")
 
 
+def _target(value: Any, field: str) -> str:
+    """Where a button goes: a section on the page (#open_positions) or a link."""
+    v = str(value or "").strip()
+    if not v:
+        return ""
+    if v.startswith("#"):
+        return "#" + SLUG_CHARS.sub("", v[1:].lower())[:40]
+    return _url(v, field, allow_asset=False)
+
+
+def _icon(value: Any) -> str:
+    v = str(value or "").strip().lower()
+    return v if ICON.match(v) else ""
+
+
+def _stats(values: Any) -> List[Dict[str, str]]:
+    out = []
+    for st in list(values or [])[:MAX_STATS]:
+        value, label = _t((st or {}).get("value"), 20), _t((st or {}).get("label"), 40)
+        if value:
+            out.append({"value": value, "label": label})
+    return out
+
+
 def _links(values: Any, field: str) -> List[Dict[str, str]]:
     out = []
     for link in list(values or [])[:8]:
@@ -85,23 +119,27 @@ def default_content(company_name: str, old: Optional[Dict[str, Any]] = None) -> 
     name = company_name or "us"
     return {
         "template": "classic",
-        "header": {"show": True, "links": []},
+        "header": {"show": True, "links": [], "cta": {"label": "", "target": ""}},
         "hero": {
             "eyebrow": old.get("hero_eyebrow") or f"Careers at {name}",
             "title": base["hero_title"],
             "subtitle": base["hero_subtitle"],
             "banner_url": "",
             "cta_label": "Explore open positions",
+            "secondary_cta_label": "",
+            "secondary_cta_target": "",
+            "badge_text": "",
+            "layout": "background",
         },
         "sections": [
             {"id": "about", "type": "about", "visible": False, "title": f"About {name}",
-             "text": f"Tell candidates what {name} does and why it matters."},
+             "text": f"Tell candidates what {name} does and why it matters.", "stats": [], "image_url": "", "video_url": ""},
             {"id": "open_positions", "type": "open_positions", "visible": True,
              "title": base["listing_title"], "subtitle": base["listing_subtitle"]},
             {"id": "benefits", "type": "benefits", "visible": False, "title": "Why work with us", "items": [
-                {"title": "Learning budget", "text": "Courses, books and conferences, paid for."},
-                {"title": "Health cover", "text": "Medical insurance for you and your family."},
-                {"title": "Flexible work", "text": "Hybrid working and flexible hours."},
+                {"title": "Learning budget", "text": "Courses, books and conferences, paid for.", "icon": "graduation-cap"},
+                {"title": "Health cover", "text": "Medical insurance for you and your family.", "icon": "shield-check"},
+                {"title": "Flexible work", "text": "Hybrid working and flexible hours.", "icon": "laptop"},
             ]},
         ],
         "texts": {
@@ -109,6 +147,7 @@ def default_content(company_name: str, old: Optional[Dict[str, Any]] = None) -> 
             "empty_message": base["empty_message"],
             "success_title": base["success_title"],
             "success_message": base["success_message"],
+            **EXTRA_TEXTS,
         },
         "footer": {"show": True, "text": "", "website": "", "email": "", "linkedin": "", "links": []},
         "seo": {"title": f"Careers at {name}", "description": base["hero_subtitle"], "share_image_url": ""},
@@ -128,6 +167,8 @@ def new_section(section_type: str) -> Dict[str, Any]:
         section["url"] = ""
     else:
         section["text"] = ""
+        if section_type == "about":
+            section.update({"stats": [], "image_url": "", "video_url": ""})
     return section
 
 
@@ -146,6 +187,8 @@ def _clean_item(section_type: str, item: Dict[str, Any]) -> Optional[Dict[str, A
     if not title:
         return None
     out = {"title": title, "text": _t(item.get("text"), 600)}
+    if section_type in ICON_TYPES:
+        out["icon"] = _icon(item.get("icon"))
     if section_type == "life":
         out["image_url"] = _url(item.get("image_url"), "Image")
     return out
@@ -182,6 +225,13 @@ def clean_content(data: Dict[str, Any]) -> Dict[str, Any]:
             section["subtitle"] = _t(raw.get("subtitle"), 300)
         elif stype in ("about", "culture"):
             section["text"] = _t(raw.get("text"), 5000)
+            if stype == "about":
+                section["stats"] = _stats(raw.get("stats"))
+                section["image_url"] = _url(raw.get("image_url"), "About image")
+                video = _url(raw.get("video_url"), "Video link", allow_asset=False)
+                if video and not VIDEO_HOSTS.match(video):
+                    raise BadRequestError("Video must be a YouTube or Vimeo link.")
+                section["video_url"] = video
             if stype == "culture":
                 section["image_url"] = _url(raw.get("image_url"), "Culture image")
         elif stype in ITEM_TYPES:
@@ -203,17 +253,29 @@ def clean_content(data: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "template": template,
-        "header": {"show": bool(header.get("show", True)), "links": _links(header.get("links"), "Header")},
+        "header": {
+            "show": bool(header.get("show", True)),
+            "links": _links(header.get("links"), "Header"),
+            "cta": {"label": _t((header.get("cta") or {}).get("label"), 30),
+                    "target": _target((header.get("cta") or {}).get("target"), "Header button")},
+        },
         "hero": {
             "eyebrow": _t(hero.get("eyebrow"), 100),
             "title": _t(hero.get("title"), 150) or "Join our team",
             "subtitle": _t(hero.get("subtitle"), 300),
             "banner_url": _url(hero.get("banner_url"), "Banner"),
             "cta_label": _t(hero.get("cta_label"), 40) or "Explore open positions",
+            "secondary_cta_label": _t(hero.get("secondary_cta_label"), 40),
+            "secondary_cta_target": _target(hero.get("secondary_cta_target"), "Second button"),
+            "badge_text": _t(hero.get("badge_text"), 60),
+            "layout": hero.get("layout") if hero.get("layout") in HERO_LAYOUTS else "background",
         },
         "sections": sections,
-        "texts": {k: _t(texts.get(k), 300) or CAREERS_PAGE_DEFAULTS[k]
-                  for k in ("search_placeholder", "empty_message", "success_title", "success_message")},
+        "texts": {
+            **{k: _t(texts.get(k), 300) or CAREERS_PAGE_DEFAULTS[k]
+               for k in ("search_placeholder", "empty_message", "success_title", "success_message")},
+            **{k: _t(texts.get(k), 300) or v for k, v in EXTRA_TEXTS.items()},
+        },
         "footer": {
             "show": bool(footer.get("show", True)),
             "text": _t(footer.get("text"), 300),
@@ -228,6 +290,30 @@ def clean_content(data: Dict[str, Any]) -> Dict[str, Any]:
             "share_image_url": _url(seo.get("share_image_url"), "Share image"),
         },
     }
+
+
+def with_content_defaults(content: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Pages saved before a field existed get its default, so the API shape is always the same."""
+    if not content:
+        return content
+    out = copy.deepcopy(content)
+    header = out.setdefault("header", {})
+    header.setdefault("cta", {"label": "", "target": ""})
+    hero = out.setdefault("hero", {})
+    for k, v in (("secondary_cta_label", ""), ("secondary_cta_target", ""), ("badge_text", ""), ("layout", "background")):
+        hero.setdefault(k, v)
+    texts = out.setdefault("texts", {})
+    for k, v in EXTRA_TEXTS.items():
+        texts.setdefault(k, v)
+    for section in out.get("sections") or []:
+        if section.get("type") == "about":
+            section.setdefault("stats", [])
+            section.setdefault("image_url", "")
+            section.setdefault("video_url", "")
+        if section.get("type") in ICON_TYPES:
+            for item in section.get("items") or []:
+                item.setdefault("icon", "")
+    return out
 
 
 def legacy_texts(content: Dict[str, Any]) -> Dict[str, str]:
@@ -275,8 +361,8 @@ class CareerPageService:
     def _view(doc: Dict[str, Any]) -> Dict[str, Any]:
         draft, published = doc.get("draft"), doc.get("published")
         return {
-            "draft": draft,
-            "published": published,
+            "draft": with_content_defaults(draft),
+            "published": with_content_defaults(published),
             "has_unpublished_changes": draft != published,
             "published_at": doc.get("published_at"),
             "published_by": doc.get("published_by"),
@@ -316,11 +402,12 @@ class CareerPageService:
     async def public(self, company: Dict[str, Any]) -> Dict[str, Any]:
         """What visitors see: the published page and the company's public profile."""
         doc = await self._doc(company["id"])
-        content = doc.get("published") or doc["draft"]
+        content = with_content_defaults(doc.get("published") or doc["draft"])
         return {
             "content": content,
             "company": {
                 "id": company["id"], "name": company.get("name"), "slug": company.get("slug"),
+                "short_name": company.get("short_name", ""), "company_size": company.get("company_size", ""),
                 "website": company.get("website", ""), "industry": company.get("industry", ""),
                 "description": company.get("description", ""),
                 "city": (company.get("address") or {}).get("city", ""),

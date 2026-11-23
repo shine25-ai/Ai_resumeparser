@@ -42,6 +42,7 @@ export interface JobOpening extends PublicJob {
   salary_min: number | null;
   salary_max: number | null;
   salary_currency: string;
+  salary_period: "year" | "month" | "hour";
   show_salary: boolean;
   notice_period: string;
   certifications: string[];
@@ -50,6 +51,9 @@ export interface JobOpening extends PublicJob {
   what_we_offer: string[];
   tags: string[];
   additional_requirements: string;
+  tagline: string;
+  requirements: string[];
+  nice_to_have: string[];
   rounds: JobRound[];
   closing_date: string | null;
   hiring_manager: { id: string; name: string } | null;
@@ -94,6 +98,11 @@ export interface Company {
   interviews_count?: number;
   // Profile (SRS 3.3)
   logo_url: string;
+  /** Brand name shown in the portal ("ShineLogics" for "ShineLogics Technologies Pvt. Ltd."). */
+  short_name: string;
+  company_type: string;
+  tenant_settings: TenantSettings;
+  plan_valid_until: string | null;
   website: string;
   industry: string;
   description: string;
@@ -108,6 +117,17 @@ export interface Company {
   archived_at: string | null;
   is_archived: boolean;
   created_at?: string;
+}
+
+/** Company Settings → Tenant configuration. Job approval is in the job settings. */
+export interface TenantSettings {
+  resume_parsing: boolean;
+  duplicate_check: boolean;
+  multi_department: boolean;
+  calendar_scheduling: boolean;
+  candidate_registration: boolean;
+  /** Months; 0 = keep until deleted. One of 0, 6, 12, 24, 36, 60. */
+  data_retention_months: number;
 }
 
 export interface CompanyAddress {
@@ -137,8 +157,11 @@ export type CompanyChanges = Partial<
   Pick<
     Company,
     | "name" | "slug" | "status" | "email_domains" | "is_active" | "logo_url" | "website" | "industry"
-    | "description" | "company_size" | "timezone" | "plan"
-  > & { address: Partial<CompanyAddress>; contact: Partial<CompanyContact>; limits: Partial<CompanyLimits> }
+    | "description" | "company_size" | "timezone" | "plan" | "short_name" | "company_type" | "plan_valid_until"
+  > & {
+    address: Partial<CompanyAddress>; contact: Partial<CompanyContact>; limits: Partial<CompanyLimits>;
+    tenant_settings: Partial<TenantSettings>;
+  }
 >;
 
 export interface JobApplicationRow {
@@ -204,6 +227,35 @@ export const jobAction = async (id: string, action: JobAction, note = ""): Promi
 export const duplicateJob = async (id: string): Promise<JobOpening> =>
   readJson(await apiFetch(`${JOB_OPENINGS}/${id}/duplicate`, { method: "POST" }));
 
+export interface JobStats {
+  total: number;
+  active: number;
+  draft: number;
+  pending_approval: number;
+  closed: number;
+  archived: number;
+  applications: number;
+  /** Filled once the pipeline records hires (Phase 7). */
+  avg_days_to_hire: number | null;
+}
+
+export const fetchJobStats = async (): Promise<JobStats> => readJson(await apiFetch(`${JOB_OPENINGS}/stats`));
+
+export const jobsExportUrl = (includeArchived = false) => `${JOB_OPENINGS}/export${includeArchived ? "?include_archived=true" : ""}`;
+export const JOBS_IMPORT_TEMPLATE_URL = `${JOB_OPENINGS}/import/template`;
+
+export interface JobImportResult {
+  created: { row: number; id: string; code: string; title: string }[];
+  errors: { row: number; message: string }[];
+}
+
+/** Each CSV row becomes a draft job. */
+export const importJobs = async (file: File): Promise<JobImportResult> => {
+  const form = new FormData();
+  form.append("file", file);
+  return readJson(await apiFetch(`${JOB_OPENINGS}/import`, { method: "POST", body: form }));
+};
+
 export const fetchJobSettings = async (): Promise<{ require_approval: boolean }> => readJson(await apiFetch(`${JOB_OPENINGS}/settings`));
 
 export const saveJobSettings = async (require_approval: boolean): Promise<{ require_approval: boolean }> =>
@@ -248,6 +300,19 @@ export const updateCareersPageSettings = async (
 // ── Super admin: company workspaces ─────────────────────────────────────────
 
 /** Every company, with user and resume counts (super admin). */
+/** The company details panel (Companies → a company). */
+export interface CompanySummary {
+  company: Company;
+  careers_url: string;
+  counts: { jobs: number; open_jobs: number; users: number; candidates: number; applications: number; interviews: number; hires: number | null };
+  admins: { id: string; full_name: string; email: string; role: string; is_active: boolean; last_login_at?: string | null }[];
+  recent_activity: { action: string; entity_label: string; created_at: string; actor?: { name?: string } }[];
+}
+
+export const fetchCompanySummary = async (id: string): Promise<CompanySummary> => readJson(await apiFetch(`${COMPANIES}/${id}/summary`));
+
+export const companiesExportUrl = (includeArchived = false) => `${COMPANIES}/export${includeArchived ? "?include_archived=true" : ""}`;
+
 export const fetchAllCompanies = async (includeArchived = false): Promise<Company[]> =>
   readJson(await apiFetch(`${COMPANIES}?all=true${includeArchived ? "&include_archived=true" : ""}`));
 

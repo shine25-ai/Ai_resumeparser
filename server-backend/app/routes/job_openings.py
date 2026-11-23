@@ -8,19 +8,22 @@ Each company has its own roles and careers page text. The public endpoints take 
 with no company they show the default company, so careers links shared before companies existed keep working.
 """
 
+import csv
+import io
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, File, Form, Header, Query, UploadFile, status
+from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr, Field, StringConstraints
 from typing_extensions import Annotated
 
 from app.core.database import get_database
 from app.core.dependencies import require_access, get_current_active_user, is_admin_or_staff_user, is_company_admin
-from app.core.exceptions import AuthorizationError
+from app.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
 from app.core.tenant import system_scope
-from app.services.audit_service import diff as audit_diff, record_audit
-from app.models.company import SUPERADMIN_ONLY_FIELDS
+from app.services.audit_service import AUDIT_LOGS_COLLECTION, diff as audit_diff, record_audit
+from app.models.company import SUPERADMIN_ONLY_FIELDS, with_profile_defaults
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.job_repository import (
     ApplicantVerificationRepository,
@@ -33,7 +36,14 @@ from app.repositories.resume_repository import ResumeRepository
 from app.services.job_opening_service import JobOpeningService
 from app.services.job_management import JobManagementService
 from app.services.resume_service import ResumeService
-from app.utils.constants import ERROR_FORBIDDEN
+from app.utils.constants import (
+    ERROR_FORBIDDEN,
+    INTERVIEWS_COLLECTION,
+    JOB_APPLICATIONS_COLLECTION,
+    JOB_OPENINGS_COLLECTION,
+    RESUMES_COLLECTION,
+    USERS_COLLECTION,
+)
 from app.utils.response import success_response
 
 public_router = APIRouter(prefix="/api/v1/public/jobs", tags=["Public Jobs"])
@@ -199,6 +209,54 @@ async def create_opening(
     data = await jobs.create(body, current_user)
     await record_audit(db, current_user, "job.created", "job", data["id"], f"{data['code']} {data['title']}", request=request)
     return success_response(data=data, message="Job created.", status_code=status.HTTP_201_CREATED)
+
+
+@router.get("/stats", summary="Summary cards on the job list: jobs per status and applications")
+async def job_stats(
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+):
+    return success_response(data=await jobs.stats(), message="Job stats retrieved.")
+
+
+@router.get("/export", summary="Download the jobs as CSV")
+async def export_jobs(
+    include_archived: bool = Query(False),
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+):
+    body = await jobs.export_csv(include_archived=include_archived)
+    return Response(content=body, media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="jobs.csv"'})
+
+
+@router.get("/import/template", summary="An empty CSV with the import columns")
+async def import_template(current_user: dict = Depends(get_current_active_user)):
+    from app.services.job_management import CSV_COLUMNS
+    return Response(content=",".join(f'"{c}"' for c in CSV_COLUMNS) + "\n", media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="jobs-import-template.csv"'})
+
+
+@router.post("/import", summary="Create draft jobs from a CSV file (at most 200 rows)")
+async def import_jobs(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_active_user),
+    jobs: JobManagementService = Depends(get_jobs),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    raw = await file.read(2_000_001)
+    if len(raw) > 2_000_000:
+        raise BadRequestError("The file is too large (2 MB at most).")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise BadRequestError("Save the file as CSV (UTF-8) and try again.")
+    result = await jobs.import_csv(text, current_user)
+    if result["created"]:
+        await record_audit(db, current_user, "job.imported", "job", "", f"{len(result['created'])} jobs",
+                           details=file.filename or "", request=request)
+    return success_response(data=result, message=f"{len(result['created'])} draft jobs created, {len(result['errors'])} rows skipped.")
 
 
 @router.get("/settings", summary="Job settings: whether publishing needs approval")
@@ -391,8 +449,21 @@ class CompanyLimitsIn(BaseModel):
     ai_parses_per_month: int = Field(default=0, ge=0)
 
 
+class TenantSettingsIn(BaseModel):
+    resume_parsing: bool = True
+    duplicate_check: bool = True
+    multi_department: bool = True
+    calendar_scheduling: bool = False
+    candidate_registration: bool = False
+    data_retention_months: int = Field(default=24, ge=0, le=120)
+
+
 class CompanyProfileIn(BaseModel):
     """Company details (SRS 3.3). All optional."""
+    short_name: Optional[Annotated[str, StringConstraints(max_length=60)]] = None
+    company_type: Optional[Annotated[str, StringConstraints(max_length=60)]] = None
+    tenant_settings: Optional[TenantSettingsIn] = None
+    plan_valid_until: Optional[Annotated[str, StringConstraints(max_length=10)]] = Field(default=None, description="Super admin only; YYYY-MM-DD")
     logo_url: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
     website: Optional[Annotated[str, StringConstraints(max_length=200)]] = None
     industry: Optional[Short] = None
@@ -420,6 +491,16 @@ class CompanyUpdate(CompanyProfileIn):
     is_active: Optional[bool] = Field(default=None, description="Turn the whole workspace on or off (super admin)")
 
 
+async def _with_plan_limits(db: AsyncIOMotorDatabase, data: dict) -> dict:
+    """Choosing a plan from the catalogue copies its limits, unless limits are given too."""
+    if data.get("plan") and "limits" not in data:
+        from app.services.plan_service import PlanService
+        limits = await PlanService(db).limits_for(data["plan"])
+        if limits:
+            data = {**data, "limits": limits}
+    return data
+
+
 @companies_router.get("", summary="List companies with role counts (staff)")
 async def list_companies(
     all: bool = Query(False, description="Super admin: every company, with user and resume counts"),
@@ -434,6 +515,77 @@ async def list_companies(
     return success_response(data=data, message="Companies retrieved successfully.")
 
 
+@companies_router.get("/export", summary="Download the company list as CSV (super admin)")
+async def export_companies(
+    include_archived: bool = Query(False),
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+):
+    if not current_user.get("is_superadmin"):
+        raise AuthorizationError("Only the platform super admin can export companies.")
+    rows = await service.list_companies(all_companies=True, include_archived=include_archived)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Name", "Short name", "Slug", "Industry", "Size", "Website", "Contact", "Email", "Phone", "City",
+                "Country", "Plan", "Plan valid until", "Workspace", "Jobs", "Open jobs", "Users", "Candidates",
+                "Interviews", "Created", "Archived"])
+    for c in rows:
+        contact, address = c.get("contact") or {}, c.get("address") or {}
+        w.writerow([c.get("name"), c.get("short_name"), c.get("slug"), c.get("industry"), c.get("company_size"),
+                    c.get("website"), contact.get("name"), contact.get("email"), contact.get("phone"), address.get("city"),
+                    address.get("country"), c.get("plan"), c.get("plan_valid_until") or "",
+                    "On" if c.get("is_active", True) else "Off", c.get("roles_count", 0), c.get("open_roles_count", 0),
+                    c.get("users_count", 0), c.get("resumes_count", 0), c.get("interviews_count", 0),
+                    (c.get("created_at") or "")[:10], (c.get("archived_at") or "")[:10]])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="companies.csv"'})
+
+
+@companies_router.get("/{company_id}/summary", summary="The company details panel: profile, counts, admins, recent activity")
+async def company_summary(
+    company_id: str,
+    current_user: dict = Depends(get_current_active_user),
+    service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    if not current_user.get("is_superadmin") and not (is_company_admin(current_user) and company_id == current_user.get("company_id")):
+        raise AuthorizationError("You can only see your own company.")
+    with system_scope():
+        company = await service.company_repo.get_by_id(company_id)
+        if not company:
+            raise NotFoundError("Company not found.")
+        scope = {"company_id": company_id}
+        jobs = await db[JOB_OPENINGS_COLLECTION].find(scope, {"_id": 0, "status": 1}).to_list(length=None)
+        users = await db[USERS_COLLECTION].find(
+            {**scope, "is_deleted": {"$ne": True}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1, "role": 1, "is_active": 1, "last_login_at": 1}
+        ).to_list(length=None)
+        candidates = await db[RESUMES_COLLECTION].count_documents(
+            {**scope, "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
+        interviews = await db[INTERVIEWS_COLLECTION].count_documents(scope)
+        applications = await db[JOB_APPLICATIONS_COLLECTION].count_documents(scope)
+        activity = await db[AUDIT_LOGS_COLLECTION].find(scope, {"_id": 0}).sort("created_at", -1).limit(10).to_list(length=10)
+    from app.services.domain_service import DomainService
+    domains = DomainService(db).view(company)
+    careers_url = (f"https://{domains['custom_domain']}" if domains["custom_status"] == "verified"
+                   else f"https://{domains['subdomain']}" if domains["subdomain_enabled"] else f"/careers/{company['slug']}")
+    return success_response(data={
+        "company": with_profile_defaults(company),
+        "careers_url": careers_url,
+        "counts": {
+            "jobs": len([j for j in jobs if j.get("status") != "ARCHIVED"]),
+            "open_jobs": len([j for j in jobs if j.get("status") == "OPEN"]),
+            "users": len(users),
+            "candidates": candidates,
+            "applications": applications,
+            "interviews": interviews,
+            # Hires are recorded by the pipeline (Phase 7); until then this is None.
+            "hires": None,
+        },
+        "admins": [u for u in users if u.get("role") in ("admin", "company_admin")],
+        "recent_activity": activity,
+    }, message="Company summary retrieved.")
+
+
 @companies_router.post("", status_code=status.HTTP_201_CREATED, summary="Add a company (staff)")
 async def create_company(
     body: CompanyCreate,
@@ -444,7 +596,8 @@ async def create_company(
 ):
     if not current_user.get("is_superadmin"):
         raise AuthorizationError("Only the platform super admin can add companies.")
-    data = await service.create_company(body.model_dump(exclude_none=True))
+    payload = await _with_plan_limits(db, body.model_dump(exclude_none=True))
+    data = await service.create_company(payload)
     details = f"Admin: {data['admin']['email']}" if data.get("admin") else ""
     for platform in (True, False):
         await record_audit(db, current_user, "company.created", "company", data["id"], data["name"], details=details,
@@ -469,6 +622,7 @@ async def update_company(
         if SUPERADMIN_ONLY_FIELDS & set(changes):
             raise AuthorizationError("Only the platform super admin can change email domains, plans or limits, or turn a workspace off.")
     before = await service.company_repo.get_by_id(company_id)
+    changes = await _with_plan_limits(db, changes)
     data = await service.update_company(company_id, changes)
     changed = audit_diff(before, data, sorted(changes))
     if changed:

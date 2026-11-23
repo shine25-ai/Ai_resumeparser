@@ -92,6 +92,10 @@ class AuthService:
         await self._check_company_open(user)
         await self._check_login_page(user, payload.company)
 
+        try:
+            await self.user_repo.collection.update_one({"id": user["id"]}, {"$set": {"last_login_at": utc_now().isoformat()}})
+        except Exception:  # never block a sign-in over this
+            logger.warning("Could not record last sign-in for %s", user.get("id"))
         logger.info(f"User '{email}' logged in successfully.")
         return self._issue_tokens(user)
 

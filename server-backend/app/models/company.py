@@ -58,6 +58,20 @@ class CompanyLimits(BaseModel):
     ai_parses_per_month: int = 0
 
 
+# Tenant configuration (Screen 21, "Tenant Configuration"): switches a company admin turns on or off.
+# Job publishing approval lives in the job settings (Phase 3).
+DATA_RETENTION_CHOICES = (0, 6, 12, 24, 36, 60)  # months; 0 = keep until deleted
+
+
+class TenantSettings(BaseModel):
+    resume_parsing: bool = True          # AI reads uploaded resumes
+    duplicate_check: bool = True         # warn about a candidate who already exists
+    multi_department: bool = True        # jobs and users are grouped by department
+    calendar_scheduling: bool = False    # Google / Outlook calendar sync (calendar sync comes later)
+    candidate_registration: bool = False  # candidates create accounts (decision 13: email code only for now)
+    data_retention_months: int = 24
+
+
 class CompanyDocument(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     name: str
@@ -69,6 +83,8 @@ class CompanyDocument(BaseModel):
     archived_at: Optional[str] = None
     # Profile (SRS 3.3)
     logo_url: str = ""
+    short_name: str = ""     # brand name shown in the portal ("ShineLogics" for "ShineLogics Technologies Pvt. Ltd.")
+    company_type: str = ""   # Private Limited, LLP, Public Limited...
     website: str = ""
     industry: str = ""
     description: str = ""
@@ -79,7 +95,9 @@ class CompanyDocument(BaseModel):
     # Plan (set by the super admin for now)
     plan: str = ""
     billing_mode: str = "manual"
+    plan_valid_until: Optional[str] = None  # YYYY-MM-DD
     limits: CompanyLimits = Field(default_factory=CompanyLimits)
+    tenant_settings: TenantSettings = Field(default_factory=TenantSettings)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
@@ -93,15 +111,16 @@ def default_company_doc() -> Dict[str, Any]:
 
 # Fields a company admin may change on their own company. Everything else is the super admin's.
 COMPANY_PROFILE_FIELDS = frozenset({
-    "name", "logo_url", "website", "industry", "description", "company_size", "timezone", "address", "contact",
+    "name", "short_name", "company_type", "logo_url", "website", "industry", "description", "company_size", "timezone",
+    "address", "contact", "tenant_settings",
 })
-SUPERADMIN_ONLY_FIELDS = frozenset({"email_domains", "is_active", "plan", "limits", "billing_mode"})
+SUPERADMIN_ONLY_FIELDS = frozenset({"email_domains", "is_active", "plan", "limits", "billing_mode", "plan_valid_until"})
 
 
 def with_profile_defaults(company: Dict[str, Any]) -> Dict[str, Any]:
     """Companies saved before the profile fields existed get the defaults, so the API shape is always the same."""
     defaults = CompanyDocument(id=company.get("id") or "x", name=company.get("name") or "", slug=company.get("slug") or "x")
-    out = dict(company)
+    out = {k: v for k, v in company.items() if k != "_id"}  # the database's internal id is not part of the API
     for key, value in defaults.model_dump().items():
         if key not in out or out[key] is None and value is not None:
             out[key] = value

@@ -241,3 +241,30 @@ Follows SRS §11/§13 order, starting from what is already built. Estimates are 
 
 ## 7. Open questions
 None. All answered on 23 Nov 2026 (see §0).
+
+## 8. Mockup coverage (data behind each screen)
+
+The SRS has 24 mockup images. Every screen must be buildable from the API, so each one was checked against the
+stored fields and endpoints (23 Nov 2026). ✅ = the API has what the screen shows; the phase column says where
+the rest comes from. Layout work (expanded sidebar, top bar with search, full-page wizards) is separate UI work.
+
+| Mockup | Data the API gives | Comes later |
+|---|---|---|
+| Super Admin dashboard | Companies, jobs, candidates, interviews per company (`/companies?all=true`), audit timeline | Trends with % change, activity chart, funnel → Phase 10 |
+| Companies list + details panel | ✅ Filters, plan, status, counts; `GET /companies/{id}/summary` (admins, counts, careers URL, recent activity); `GET /companies/export` | Import companies (not planned); hires count → Phase 7 |
+| Create company (4 steps) | ✅ Short name, company type, profile, contact, address, slug, admin, plan + valid until, limits, branding | – |
+| Company dashboard | Existing dashboard endpoints | Avg. time to hire, funnel by stage → Phases 7 and 10 |
+| Job list + job panel | ✅ `GET /job-openings/stats`, `/export`, `/import` (+ `/import/template`), per-job applications / interviews / selected, history | Screened / shortlisted counts and avg. time to hire → Phase 7 |
+| Create job opening | ✅ All fields incl. salary period, tagline, requirements, good to have, rounds with durations, deadline, hiring manager, notify emails | – |
+| Career page builder | ✅ Sections (incl. new highlights strip), icons on items, About stats / photo / video, header button, second hero button, badge text, split hero, templates, SEO, brand colours (primary, secondary, accent, text, background), page status and URL | Tablet preview and template thumbnails are UI only |
+| Public careers page | ✅ All of the above | Language switch → later (§6) |
+| Job detail page | ✅ Job ID, posted on, tagline, requirements, good to have, what we offer, skills, About with stats and video, closing banner text | – |
+| Application form | Email code, resume upload | 5-step form with AI pre-fill → Phase 5 |
+| Candidates, profile 360°, pipeline, interviews, panels, evaluation, skill matrix | – | Phases 6–9 |
+| Users & role permissions | ✅ `GET /users/stats` (totals, pending invites, by role, by department), roles with `users_count`, user phone / photo / last sign-in, permission matrix, audit log | Teams; access policies → Phase 12 |
+| Reports & analytics | – | Phase 10 |
+| Company settings & tenant configuration | ✅ Profile, branding, `tenant_settings` (resume parsing, duplicate check, multi-department, calendar scheduling, candidate registration, data retention), timezone, job approval | Email templates per company, integrations → Phase 11 |
+| Platform settings | ✅ Platform name / URL / support email, default timezone and language, allowed resume types, plan catalogue (`/platform/plans`), masters, default branding | Default workflow → Phase 7; MFA / SSO → Phase 12; integrations → Phase 11; revenue → after payments (§6) |
+
+Switches that are stored now but act in a later phase: `tenant_settings.calendar_scheduling` (calendar sync, §6),
+`duplicate_check` (Phase 6), `data_retention_months` (Phase 12 clean-up job). The UI should say so next to them.

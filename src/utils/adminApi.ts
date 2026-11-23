@@ -124,15 +124,61 @@ export const fetchAuditLogs = async (f: AuditFilters, page = 1, limit = 50): Pro
   readJson(await apiFetch(`${AUDIT}?${query(f, { page, limit })}`));
 
 /** Downloads the filtered log as CSV (the request needs the sign-in token, so it can't be a plain link). */
-export const downloadAuditCsv = async (f: AuditFilters): Promise<void> => {
-  const res = await apiFetch(`${AUDIT}/export?${query(f)}`);
+/** Download a file the API returns (CSV exports). */
+export const downloadFile = async (url: string, filename: string): Promise<void> => {
+  const res = await apiFetch(url);
   if (!res.ok) await readJson(res);
-  const url = URL.createObjectURL(await res.blob());
+  const href = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
-  a.href = url;
-  a.download = "audit-log.csv";
+  a.href = href;
+  a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(href);
+};
+
+export const downloadAuditCsv = (f: AuditFilters): Promise<void> => downloadFile(`${AUDIT}/export?${query(f)}`, "audit-log.csv");
+
+// ── Users and roles (summary cards, role distribution) ───────────────────────
+
+export interface UserStats {
+  total: number;
+  active: number;
+  inactive: number;
+  pending_invites: number;
+  by_role: { role: string; label: string; count: number }[];
+  by_department: { department: string; count: number }[];
+}
+
+export const fetchUserStats = async (): Promise<UserStats> => readJson(await apiFetch(`${BASE_URL}/users/stats`));
+
+// ── Subscription plans (super admin) ─────────────────────────────────────────
+
+export interface Plan {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  /** null = "Custom" */
+  monthly_price: number | null;
+  currency: string;
+  features: string[];
+  limits: { users: number; active_jobs: number; storage_mb: number; ai_parses_per_month: number };
+  is_active: boolean;
+  sort_order: number;
+  companies_count: number;
+}
+
+export type PlanChanges = Partial<Omit<Plan, "id" | "companies_count">>;
+
+const PLANS = `${BASE_URL}/platform/plans`;
+
+export const fetchPlans = async (): Promise<Plan[]> => readJson(await apiFetch(PLANS));
+export const createPlan = async (plan: PlanChanges & { name: string }): Promise<Plan> =>
+  readJson(await apiFetch(PLANS, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(plan) }));
+export const updatePlan = async (id: string, changes: PlanChanges): Promise<Plan> =>
+  readJson(await apiFetch(`${PLANS}/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) }));
+export const deletePlan = async (id: string): Promise<void> => {
+  await readJson(await apiFetch(`${PLANS}/${id}`, { method: "DELETE" }));
 };
 
 // ── Branding ─────────────────────────────────────────────────────────────────
@@ -159,6 +205,10 @@ export interface PlatformSettings {
   platform_name: string;
   support_email: string;
   platform_url: string;
+  default_timezone: string;
+  default_language: string;
+  /** Resume files candidates may upload: some of pdf, doc, docx. */
+  allowed_resume_types: string[];
   branding: BrandingChanges;
 }
 

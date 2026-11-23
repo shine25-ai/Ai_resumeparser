@@ -22,6 +22,8 @@ from app.core.exceptions import AuthenticationError, BadRequestError, ConflictEr
 from app.core.security import decode_jwt_token
 from app.core.tenant import company_scope, current_company_id, set_company, system_scope
 from app.models.company import (
+    DATA_RETENTION_CHOICES,
+    TenantSettings,
     clean_domains,
     email_domain,
     COMPANY_STATUS_ACTIVE,
@@ -281,7 +283,7 @@ class JobOpeningService:
     def _clean_profile(data: Dict[str, Any]) -> Dict[str, Any]:
         """Profile fields from a create/update body, trimmed; only the ones given."""
         out: Dict[str, Any] = {}
-        for key in COMPANY_PROFILE_FIELDS - {"name", "address", "contact"}:
+        for key in COMPANY_PROFILE_FIELDS - {"name", "address", "contact", "tenant_settings"}:
             if key in data and data[key] is not None:
                 out[key] = str(data[key]).strip()
         if out.get("website") and not re.match(r"^https?://", out["website"], re.I):
@@ -294,6 +296,13 @@ class JobOpeningService:
             if contact["email"] and not EMAIL_PATTERN.fullmatch(contact["email"]):
                 raise BadRequestError("Contact email is not a valid email address.")
             out["contact"] = CompanyContact(**contact).model_dump()
+        if data.get("tenant_settings") is not None:
+            ts = dict(data["tenant_settings"])
+            months = int(ts.get("data_retention_months", 24) or 0)
+            if months not in DATA_RETENTION_CHOICES:
+                raise BadRequestError(f"Data retention must be one of {', '.join(map(str, DATA_RETENTION_CHOICES))} months (0 = keep).")
+            ts["data_retention_months"] = months
+            out["tenant_settings"] = TenantSettings(**ts).model_dump()
         return out
 
     @staticmethod
@@ -301,6 +310,11 @@ class JobOpeningService:
         out: Dict[str, Any] = {}
         if data.get("plan") is not None:
             out["plan"] = str(data["plan"]).strip()
+        if "plan_valid_until" in data:
+            until = str(data.get("plan_valid_until") or "").strip()
+            if until and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", until):
+                raise BadRequestError("Plan valid until must be a date like 2026-03-30.")
+            out["plan_valid_until"] = until or None
         if data.get("limits") is not None:
             limits = dict(data["limits"])
             if any(int(v or 0) < 0 for v in limits.values()):
@@ -399,9 +413,13 @@ class JobOpeningService:
                 "certifications": o.get("certifications") or [],
                 "what_we_offer": o.get("what_we_offer") or [],
                 "tags": o.get("tags") or [],
+                "tagline": o.get("tagline", ""),
+                "requirements": o.get("requirements") or [],
+                "nice_to_have": o.get("nice_to_have") or [],
                 # Salary only when the company chose to show it.
                 "salary": (
-                    {"min": o.get("salary_min"), "max": o.get("salary_max"), "currency": o.get("salary_currency") or "INR"}
+                    {"min": o.get("salary_min"), "max": o.get("salary_max"), "currency": o.get("salary_currency") or "INR",
+                     "period": o.get("salary_period") or "year"}
                     if o.get("show_salary") and (o.get("salary_min") or o.get("salary_max")) else None
                 ),
                 "closing_date": o.get("closing_date"),

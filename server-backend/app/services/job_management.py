@@ -11,6 +11,8 @@ Workflow (actions on a job):
 Every change is kept in the job's status_history.
 """
 
+import csv
+import io
 import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,6 +30,7 @@ from app.models.job_opening import (
     JOB_STATUS_LABELS,
     JOB_STATUS_OPEN,
     JOB_STATUS_PENDING,
+    SALARY_PERIODS,
     WORK_MODES,
     JobOpeningDocument,
     with_job_defaults,
@@ -36,14 +39,31 @@ from app.utils.constants import COMPANIES_COLLECTION, INTERVIEWS_COLLECTION, JOB
 from app.utils.helpers import generate_uuid, utc_now
 
 JOB_TEMPLATES_COLLECTION = "job_templates"
+MAX_IMPORT_ROWS = 200
+# Job import/export columns -> job fields.
+CSV_FIELDS = {
+    "Title": "title", "Department": "department", "Category": "category", "Location": "location",
+    "Employment type": "employment_type", "Work mode": "work_mode", "Experience min": "experience_min",
+    "Experience max": "experience_max", "Vacancies": "open_positions", "Primary skills": "primary_skills",
+    "Secondary skills": "secondary_skills", "Salary min": "salary_min", "Salary max": "salary_max",
+    "Currency": "salary_currency", "Closing date": "closing_date", "Description": "description",
+}
+CSV_COLUMNS = list(CSV_FIELDS)
+
+
+def _fmt(n: Any) -> str:
+    if n is None:
+        return ""
+    return str(int(n)) if float(n).is_integer() else str(n)
 
 LIST_FIELDS = (
     "responsibilities", "qualifications", "certifications", "primary_skills", "secondary_skills",
-    "what_we_offer", "tags",
+    "what_we_offer", "tags", "requirements", "nice_to_have",
 )
 TEXT_FIELDS = {
     "title": 200, "department": 200, "location": 200, "employment_type": 100, "description": 5000,
     "category": 120, "work_mode": 20, "notice_period": 60, "additional_requirements": 2000, "salary_currency": 3,
+    "tagline": 200, "salary_period": 10,
 }
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -108,6 +128,8 @@ def clean_job(data: Dict[str, Any], partial: bool = False) -> Dict[str, Any]:
             raise BadRequestError("Job title is required.")
     if out.get("work_mode") and out["work_mode"] not in WORK_MODES:
         raise BadRequestError("Work mode must be Onsite, Hybrid or Remote.")
+    if out.get("salary_period") and out["salary_period"] not in SALARY_PERIODS:
+        raise BadRequestError("Salary period must be year, month or hour.")
     if "salary_currency" in out:
         out["salary_currency"] = (out["salary_currency"] or "INR").upper()
     for field in LIST_FIELDS:
@@ -256,6 +278,65 @@ class JobManagementService:
         job.update((await self._progress([job_id])).get(job_id, {"applications_count": 0, "interviews_count": 0, "selected_count": 0}))
         job["accepting"] = is_accepting(job)
         return job
+
+    async def stats(self) -> Dict[str, Any]:
+        """Summary cards on the job list (Screen 5): jobs per status and applications in all."""
+        jobs = await self.jobs.find({}, {"_id": 0, "id": 1, "status": 1}).to_list(length=None)
+        by_status = {st: 0 for st in JOB_STATUS_LABELS}
+        for j in jobs:
+            by_status[j.get("status") or JOB_STATUS_OPEN] = by_status.get(j.get("status") or JOB_STATUS_OPEN, 0) + 1
+        applications = await self.db[JOB_APPLICATIONS_COLLECTION].count_documents({})
+        return {
+            "total": sum(v for k, v in by_status.items() if k != JOB_STATUS_ARCHIVED),
+            "active": by_status[JOB_STATUS_OPEN],
+            "draft": by_status[JOB_STATUS_DRAFT],
+            "pending_approval": by_status[JOB_STATUS_PENDING],
+            "closed": by_status[JOB_STATUS_CLOSED],
+            "archived": by_status[JOB_STATUS_ARCHIVED],
+            "applications": applications,
+            # Needs hire dates, which the pipeline (Phase 7) records. None until then.
+            "avg_days_to_hire": None,
+        }
+
+    async def export_csv(self, include_archived: bool = False) -> str:
+        jobs = await self.list(include_archived=include_archived)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(CSV_COLUMNS + ["Code", "Status", "Applications", "Interviews", "Selected", "Created"])
+        for j in jobs:
+            w.writerow([
+                j.get("title", ""), j.get("department", ""), j.get("category", ""), j.get("location", ""),
+                j.get("employment_type", ""), j.get("work_mode", ""), _fmt(j.get("experience_min")), _fmt(j.get("experience_max")),
+                j.get("open_positions", 1), "; ".join(j.get("primary_skills") or []), "; ".join(j.get("secondary_skills") or []),
+                _fmt(j.get("salary_min")), _fmt(j.get("salary_max")), j.get("salary_currency", ""), j.get("closing_date") or "",
+                j.get("description", ""),
+                j.get("code", ""), j.get("status_label", ""), j.get("applications_count", 0), j.get("interviews_count", 0),
+                j.get("selected_count", 0), (j.get("created_at") or "")[:10],
+            ])
+        return buf.getvalue()
+
+    async def import_csv(self, text: str, user: Dict[str, Any]) -> Dict[str, Any]:
+        """Each row becomes a draft job. Rows with problems are skipped and reported."""
+        rows = list(csv.DictReader(io.StringIO(text)))
+        if not rows:
+            raise BadRequestError("The file has no rows. Use the template's column names in the first row.")
+        if len(rows) > MAX_IMPORT_ROWS:
+            raise BadRequestError(f"Import at most {MAX_IMPORT_ROWS} jobs at a time.")
+        created, errors = [], []
+        for n, row in enumerate(rows, start=2):
+            row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+            data = {field: row.get(col.lower(), "") for col, field in CSV_FIELDS.items()}
+            for f in ("primary_skills", "secondary_skills"):
+                data[f] = [x for x in re.split(r"[;,]", data[f]) if x.strip()]
+            data["open_positions"] = data["open_positions"] or 1
+            if not data["closing_date"]:
+                data.pop("closing_date")
+            try:
+                job = await self.create(data, user)
+                created.append({"row": n, "id": job["id"], "code": job["code"], "title": job["title"]})
+            except BadRequestError as e:
+                errors.append({"row": n, "message": e.message})
+        return {"created": created, "errors": errors}
 
     async def _progress(self, job_ids: List[str]) -> Dict[str, Dict[str, int]]:
         """Applications, interviews and selected candidates per job."""

@@ -137,7 +137,7 @@ class UserService:
 
     async def update_me(self, current_user: Dict[str, Any], payload: UserUpdate) -> UserResponse:
         """Users can change their own name, email and password, not their role or status."""
-        update_dict = payload.model_dump(exclude_unset=True, include={"full_name", "email", "password", "ui_theme"})
+        update_dict = payload.model_dump(exclude_unset=True, include={"full_name", "email", "password", "ui_theme", "phone", "avatar_url"})
         with system_scope():
             user = await self.user_repo.get_by_id(current_user["id"])
             if not user:

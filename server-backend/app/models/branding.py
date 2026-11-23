@@ -24,7 +24,9 @@ PLATFORM_DEFAULT_BRANDING: Dict[str, Any] = {
     "app_name": "HireLogics",
     "colors": {
         "primary": "#1c7975",      # buttons, links, active items (the mockups' teal button; 5.2:1 with white text)
-        "accent": "#3b82f6",       # charts, secondary highlights
+        "secondary": "#2563eb",    # second buttons, tags, highlights on the careers page
+        "accent": "#3b82f6",       # charts, badges
+        "text": "#111827",         # body text on the careers page
         "sidebar_bg": "#0b2240",   # navy sidebar
         "sidebar_text": "#cbd5e1",
         "background": "#f4f7fb",   # page background
@@ -53,7 +55,7 @@ PLATFORM_DEFAULT_BRANDING: Dict[str, Any] = {
     },
 }
 
-COLOR_FIELDS = ("primary", "accent", "sidebar_bg", "sidebar_text", "background")
+COLOR_FIELDS = ("primary", "secondary", "accent", "text", "sidebar_bg", "sidebar_text", "background")
 DARK_FIELDS = ("primary", "background", "surface", "sidebar_bg")
 ASSET_FIELDS = ("logo_url", "logo_dark_url", "favicon_url")
 
@@ -162,6 +164,7 @@ def contrast_warnings(branding: Dict[str, Any]) -> list:
         ("White text on the primary colour", "#ffffff", c["primary"], 4.5),
         ("Primary colour as link text on the page background", c["primary"], c["background"], 3.0),
         ("Sidebar text on the sidebar", c["sidebar_text"], c["sidebar_bg"], 4.5),
+        ("Text colour on the page background", c["text"], c["background"], 4.5),
     ]
     out = []
     for label, fg, bg, need in checks:

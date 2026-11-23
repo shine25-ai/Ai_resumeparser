@@ -51,6 +51,38 @@ async def update_me(
     return await controller.update_me(current_user, payload)
 
 
+@router.get("/stats", status_code=status.HTTP_200_OK, summary="User summary cards: totals, pending invitations, users per role and department")
+async def user_stats(
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    from app.services.invitation_service import INVITATIONS_COLLECTION
+    from app.utils.helpers import utc_now
+    from app.utils.response import success_response
+
+    users = await db["users"].find({"is_deleted": {"$ne": True}}, {"_id": 0, "role": 1, "is_active": 1, "department": 1}).to_list(length=None)
+    roles = await RoleRepository(db).find_active_roles(skip=0, limit=500)
+    names = {r["slug"]: r["name"] for r in roles}
+    by_role: dict = {}
+    by_department: dict = {}
+    for u in users:
+        by_role[u.get("role") or "user"] = by_role.get(u.get("role") or "user", 0) + 1
+        dept = u.get("department") or ""
+        by_department[dept] = by_department.get(dept, 0) + 1
+    pending = await db[INVITATIONS_COLLECTION].count_documents({"status": "pending", "expires_at": {"$gt": utc_now().isoformat()}})
+    active = sum(1 for u in users if u.get("is_active", True))
+    return success_response(data={
+        "total": len(users),
+        "active": active,
+        "inactive": len(users) - active,
+        "pending_invites": pending,
+        "by_role": sorted(({"role": k, "label": names.get(k, k.replace("_", " ").title()), "count": v} for k, v in by_role.items()),
+                          key=lambda r: -r["count"]),
+        "by_department": sorted(({"department": k or "No department", "count": v} for k, v in by_department.items()),
+                                key=lambda r: -r["count"]),
+    }, message="User stats retrieved.")
+
+
 @router.get(
     "",
     status_code=status.HTTP_200_OK,

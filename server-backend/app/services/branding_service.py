@@ -19,6 +19,8 @@ from app.utils.helpers import generate_uuid, utc_now
 PLATFORM_SETTINGS_COLLECTION = "platform_settings"
 BRANDING_ASSETS_COLLECTION = "branding_assets"
 PLATFORM_DOC_ID = "platform"
+# Resume file types the platform can read; the super admin may allow fewer.
+RESUME_TYPES = ("pdf", "doc", "docx")
 ASSET_PATH = "/api/v1/public/branding/assets/"
 
 # SVG is left out on purpose: it can carry scripts and these files are served from the API's own address.
@@ -57,6 +59,9 @@ class BrandingService:
             "platform_name": doc.get("platform_name") or "HireLogics",
             "support_email": doc.get("support_email") or "",
             "platform_url": doc.get("platform_url") or "",
+            "default_timezone": doc.get("default_timezone") or "Asia/Kolkata",
+            "default_language": doc.get("default_language") or "en",
+            "allowed_resume_types": doc.get("allowed_resume_types") or list(RESUME_TYPES),
             "branding": doc.get("branding") or {},
         }
 
@@ -71,6 +76,15 @@ class BrandingService:
         for key, limit in (("support_email", 120), ("platform_url", 200)):
             if key in changes:
                 update[key] = str(changes[key] or "").strip()[:limit]
+        for key, limit in (("default_timezone", 60), ("default_language", 10)):
+            if key in changes:
+                update[key] = str(changes[key] or "").strip()[:limit]
+        if "allowed_resume_types" in changes:
+            types = [str(t).strip().lower().lstrip(".") for t in (changes["allowed_resume_types"] or [])]
+            bad = [t for t in types if t not in RESUME_TYPES]
+            if bad or not types:
+                raise BadRequestError(f"Resume file types must be some of: {', '.join(RESUME_TYPES)}.")
+            update["allowed_resume_types"] = list(dict.fromkeys(types))
         if isinstance(changes.get("branding"), dict):
             update["branding"] = _merge_partial(current["branding"], clean_branding(changes["branding"]))
         await self.db[PLATFORM_SETTINGS_COLLECTION].update_one(

@@ -2,7 +2,8 @@
 Role management service handling role CRUD operations and access privileges.
 """
 
-from typing import List
+from typing import Dict, List
+from app.utils.constants import USERS_COLLECTION
 import re
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.role import RoleDocument
@@ -63,7 +64,17 @@ class RoleService:
         super admin, so company admins never see it as an option.
         """
         roles = await self.role_repo.find_active_roles(skip=skip, limit=limit)
-        return [RoleResponse.model_validate(r) for r in roles if include_superadmin or not _is_superadmin_role(r)]
+        counts: Dict[str, int] = {}
+        try:
+            rows = await self.role_repo.db[USERS_COLLECTION].aggregate([
+                {"$match": {"is_deleted": {"$ne": True}}},
+                {"$group": {"_id": "$role", "n": {"$sum": 1}}},
+            ]).to_list(length=None)
+            counts = {r["_id"]: r["n"] for r in rows}
+        except Exception:
+            counts = {}
+        return [RoleResponse.model_validate({**r, "users_count": counts.get(r.get("slug"), 0)})
+                for r in roles if include_superadmin or not _is_superadmin_role(r)]
 
     async def update_role(self, role_id: str, payload: RoleUpdate) -> RoleResponse:
         """Update fields for specified role."""
