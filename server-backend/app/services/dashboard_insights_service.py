@@ -1,7 +1,9 @@
 import asyncio
 import re
 from collections import Counter
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc  # datetime.UTC needs Python 3.11; this works on 3.10 too
 from typing import Any, TypedDict
 
 from app.core.database import get_database

@@ -245,7 +245,12 @@ html.dark .border-slate-100 {
   border-color: #243044 !important;
 }
 html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
-html.dark .divide-slate-200\/70 > :not([hidden]) ~ :not([hidden]) {
+html.dark .divide-slate-200\/70 > :not([hidden]) ~ :not([hidden]),
+/* Tailwind 4 draws dividers on every child but the last */
+html.dark .divide-slate-100 > :not(:last-child),
+html.dark .divide-slate-200 > :not(:last-child),
+html.dark .divide-slate-200\/70 > :not(:last-child),
+html.dark .divide-y > :not(:last-child) {
   border-color: #1f293d !important;
 }
 
