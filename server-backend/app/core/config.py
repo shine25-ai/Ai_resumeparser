@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # Public address of this API (e.g. https://api.example.com), used for logo links inside emails.
     # Empty: the address of the request that triggered the email.
     PUBLIC_API_BASE_URL: str = ""
+    # Base domain for company careers subdomains, e.g. "careers.hirelogics.com" -> acme.careers.hirelogics.com.
+    # Empty: platform subdomains are off; custom domains still work.
+    CAREERS_DOMAIN: str = ""
+    # The built embed script (npm run build:careers), served at /api/v1/public/careers-embed.js.
+    CAREERS_EMBED_FILE: str = os.path.join(os.path.dirname(BASE_DIR), "dist-careers", "shinelogics-careers.js")
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),

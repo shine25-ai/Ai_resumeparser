@@ -23,7 +23,11 @@ ASSET_PATH = "/api/v1/public/branding/assets/"
 
 # SVG is left out on purpose: it can carry scripts and these files are served from the API's own address.
 ALLOWED_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico"}
-MAX_BYTES = {"logo": 512_000, "logo_dark": 512_000, "favicon": 128_000, "login_background": 2_000_000}
+MAX_BYTES = {
+    "logo": 512_000, "logo_dark": 512_000, "favicon": 128_000, "login_background": 2_000_000,
+    # Career page: banner, culture and gallery images, employee photos.
+    "career_image": 2_000_000,
+}
 _MAGIC = {
     b"\x89PNG\r\n\x1a\n": "image/png",
     b"\xff\xd8\xff": "image/jpeg",

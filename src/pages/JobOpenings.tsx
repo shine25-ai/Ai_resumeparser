@@ -21,7 +21,6 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import CareersPageSettingsPanel from "../components/jobs/CareersPageSettingsPanel";
 import CompanyBar from "../components/jobs/CompanyBar";
 import JobWizard from "../components/jobs/JobWizard";
 import { useFeedback } from "../components/ui/Feedback";
@@ -670,7 +669,13 @@ export default function JobOpenings() {
         }}
         onChanged={(changed) => setCompanies((list) => list.map((c) => (c.id === changed.id ? { ...c, ...changed } : c)))}
       />
-      {company && <CareersPageSettingsPanel key={company.id} companyId={company.id} companyName={company.name} />}
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div>
+          <h2 className="text-sm font-bold">Careers page</h2>
+          <p className="text-xs text-slate-500">Its sections, text, images and website address are set in the Career Page builder.</p>
+        </div>
+        <Link to="/career-page" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Open the builder</Link>
+      </section>
 
       {wizard && (
         <JobWizard

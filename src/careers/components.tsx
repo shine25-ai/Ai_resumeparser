@@ -1,8 +1,7 @@
 import { useContext, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import logoUrl from "./assets/shinelogics-logo.png";
 import { OverlayContext } from "./overlay";
-import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, MapPin, Pencil, Upload, Users, X } from "lucide-react";
+import { Briefcase, Check, CheckCircle2, Clock3, FileText, Loader2, Pencil, Upload, X } from "lucide-react";
 import { heardFromOptions, confirmApplicantCode, requestApplicantCode, submitApplication, type PublicJob } from "./api";
 
 /** Building blocks of the public careers site: layout, the job details pop-up and the apply flow. */
@@ -13,7 +12,7 @@ const RESEND_SECONDS = 60; // matches the server's resend cooldown
 const NOTE_LIMIT = 1000; // matches the server's limit
 
 export const primaryBtn =
-  "flex w-full items-center justify-center gap-2 rounded-lg bg-[#5B3EF0] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#4A2FD8] disabled:cursor-not-allowed disabled:bg-[#5B3EF0]/30";
+  "flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--cp-brand)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--cp-brand-dark)] disabled:cursor-not-allowed disabled:bg-[var(--cp-brand)]/30";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -56,10 +55,6 @@ export function Description({ text }: { text: string }) {
 
 // ── Layout pieces ───────────────────────────────────────────────────────────
 
-export function Logo({ className = "h-10" }: { className?: string }) {
-  return <img src={logoUrl} alt="Shinelogics, Building What's Next." className={`w-auto select-none ${className}`} draggable={false} />;
-}
-
 export function Meta({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <span className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
@@ -71,7 +66,7 @@ export function Meta({ icon, children }: { icon: ReactNode; children: ReactNode 
 
 export function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="shrink-0 rounded-full bg-[#EEEAFE] px-2.5 py-1 text-xs font-medium text-[#5B3EF0]">{children}</span>
+    <span className="shrink-0 rounded-full bg-[var(--cp-brand-soft)] px-2.5 py-1 text-xs font-medium text-[var(--cp-brand)]">{children}</span>
   );
 }
 
@@ -136,16 +131,16 @@ function Stepper({ step }: { step: Step }) {
           <li key={s.key} className="relative flex flex-col items-center gap-1.5">
             {i > 0 && (
               <span
-                className={`absolute right-1/2 top-3 mr-4 h-0.5 w-[calc(100%-2rem)] ${i <= current ? "bg-[#5B3EF0]" : "bg-slate-200"}`}
+                className={`absolute right-1/2 top-3 mr-4 h-0.5 w-[calc(100%-2rem)] ${i <= current ? "bg-[var(--cp-brand)]" : "bg-slate-200"}`}
                 aria-hidden
               />
             )}
             <span
               className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
                 done
-                  ? "bg-[#5B3EF0] text-white"
+                  ? "bg-[var(--cp-brand)] text-white"
                   : active
-                    ? "bg-[#5B3EF0] text-white ring-4 ring-[#5B3EF0]/15"
+                    ? "bg-[var(--cp-brand)] text-white ring-4 ring-[var(--cp-brand)]/15"
                     : "border border-slate-300 bg-white text-slate-500"
               }`}
             >
@@ -216,7 +211,7 @@ function OtpInput({ value, onChange, onComplete }: { value: string; onChange: (v
           onKeyDown={(e) => handleKey(i, e)}
           onPaste={handlePaste}
           onFocus={(e) => e.target.select()}
-          className="h-12 w-full rounded-lg border border-slate-300 text-center text-lg font-semibold text-slate-900 focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
+          className="h-12 w-full rounded-lg border border-slate-300 text-center text-lg font-semibold text-slate-900 focus:border-[var(--cp-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--cp-brand)]/20"
         />
       ))}
     </div>
@@ -323,7 +318,7 @@ export function ApplyModal({
       <ModalHeader onClose={onClose} />
       <div className="px-6 pb-6 pt-4">
         <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-          <Briefcase size={16} className="shrink-0 text-[#5B3EF0]" />
+          <Briefcase size={16} className="shrink-0 text-[var(--cp-brand)]" />
           <div className="min-w-0">
             <p className="text-[11px] text-slate-500">Applying for</p>
             <p className="truncate text-sm font-semibold text-slate-900">{job.title}</p>
@@ -355,7 +350,7 @@ export function ApplyModal({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email address"
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-[var(--cp-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--cp-brand)]/20"
               />
             </label>
             <button type="submit" disabled={busy || !email.trim()} className={primaryBtn}>
@@ -385,7 +380,7 @@ export function ApplyModal({
               >
                 <Clock3 size={13} /> {cooldown > 0 ? `Resend code in ${mm}:${ss}` : "Resend code"}
               </button>
-              <button onClick={editEmail} className="inline-flex items-center gap-1 font-medium text-[#5B3EF0] hover:underline">
+              <button onClick={editEmail} className="inline-flex items-center gap-1 font-medium text-[var(--cp-brand)] hover:underline">
                 <Pencil size={12} /> Edit email
               </button>
             </div>
@@ -404,7 +399,7 @@ export function ApplyModal({
                 <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
                 <span className="truncate">{email.trim()}</span>
               </span>
-              <button onClick={editEmail} className="shrink-0 text-xs font-medium text-[#5B3EF0] hover:underline">Change</button>
+              <button onClick={editEmail} className="shrink-0 text-xs font-medium text-[var(--cp-brand)] hover:underline">Change</button>
             </div>
 
             <input
@@ -438,7 +433,7 @@ export function ApplyModal({
                   <span className="text-slate-500">100%</span>
                 </div>
                 <div className="mt-3 flex gap-4 border-t border-slate-100 pt-3 text-xs font-medium">
-                  <button onClick={() => fileInput.current?.click()} className="text-[#5B3EF0] hover:underline">Replace file</button>
+                  <button onClick={() => fileInput.current?.click()} className="text-[var(--cp-brand)] hover:underline">Replace file</button>
                   <button onClick={() => setFile(null)} className="text-rose-600 hover:underline">Remove</button>
                 </div>
               </div>
@@ -451,16 +446,16 @@ export function ApplyModal({
                 onDragLeave={() => setDragging(false)}
                 onDrop={onDrop}
                 className={`flex flex-col items-center gap-1 rounded-xl border border-dashed p-6 text-center transition ${
-                  dragging ? "border-[#5B3EF0] bg-[#5B3EF0]/5" : "border-slate-300"
+                  dragging ? "border-[var(--cp-brand)] bg-[var(--cp-brand)]/5" : "border-slate-300"
                 }`}
               >
-                <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-[#EEEAFE] text-[#5B3EF0]">
+                <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--cp-brand-soft)] text-[var(--cp-brand)]">
                   <Upload size={18} />
                 </span>
                 <p className="text-sm font-semibold text-slate-900">Drag and drop your resume here</p>
                 <p className="text-sm text-slate-500">
                   or{" "}
-                  <button onClick={() => fileInput.current?.click()} className="font-semibold text-[#5B3EF0] underline">
+                  <button onClick={() => fileInput.current?.click()} className="font-semibold text-[var(--cp-brand)] underline">
                     browse files
                   </button>
                 </p>
@@ -473,7 +468,7 @@ export function ApplyModal({
               <select
                 value={heardFrom}
                 onChange={(e) => setHeardFrom(e.target.value)}
-                className={`mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20 ${
+                className={`mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-[var(--cp-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--cp-brand)]/20 ${
                   heardFrom ? "text-slate-900" : "text-slate-400"
                 }`}
               >
@@ -497,7 +492,7 @@ export function ApplyModal({
                     ? "Who referred you? You can also add your notice period or anything else."
                     : "For example: your notice period, preferred location, or a portfolio link."
                 }
-                className="mt-1.5 w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-[#5B3EF0] focus:outline-none focus:ring-2 focus:ring-[#5B3EF0]/20"
+                className="mt-1.5 w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-[var(--cp-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--cp-brand)]/20"
               />
               <span className="mt-1 block text-right text-[11px] text-slate-400">{note.length}/{NOTE_LIMIT}</span>
             </label>
@@ -527,142 +522,6 @@ export function ApplyModal({
         )}
 
         {error && <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      </div>
-    </Modal>
-  );
-}
-
-const COMPANY_SITE = "https://shinelogics.com";
-const CAREERS_EMAIL = "careers@shinelogics.com";
-
-/** onHome: back to the role list (closes any open role). */
-export function CareersHeader({ homeHref, onHome }: { homeHref: string; onHome: () => void }) {
-  const goHome = (e: React.MouseEvent) => {
-    e.preventDefault();
-    onHome();
-  };
-  return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <a href={homeHref} onClick={goHome} aria-label="Shinelogics careers home"><Logo className="h-11" /></a>
-        <nav className="flex h-full items-center gap-6 text-sm font-medium">
-          <a href={homeHref} onClick={goHome} aria-current="page" className="flex h-full items-center border-b-2 border-[#5B3EF0] text-[#5B3EF0]">Careers</a>
-          <a href={COMPANY_SITE} target="_blank" rel="noreferrer" className="flex h-full items-center border-b-2 border-transparent text-slate-800 hover:text-[#5B3EF0]">
-            About Us
-          </a>
-        </nav>
-      </div>
-    </header>
-  );
-}
-
-export function CareersFooter() {
-  return (
-    <footer className="border-t border-slate-200 bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <div className="max-w-xs">
-          <Logo className="h-16" />
-          <p className="mt-4 text-sm leading-6 text-slate-600">
-            We design and build AI-powered products that turn ideas into meaningful technology.
-          </p>
-          <ul className="mt-5 space-y-2.5 text-sm text-slate-800">
-            <li><a href={COMPANY_SITE} target="_blank" rel="noreferrer" className="hover:text-[#5B3EF0]">shinelogics.com</a></li>
-            <li>LinkedIn</li>
-            <li><a href={`mailto:${CAREERS_EMAIL}`} className="hover:text-[#5B3EF0]">{CAREERS_EMAIL}</a></li>
-          </ul>
-        </div>
-        <div className="mt-8 border-t border-slate-200 pt-6 text-xs text-slate-500">
-          © {new Date().getFullYear()} Shinelogics. All rights reserved.
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-// ── Job details pop-up (Figma: "View Details") ─────────────────────────────
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <h3 className="mb-3 border-l-[3px] border-[#5B3EF0] pl-2.5 text-sm font-semibold text-slate-900">{children}</h3>;
-}
-
-function BulletList({ items }: { items: string[] }) {
-  return (
-    <ul className="space-y-2">
-      {items.map((item, i) => (
-        <li key={i} className="flex gap-2.5 text-sm leading-6 text-slate-600">
-          <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B3EF0]" aria-hidden />
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
- * Every section comes from the role as set up in the resume portal (Job openings page).
- * Empty sections are left out.
- */
-export function JobDetailsModal({ job, onClose, onApply }: { job: PublicJob; onClose: () => void; onApply: () => void }) {
-  const sections: { title: string; body: ReactNode; show: boolean }[] = [
-    { title: "About the Role", body: <Description text={job.description} />, show: !!job.description.trim() },
-    { title: "Key Responsibilities", body: <BulletList items={job.responsibilities} />, show: job.responsibilities.length > 0 },
-    {
-      title: "Required Skills",
-      body: (
-        <div className="flex flex-wrap gap-2">
-          {job.required_skills.map((skill) => (
-            <span key={skill} className="rounded-full bg-[#EEEAFE] px-3 py-1 text-xs font-medium text-[#5B3EF0]">{skill}</span>
-          ))}
-        </div>
-      ),
-      show: job.required_skills.length > 0,
-    },
-    { title: "Qualifications", body: <BulletList items={job.qualifications} />, show: job.qualifications.length > 0 },
-    { title: "Preferred Skills", body: <BulletList items={job.preferred_skills} />, show: job.preferred_skills.length > 0 },
-  ].filter((section) => section.show);
-
-  return (
-    <Modal onClose={onClose} wide label={`${job.title} details`}>
-      <div className="shrink-0 border-b-2 border-[#5B3EF0] px-6 pb-4 pt-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            {job.department && (
-              <span className="inline-block rounded-md bg-[#EEEAFE] px-2.5 py-1 text-xs font-medium text-[#5B3EF0]">{job.department}</span>
-            )}
-            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{job.title}</h2>
-          </div>
-          <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
-          {job.location && <Meta icon={<MapPin size={15} />}>{job.location}</Meta>}
-          {job.employment_type && <Meta icon={<Briefcase size={15} />}>{job.employment_type}</Meta>}
-          {job.experience && <Meta icon={<Clock3 size={15} />}>{job.experience}</Meta>}
-          <Meta icon={<Users size={15} />}>{openingsLabel(job.open_positions)}</Meta>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto px-6">
-        {sections.length === 0 ? (
-          <p className="py-6 text-sm text-slate-500">More details will be shared with shortlisted candidates.</p>
-        ) : (
-          sections.map((section) => (
-            <section key={section.title} className="py-5">
-              <SectionTitle>{section.title}</SectionTitle>
-              {section.body}
-            </section>
-          ))
-        )}
-      </div>
-
-      <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 px-6 py-4">
-        <button onClick={onClose} className="rounded-lg border border-slate-300 px-6 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          Close
-        </button>
-        <button onClick={onApply} className="rounded-lg bg-[#5B3EF0] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#4A2FD8]">
-          Apply Now
-        </button>
       </div>
     </Modal>
   );

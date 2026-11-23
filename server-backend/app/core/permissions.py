@@ -91,6 +91,8 @@ PAGE_FOR: Dict[str, str] = {
     "settings:edit": "settings",
     "users:view": "role-management",
     "roles:view": "role-management",
+    "career_page:view": "career-page",
+    "audit_logs:view": "audit-log",
 }
 
 

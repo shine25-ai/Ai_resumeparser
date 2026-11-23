@@ -1,6 +1,7 @@
 import { BASE_URL, apiFetch } from "./Api";
 import { readJson } from "../careers/api";
 import type { Branding } from "../theme/ThemeProvider";
+import type { CareerPageContent, PublicCareerPage } from "../careers/api";
 
 // ── Invitations ──────────────────────────────────────────────────────────────
 
@@ -171,7 +172,7 @@ export const saveBranding = async (changes: BrandingChanges): Promise<BrandingDa
 export const resetBranding = async (): Promise<BrandingData> => readJson(await apiFetch(BRANDING, { method: "DELETE" }));
 
 export const uploadBrandingImage = async (
-  kind: "logo" | "logo_dark" | "favicon" | "login_background",
+  kind: "logo" | "logo_dark" | "favicon" | "login_background" | "career_image",
   file: File,
   scope: "company" | "platform" = "company"
 ): Promise<{ id: string; url: string }> => {
@@ -185,3 +186,59 @@ export const fetchPlatformSettings = async (): Promise<PlatformSettings> => read
 
 export const savePlatformSettings = async (changes: Partial<PlatformSettings>): Promise<PlatformSettings> =>
   readJson(await apiFetch(`${BASE_URL}/platform/settings`, { method: "PUT", ...json(changes) }));
+
+// ── Career page builder ──────────────────────────────────────────────────────
+
+
+export interface CareerPageAdmin {
+  draft: CareerPageContent;
+  published: CareerPageContent | null;
+  has_unpublished_changes: boolean;
+  published_at: string | null;
+  published_by: { id?: string; name?: string } | null;
+  updated_at: string;
+  section_types: Record<string, string>;
+  templates: string[];
+}
+
+const CAREER_PAGE = `${BASE_URL}/career-page`;
+
+export const fetchCareerPageAdmin = async (): Promise<CareerPageAdmin> => readJson(await apiFetch(CAREER_PAGE));
+
+export const saveCareerDraft = async (content: CareerPageContent): Promise<CareerPageAdmin> =>
+  readJson(await apiFetch(`${CAREER_PAGE}/draft`, { method: "PUT", ...json(content) }));
+
+export const publishCareerPage = async (): Promise<CareerPageAdmin> => readJson(await apiFetch(`${CAREER_PAGE}/publish`, { method: "POST" }));
+
+export const discardCareerDraft = async (): Promise<CareerPageAdmin> => readJson(await apiFetch(`${CAREER_PAGE}/discard`, { method: "POST" }));
+
+export const fetchPublicCareerPage = async (slug: string): Promise<PublicCareerPage> =>
+  readJson(await fetch(`${BASE_URL}/public/career-page?company=${encodeURIComponent(slug)}`));
+
+// ── Career page domains and integration ──────────────────────────────────────
+
+export interface CareerDomains {
+  careers_domain: string;
+  subdomain_available: boolean;
+  subdomain_enabled: boolean;
+  subdomain: string;
+  custom_domain: string;
+  custom_status: "" | "pending" | "verified" | "failed";
+  verified_at: string | null;
+  last_check: { at: string; problems: string[] } | null;
+  dns: { cname: { name: string; value: string }; txt: { name: string; value: string } } | null;
+  problems?: string[];
+}
+
+export const fetchCareerDomains = async (): Promise<CareerDomains> => readJson(await apiFetch(`${CAREER_PAGE}/domains`));
+export const setCareerSubdomain = async (enabled: boolean): Promise<CareerDomains> =>
+  readJson(await apiFetch(`${CAREER_PAGE}/domains/subdomain`, { method: "PUT", ...json({ enabled }) }));
+export const setCareerCustomDomain = async (domain: string): Promise<CareerDomains> =>
+  readJson(await apiFetch(`${CAREER_PAGE}/domains/custom`, { method: "PUT", ...json({ domain }) }));
+export const verifyCareerCustomDomain = async (): Promise<CareerDomains> =>
+  readJson(await apiFetch(`${CAREER_PAGE}/domains/custom/verify`, { method: "POST" }));
+export const removeCareerCustomDomain = async (): Promise<CareerDomains> =>
+  readJson(await apiFetch(`${CAREER_PAGE}/domains/custom`, { method: "DELETE" }));
+
+export const fetchCareerIntegration = async (): Promise<{ seen: { origin: string; last_seen_at: string; first_seen_at: string } | null; embed_script_available: boolean }> =>
+  readJson(await apiFetch(`${CAREER_PAGE}/integration`));

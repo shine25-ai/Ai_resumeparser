@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { BASE_URL } from "./utils/Api";
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { TopHeader } from "./components/TopHeader";
@@ -20,6 +22,9 @@ import CareersPage from "./careers/CareersPage";
 import JobOpenings from "./pages/JobOpenings";
 import AuditLog from "./pages/AuditLog";
 import CandidateTracker from "./pages/CandidateTracker";
+import CareerPageBuilder from "./pages/CareerPageBuilder";
+import CareerPagePreviewFrame from "./pages/CareerPagePreviewFrame";
+import CareerPageIntegrate, { PublicIntegrationGuide } from "./pages/CareerPageIntegrate";
 
 // Role links are now /jobs?job=<id> (the careers page can be embedded in any site)
 function RedirectToJob() {
@@ -39,7 +44,54 @@ function RedirectToCandidate() {
   return <Navigate to={`/candidates/${id}`} replace />;
 }
 
+/**
+ * A company's own careers address (careers.acme.com) or platform subdomain (acme.<careers domain>) shows only
+ * that company's careers page. Hosts listed in VITE_APP_HOSTS (and localhost) are the portal itself.
+ */
+function useCareersHost(): { checking: boolean; slug: string | null } {
+  const host = window.location.hostname.toLowerCase();
+  const appHosts = String(import.meta.env.VITE_APP_HOSTS || "").split(",").map((h: string) => h.trim().toLowerCase()).filter(Boolean);
+  const skip = ["localhost", "127.0.0.1", "[::1]"].includes(host) || /^\d+\.\d+\.\d+\.\d+$/.test(host) || appHosts.includes(host);
+  const cacheKey = `careers_host:${host}`;
+  const cached = (() => {
+    try {
+      return sessionStorage.getItem(cacheKey);
+    } catch {
+      return null;
+    }
+  })();
+  const [state, setState] = useState<{ checking: boolean; slug: string | null }>({
+    checking: !skip && cached === null,
+    slug: cached && cached !== "-" ? cached : null,
+  });
+  useEffect(() => {
+    if (skip || cached !== null) return;
+    fetch(`${BASE_URL}/public/career-page/resolve-host?host=${encodeURIComponent(host)}`)
+      .then((r) => r.json())
+      .then((body) => {
+        const slug = body?.data?.slug || null;
+        try {
+          sessionStorage.setItem(cacheKey, slug || "-");
+        } catch {
+          // only a cache
+        }
+        setState({ checking: false, slug });
+      })
+      .catch(() => setState({ checking: false, slug: null }));
+  }, [skip, cached, cacheKey, host]);
+  return state;
+}
+
 export default function App() {
+  const careersHost = useCareersHost();
+  if (careersHost.checking) return null;
+  if (careersHost.slug) {
+    return (
+      <FeedbackProvider>
+        <CareersPage manageTitle company={careersHost.slug} />
+      </FeedbackProvider>
+    );
+  }
   return (
     <FeedbackProvider>
       <Router>
@@ -52,6 +104,8 @@ export default function App() {
           <Route path="/jobs/:jobId" element={<RedirectToJob />} />
           <Route path="/careers" element={<CareersPage manageTitle />} />
           <Route path="/careers/:company" element={<CompanyCareersPage />} />
+          <Route path="/careers/:company/preview" element={<CareerPagePreviewFrame />} />
+          <Route path="/careers/:company/integrate" element={<PublicIntegrationGuide />} />
           {/* Public candidate self-service status tracker */}
           <Route path="/track/:token" element={<CandidateTracker />} />
           <Route element={<ProtectedRoute />}>
@@ -87,6 +141,8 @@ export default function App() {
                         <Route path="/audit-log" element={<AuditLog />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/companies" element={<Companies />} />
+                        <Route path="/career-page" element={<CareerPageBuilder />} />
+                        <Route path="/career-page/integrate" element={<CareerPageIntegrate />} />
                       </Routes>
                     </div>
                   </main>

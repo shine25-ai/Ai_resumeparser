@@ -20,7 +20,7 @@ import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import styles from "./careers.css?inline";
 import CareersPage, { type CareersPageProps } from "./CareersPage";
-import { setCareersApiBaseUrl } from "./api";
+import { markEmbedded, setCareersApiBaseUrl } from "./api";
 import { OverlayContext } from "./overlay";
 
 export interface CareersEmbedOptions extends CareersPageProps {
@@ -58,6 +58,7 @@ export function mount(target: Element | string, options: CareersEmbedOptions = {
 
   const { apiBaseUrl, ...pageProps } = options;
   if (apiBaseUrl) setCareersApiBaseUrl(apiBaseUrl);
+  markEmbedded();
   registerCssProperties();
 
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
@@ -114,18 +115,21 @@ function optionsFrom(el: HTMLElement): CareersEmbedOptions {
   };
 }
 
-/** Mount on every <div data-shinelogics-careers> on the page that is not mounted yet. */
+/** Mount on every <div data-careers> (or the older data-shinelogics-careers) not mounted yet. */
 export function mountAll() {
-  document.querySelectorAll<HTMLElement>("[data-shinelogics-careers]").forEach((el) => mount(el, optionsFrom(el)));
+  document.querySelectorAll<HTMLElement>("[data-careers], [data-shinelogics-careers]").forEach((el) => mount(el, optionsFrom(el)));
 }
 
 declare global {
   interface Window {
+    CareersWidget?: { mount: typeof mount; mountAll: typeof mountAll };
     ShinelogicsCareers?: { mount: typeof mount; mountAll: typeof mountAll };
   }
 }
 
-window.ShinelogicsCareers = { mount, mountAll };
+// CareersWidget is the name to use; ShinelogicsCareers keeps older pages working.
+window.CareersWidget = { mount, mountAll };
+window.ShinelogicsCareers = window.CareersWidget;
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountAll);
 else mountAll();

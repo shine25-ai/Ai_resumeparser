@@ -18,6 +18,12 @@
    */
   .careers-root {
     all: initial;
+    /* The company's branding; CareersPage sets these from the career page API. */
+    --cp-brand: #1c7975;
+    --cp-brand-dark: color-mix(in oklab, var(--cp-brand) 82%, black);
+    --cp-brand-soft: color-mix(in oklab, var(--cp-brand) 10%, white);
+    --cp-bg: #f4f7fb;
+    --cp-dark: #0b2240;
     display: block;
     color-scheme: light;
     font-family: var(--font-sans);
@@ -25,7 +31,7 @@
     line-height: 1.5;
     text-align: left;
     -webkit-text-size-adjust: 100%;
-    @apply bg-[#F4F4F8] text-slate-900 antialiased;
+    @apply bg-[var(--cp-bg)] text-slate-900 antialiased;
   }
 
   /* The pop-up layer on <body>: holds only fixed pop-ups, so it takes no space and shows nothing. */

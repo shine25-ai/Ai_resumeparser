@@ -16,6 +16,12 @@ export const setCareersApiBaseUrl = (url: string) => {
 
 const publicJobsUrl = () => `${apiBaseUrl}/public/jobs`;
 
+/** Set by the embed script: its job requests say so, so the portal can show "Connected — seen on <site>". */
+let embedded = false;
+export const markEmbedded = () => {
+  embedded = true;
+};
+
 /** Page address of a company in the resume portal, e.g. "acme". Empty shows the default company. */
 const companyQuery = (company?: string) => {
   const slug = (company || "").trim().toLowerCase();
@@ -113,7 +119,9 @@ const normalizeJob = (job: Partial<PublicJob> & { id: string; title: string }): 
 });
 
 export const fetchPublicJobs = async (company?: string): Promise<PublicJob[]> =>
-  ((await readJson(await fetch(`${publicJobsUrl()}${companyQuery(company)}`))) as PublicJob[]).map(normalizeJob);
+  ((await readJson(
+    await fetch(`${publicJobsUrl()}${companyQuery(company)}`, embedded ? { headers: { "X-Careers-Embed": "1" } } : undefined)
+  )) as PublicJob[]).map(normalizeJob);
 
 export const fetchPageSettings = async (company?: string): Promise<CareersPageSettings> => ({
   ...DEFAULT_PAGE_SETTINGS,
@@ -172,3 +180,102 @@ export const submitApplication = async (
     })
   );
 };
+
+// ── Career page (builder content, published) ─────────────────────────────────
+
+export interface CareerLink {
+  label: string;
+  url: string;
+}
+
+export type CareerSectionType =
+  | "open_positions" | "about" | "culture" | "life" | "benefits" | "testimonials" | "faq" | "gallery" | "video";
+
+export interface CareerItem {
+  title?: string;
+  text?: string;
+  image_url?: string;
+  name?: string;
+  role?: string;
+  quote?: string;
+  photo_url?: string;
+  q?: string;
+  a?: string;
+}
+
+export interface CareerSection {
+  id: string;
+  type: CareerSectionType;
+  visible: boolean;
+  title: string;
+  subtitle?: string;
+  text?: string;
+  image_url?: string;
+  items?: CareerItem[];
+  images?: string[];
+  url?: string;
+}
+
+export interface CareerPageContent {
+  template: "classic" | "modern" | "minimal";
+  header: { show: boolean; links: CareerLink[] };
+  hero: { eyebrow: string; title: string; subtitle: string; banner_url: string; cta_label: string };
+  sections: CareerSection[];
+  texts: { search_placeholder: string; empty_message: string; success_title: string; success_message: string };
+  footer: { show: boolean; text: string; website: string; email: string; linkedin: string; links: CareerLink[] };
+  seo: { title: string; description: string; share_image_url: string };
+}
+
+/** The company's branding as the careers page needs it (no email settings). */
+export interface CareerBranding {
+  app_name: string;
+  colors: { primary: string; accent: string; sidebar_bg: string; sidebar_text: string; background: string };
+  font_family?: string;
+  radius?: string;
+  logo_url: string;
+  favicon_url?: string;
+}
+
+export interface CareerCompany {
+  id: string;
+  name: string;
+  slug: string;
+  website: string;
+  industry: string;
+  description: string;
+  city: string;
+}
+
+export interface PublicCareerPage {
+  content: CareerPageContent;
+  company: CareerCompany;
+  branding: CareerBranding;
+  published_at?: string;
+}
+
+export const fetchCareerPage = async (company?: string): Promise<PublicCareerPage> =>
+  readJson(await fetch(`${apiBaseUrl}/public/career-page${companyQuery(company)}`));
+
+/** Images uploaded to the portal are served by its API (stored as /api/v1/...). */
+export const careerAssetUrl = (url?: string): string => {
+  if (!url) return "";
+  if (url.startsWith("/api/")) {
+    try {
+      return new URL(apiBaseUrl).origin + url;
+    } catch {
+      return url;
+    }
+  }
+  return url;
+};
+
+/** The page used when the API has no career page yet (older servers): the old page text over the defaults. */
+export const contentFromOldSettings = (s: CareersPageSettings): CareerPageContent => ({
+  template: "classic",
+  header: { show: true, links: [] },
+  hero: { eyebrow: s.hero_eyebrow, title: s.hero_title, subtitle: s.hero_subtitle, banner_url: "", cta_label: "Explore open positions" },
+  sections: [{ id: "open_positions", type: "open_positions", visible: true, title: s.listing_title, subtitle: s.listing_subtitle }],
+  texts: { search_placeholder: s.search_placeholder, empty_message: s.empty_message, success_title: s.success_title, success_message: s.success_message },
+  footer: { show: true, text: "", website: "", email: "", linkedin: "", links: [] },
+  seo: { title: s.hero_eyebrow, description: s.hero_subtitle, share_image_url: "" },
+});

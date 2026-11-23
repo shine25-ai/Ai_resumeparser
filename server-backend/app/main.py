@@ -25,6 +25,7 @@ from app.routes import masters as masters_routes
 from app.routes import files as files_routes
 from app.routes import invitations as invitation_routes
 from app.routes import branding as branding_routes
+from app.routes import career_page as career_page_routes
 from app.middleware.file_links import FileLinkMiddleware
 from app.routes import audit as audit_routes
 
@@ -110,6 +111,8 @@ def create_application() -> FastAPI:
     app.include_router(branding_routes.router)
     app.include_router(branding_routes.public_router)
     app.include_router(branding_routes.platform_router)
+    app.include_router(career_page_routes.router)
+    app.include_router(career_page_routes.public_router)
     app.include_router(audit_routes.router)
     # ── Serve Frontend Static Files ──────────────────────────────────────────────
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

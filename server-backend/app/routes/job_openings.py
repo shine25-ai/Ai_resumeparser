@@ -88,10 +88,19 @@ class CodeConfirmRequest(BaseModel):
 
 @public_router.get("", summary="List a company's open roles with open positions")
 async def list_public_openings(
+    request: Request,
     company: Optional[str] = CompanyParam,
     service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     data = await service.list_public_openings(company)
+    # The embed script marks its requests: remember which website shows this company's jobs ("Test my integration").
+    origin = request.headers.get("origin") or ""
+    if request.headers.get("x-careers-embed") and origin.startswith("http"):
+        from app.services.career_page_service import record_embed_seen
+        from app.core.tenant import current_company_id
+
+        await record_embed_seen(db, current_company_id(), origin)
     return success_response(data=data, message="Open roles retrieved successfully.")
 
 

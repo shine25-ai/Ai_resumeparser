@@ -12,6 +12,8 @@ const ROUTE_PERMISSION_MAP: Record<string, string> = {
   "/interviews": "interviews",
   "/analytics": "analytics",
   "/settings": "settings",
+  "/career-page": "career-page",
+  "/audit-log": "audit-log",
 };
 
 export const ProtectedRoute: React.FC = () => {
