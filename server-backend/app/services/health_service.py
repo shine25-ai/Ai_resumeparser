@@ -45,6 +45,35 @@ class HealthService:
         # 2. AI Parser service check
         ai_parser_status = "operational"
         ai_parser_details = "PyMuPDF & AI Extraction Engine active"
+        last_success = None
+        try:
+            status_doc = await self.db["system_status"].find_one({"service": "ai_parser"})
+            if status_doc:
+                last_success = status_doc.get("last_success_at")
+
+            import httpx
+            base_url = getattr(settings, "AI_PARSER_URL", "http://localhost:8001/api/upload").replace("/api/upload", "").rstrip("/")
+            health_url = f"{base_url}/health"
+            try:
+                async with httpx.AsyncClient(timeout=1.0) as client:
+                    resp = await client.get(health_url)
+                    if resp.status_code == 200:
+                        ai_parser_status = "operational"
+                        ai_parser_details = "AI Extraction Engine responsive"
+                        await self.db["system_status"].update_one(
+                            {"service": "ai_parser"},
+                            {"$set": {"last_success_at": now, "status": "operational"}},
+                            upsert=True,
+                        )
+                        last_success = now
+                    else:
+                        ai_parser_status = "down"
+                        ai_parser_details = f"HTTP {resp.status_code}. Last successful heartbeat: {last_success or 'never'}"
+            except Exception as e:
+                ai_parser_status = "down"
+                ai_parser_details = f"Service unreachable ({type(e).__name__}). Last successful heartbeat: {last_success or 'none recorded'}"
+        except Exception:
+            pass
 
         # 3. Email (SMTP / Mailer) check
         email_status = "configured" if getattr(settings, "SMTP_HOST", None) else "ready (in-app fallback)"
@@ -119,6 +148,7 @@ class HealthService:
                 "ai_parser": {
                     "status": ai_parser_status,
                     "details": ai_parser_details,
+                    "last_success": last_success,
                 },
                 "email": {
                     "status": email_status,

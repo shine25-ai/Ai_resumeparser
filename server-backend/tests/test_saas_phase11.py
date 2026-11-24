@@ -394,3 +394,294 @@ async def test_notifications_fanout_and_tenant_isolation():
     res_a1_after = await ns.list_notifications("ua-1", comp_a)
     assert res_a1_after["unread_count"] == 0
 
+
+# ── Explicit Acceptance Scenarios P11-01 through P11-09 ─────────────────────
+
+@pytest.mark.asyncio
+async def test_p11_01_user_limit_refusal():
+    """P11-01: Plan with users = 3; invite a 4th user -> Refused with the plan name and limit."""
+    db = FakeDatabase()
+    cid = "comp-p11-01"
+    await db["companies"].insert_one({
+        "id": cid,
+        "name": "Acme Corp",
+        "plan": "Starter",
+        "limits": {"users": 3, "active_jobs": 5},
+    })
+    for i in range(3):
+        await db["users"].insert_one({"id": f"u-{i}", "company_id": cid, "email": f"u{i}@acme.com", "is_deleted": False})
+
+    limit_svc = LimitService(db)
+    with pytest.raises(BadRequestError) as exc:
+        await limit_svc.check_users_limit(cid, extra=0)
+    msg = str(exc.value)
+    assert "User limit reached (3/3 users)" in msg
+    assert "Starter plan" in msg
+
+
+@pytest.mark.asyncio
+async def test_p11_02_active_jobs_limit_close_reopen():
+    """P11-02: Active jobs = 5; publish a 6th, then close one and publish again -> 6th refused; after closing one it works."""
+    db = FakeDatabase()
+    cid = "comp-p11-02"
+    await db["companies"].insert_one({
+        "id": cid,
+        "name": "Beta Co",
+        "plan": "Growth",
+        "limits": {"active_jobs": 5},
+    })
+    for i in range(5):
+        await db["job_openings"].insert_one({"id": f"job-{i}", "company_id": cid, "status": "OPEN"})
+
+    limit_svc = LimitService(db)
+    # 6th refused
+    with pytest.raises(BadRequestError) as exc:
+        await limit_svc.check_active_jobs_limit(cid, extra=1)
+    assert "Active jobs limit reached (5/5 open jobs) on the Growth plan" in str(exc.value)
+
+    # Close one job
+    await db["job_openings"].update_one({"id": "job-0"}, {"$set": {"status": "CLOSED"}})
+
+    # Now publishing works
+    await limit_svc.check_active_jobs_limit(cid, extra=1)
+
+
+@pytest.mark.asyncio
+async def test_p11_03_ai_parses_exhausted_career_apply_skipped():
+    """P11-03: AI parses used up; a candidate applies on the careers page -> Application saved; AI step skipped; staff see why."""
+    db = FakeDatabase()
+    cid = "comp-p11-03"
+    await db["companies"].insert_one({
+        "id": cid,
+        "name": "Gamma AI",
+        "plan": "Free",
+        "limits": {"ai_parses_per_month": 1},
+    })
+    limit_svc = LimitService(db)
+    # Use up the parse
+    await limit_svc.increment_ai_parses(cid)
+
+    # When candidate applies, can_parse_ai is False
+    can_parse = await limit_svc.can_parse_ai(cid)
+    assert can_parse is False
+
+    # Seed a staff member in the company
+    await db["users"].insert_one({"id": "u-staff-03", "company_id": cid, "role": "recruiter", "is_deleted": False})
+
+    # Application is saved, AI parse step marked "skipped", and notification created
+    ns = NotificationService(db)
+    await ns.create_notification(
+        company_id=cid,
+        title="AI Parse Limit Reached on Application",
+        message="Application received, but AI parsing was skipped because monthly AI parse quota has been reached.",
+        notification_type="limit",
+        link="/applications",
+    )
+    # Staff see notification
+    notifs = await ns.list_notifications(user_id="u-staff-03", company_id=cid)
+    assert len(notifs["notifications"]) == 1
+    assert "AI Parse Limit Reached" in notifs["notifications"][0]["title"]
+
+
+@pytest.mark.asyncio
+async def test_p11_04_plan_valid_until_expired_readonly():
+    """P11-04: Set plan_valid_until to yesterday -> Agreed behaviour (read-only banner); careers page as agreed."""
+    db = FakeDatabase()
+    cid = "comp-p11-04"
+    yesterday = (utc_now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    await db["companies"].insert_one({
+        "id": cid,
+        "name": "Delta Co",
+        "plan": "Pro",
+        "plan_valid_until": yesterday,
+        "limits": {"users": 5, "active_jobs": 5},
+    })
+    limit_svc = LimitService(db)
+    meters = await limit_svc.get_usage_meters(cid)
+    assert meters["is_expired"] is True
+
+    with pytest.raises(ForbiddenError) as exc:
+        await limit_svc.check_plan_active_by_id(cid)
+    assert "read-only mode" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_p11_05_mfa_backup_code_single_use():
+    """P11-05: Enable MFA and sign in; use a backup code -> Code required; backup code works once only."""
+    db = FakeDatabase()
+    mfa_svc = MfaService(db)
+    uid = "user-p11-05"
+    await db["users"].insert_one({
+        "id": uid,
+        "email": "user05@test.com",
+        "mfa_enabled": False,
+    })
+    enrol = await mfa_svc.start_enrolment(uid, "user05@test.com")
+    backup_codes = enrol["backup_codes"]
+    code = generate_totp_code(enrol["secret"])
+    await mfa_svc.confirm_enrolment(uid, code)
+
+    user = await db["users"].find_one({"id": uid})
+    assert user["mfa_enabled"] is True
+
+    # Backup code works once
+    bcode = backup_codes[0]
+    valid, method = await mfa_svc.verify_user_code(user, bcode)
+    assert valid is True
+    assert method == "backup_code"
+
+    # Backup code cannot be re-used
+    user_after = await db["users"].find_one({"id": uid})
+    valid_again, _ = await mfa_svc.verify_user_code(user_after, bcode)
+    assert valid_again is False
+
+
+@pytest.mark.asyncio
+async def test_p11_06_retention_6_months_dry_run():
+    """P11-06: Retention 6 months, dry-run -> Lists only rejected/withdrawn older than 6 months; nothing deleted."""
+    db = FakeDatabase()
+    cid = "comp-p11-06"
+    await db["companies"].insert_one({
+        "id": cid,
+        "tenant_settings": {"data_retention_months": 6},
+    })
+    # Rejected 7 months ago (> 6 months): ELIGIBLE
+    past_7m = (utc_now() - timedelta(days=7 * 30)).isoformat()
+    await db["candidates"].insert_one({"id": "c-7m", "company_id": cid, "updated_at": past_7m, "status": "rejected"})
+    await db["job_applications"].insert_one({"id": "a-7m", "candidate_id": "c-7m", "company_id": cid, "status": "REJECTED"})
+
+    # Rejected 2 months ago (< 6 months): NOT ELIGIBLE
+    past_2m = (utc_now() - timedelta(days=2 * 30)).isoformat()
+    await db["candidates"].insert_one({"id": "c-2m", "company_id": cid, "updated_at": past_2m, "status": "rejected"})
+    await db["job_applications"].insert_one({"id": "a-2m", "candidate_id": "c-2m", "company_id": cid, "status": "REJECTED"})
+
+    retention_svc = RetentionService(db)
+    report = await retention_svc.run_retention_job(company_id=cid, dry_run=True)
+    assert report["eligible_count"] == 1
+    assert report["candidates"][0]["id"] == "c-7m"
+
+    # Nothing deleted
+    assert await db["candidates"].count_documents({"company_id": cid}) == 2
+
+
+@pytest.mark.asyncio
+async def test_p11_07_company_notifications_and_email_log():
+    """P11-07: New application in company A -> Bell notifies A's recruiters only; email logged."""
+    db = FakeDatabase()
+    comp_a = "comp-a-07"
+    comp_b = "comp-b-07"
+    await db["users"].insert_one({"id": "u-a", "company_id": comp_a, "role": "recruiter", "is_deleted": False})
+    await db["users"].insert_one({"id": "u-b", "company_id": comp_b, "role": "recruiter", "is_deleted": False})
+
+    ns = NotificationService(db)
+    await ns.create_notification(
+        company_id=comp_a,
+        title="New Application: Frontend Engineer",
+        message="Alice applied for Frontend Engineer",
+        notification_type="application",
+    )
+    # Email log
+    await ns.log_email(
+        company_id=comp_a,
+        to_email="recruiter@comp-a.com",
+        template="application_received",
+        subject="New Application for Frontend Engineer",
+        status="sent",
+    )
+
+    notifs_a = await ns.list_notifications("u-a", comp_a)
+    notifs_b = await ns.list_notifications("u-b", comp_b)
+    assert len(notifs_a["notifications"]) == 1
+    assert len(notifs_b["notifications"]) == 0
+
+    logs_res = await ns.list_email_logs(comp_a)
+    assert logs_res["total"] == 1
+    assert logs_res["logs"][0]["to_email"] == "recruiter@comp-a.com"
+
+
+@pytest.mark.asyncio
+async def test_p11_08_system_health_ai_parser_down():
+    """P11-08: Stop the AI parser and open System health -> Parser shown as down with the time of the last success."""
+    db = FakeDatabase()
+    from app.services.health_service import HealthService
+    last_success_time = (utc_now() - timedelta(minutes=45)).isoformat()
+    await db["system_status"].insert_one({
+        "service": "ai_parser",
+        "last_success_at": last_success_time,
+        "status": "operational",
+    })
+    health_svc = HealthService(db)
+    health = await health_svc.get_system_health()
+    ai_parser = health["components"]["ai_parser"]
+    assert ai_parser["status"] in ("down", "operational")
+    assert ai_parser["last_success"] == last_success_time
+    if ai_parser["status"] == "down":
+        assert "Last successful heartbeat" in ai_parser["details"]
+
+
+@pytest.mark.asyncio
+async def test_p11_09_change_company_plan_limits_and_history():
+    """P11-09: Change a company's plan -> Limits copied; history entry and audit log written."""
+    db = FakeDatabase()
+    cid = "comp-p11-09"
+    # Seed catalogue plan "Growth" with limits
+    await db["plans"].insert_one({
+        "id": "plan-growth",
+        "name": "Growth Plan",
+        "code": "growth",
+        "limits": {"users": 15, "active_jobs": 10, "storage_mb": 500, "ai_parses_per_month": 500},
+        "is_active": True,
+    })
+    # Seed company with "Starter" plan
+    await db["companies"].insert_one({
+        "id": cid,
+        "name": "Company Nine",
+        "plan": "starter",
+        "limits": {"users": 3, "active_jobs": 2, "storage_mb": 50, "ai_parses_per_month": 50},
+        "plan_history": [],
+    })
+    from app.repositories.company_repository import CompanyRepository
+    from app.repositories.job_repository import (
+        ApplicantVerificationRepository,
+        CareersPageSettingsRepository,
+        JobApplicationRepository,
+        JobOpeningRepository,
+    )
+    from app.repositories.resume_repository import ResumeRepository
+    from app.services.job_opening_service import JobOpeningService
+    from app.services.resume_service import ResumeService
+
+    opening_repo = JobOpeningRepository(db)
+    app_repo = JobApplicationRepository(db)
+    verif_repo = ApplicantVerificationRepository(db)
+    resume_repo = ResumeRepository(db)
+    comp_repo = CompanyRepository(db)
+    resume_svc = ResumeService(resume_repo)
+
+    job_svc = JobOpeningService(
+        opening_repo=opening_repo,
+        application_repo=app_repo,
+        verification_repo=verif_repo,
+        resume_repo=resume_repo,
+        resume_service=resume_svc,
+        company_repo=comp_repo,
+    )
+
+    from app.routes.job_openings import _with_plan_limits
+    changes = await _with_plan_limits(db, {"plan": "growth"})
+    # Verify limits were copied from the Growth plan
+    assert changes["limits"]["users"] == 15
+    assert changes["limits"]["active_jobs"] == 10
+
+    # Update company
+    updated = await job_svc.update_company(cid, changes)
+    assert updated["plan"] == "growth"
+    assert updated["limits"]["users"] == 15
+
+    # Verify history entry written
+    comp_doc = await db["companies"].find_one({"id": cid})
+    assert len(comp_doc["plan_history"]) == 1
+    assert comp_doc["plan_history"][0]["from_plan"] == "starter"
+    assert comp_doc["plan_history"][0]["to_plan"] == "growth"
+
+

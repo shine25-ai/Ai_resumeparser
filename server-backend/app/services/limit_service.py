@@ -11,7 +11,7 @@ Enforces:
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.tenant import company_scope, current_company_id, system_scope
@@ -62,6 +62,11 @@ class LimitService:
         except (ValueError, TypeError):
             pass
 
+    async def check_plan_active_by_id(self, company_id: str) -> None:
+        comp = await self.get_company(company_id)
+        if comp:
+            self.check_plan_active(comp)
+
     async def check_users_limit(self, company_id: Optional[str] = None, extra: int = 0) -> None:
         company = await self.get_company(company_id)
         if not company:
@@ -73,7 +78,7 @@ class LimitService:
         if limit <= 0:
             return
 
-        cid = company.get("id")
+        cid = str(company.get("id") or "")
         with system_scope():
             used = await self.db[USERS_COLLECTION].count_documents({
                 "company_id": cid,
@@ -88,7 +93,7 @@ class LimitService:
             )
 
         # 80% check
-        if (used + extra) >= int(limit * 0.8):
+        if (used + extra) >= int(limit * 0.8) and cid:
             await self._trigger_threshold_warning(cid, "users", used + extra, limit, plan_name)
 
     async def check_active_jobs_limit(self, company_id: Optional[str] = None, extra: int = 1) -> None:
@@ -102,7 +107,7 @@ class LimitService:
         if limit <= 0:
             return
 
-        cid = company.get("id")
+        cid = str(company.get("id") or "")
         with system_scope():
             used = await self.db[JOB_OPENINGS_COLLECTION].count_documents({
                 "company_id": cid,
@@ -116,7 +121,7 @@ class LimitService:
                 "Close existing jobs or upgrade your plan to publish new openings."
             )
 
-        if (used + extra) >= int(limit * 0.8):
+        if (used + extra) >= int(limit * 0.8) and cid:
             await self._trigger_threshold_warning(cid, "active jobs", used + extra, limit, plan_name)
 
     async def check_storage_limit(self, upload_bytes: int = 0, company_id: Optional[str] = None) -> None:
@@ -130,7 +135,9 @@ class LimitService:
         if limit_mb <= 0:
             return
 
-        cid = company.get("id")
+        cid = str(company.get("id") or "")
+        if not cid:
+            return
         month = current_month_key()
         meter = await self._get_or_create_meter(cid, month)
         current_bytes = int(meter.get("storage_bytes") or 0)
@@ -144,7 +151,7 @@ class LimitService:
                 "Free up space or upgrade your subscription plan to upload more files."
             )
 
-        if (current_bytes + upload_bytes) >= int(limit_bytes * 0.8):
+        if (current_bytes + upload_bytes) >= int(limit_bytes * 0.8) and cid:
             used_mb = round((current_bytes + upload_bytes) / (1024 * 1024), 1)
             await self._trigger_threshold_warning(cid, "storage", used_mb, limit_mb, plan_name)
 
@@ -159,7 +166,9 @@ class LimitService:
         if limit <= 0:
             return True
 
-        cid = company.get("id")
+        cid = str(company.get("id") or "")
+        if not cid:
+            return True
         month = current_month_key()
         meter = await self._get_or_create_meter(cid, month)
         used = int(meter.get("ai_parses") or 0)
@@ -174,7 +183,9 @@ class LimitService:
 
         limits = company.get("limits") or {}
         limit = int(limits.get("ai_parses_per_month") or 0)
-        cid = company.get("id")
+        cid = str(company.get("id") or "")
+        if not cid:
+            return
         month = current_month_key()
         meter = await self._get_or_create_meter(cid, month)
         used = int(meter.get("ai_parses") or 0)
@@ -208,7 +219,7 @@ class LimitService:
 
     async def get_usage_meters(self, company_id: Optional[str] = None) -> Dict[str, Any]:
         company = await self.get_company(company_id)
-        cid = company.get("id")
+        cid = str(company.get("id") or company_id or "")
         limits = company.get("limits") or {}
         plan_code = company.get("plan") or "custom"
         valid_until = company.get("plan_valid_until")
@@ -304,8 +315,10 @@ class LimitService:
                 await self.db[USAGE_METERS_COLLECTION].insert_one(dict(meter))
             return meter
 
-    async def _trigger_threshold_warning(self, company_id: str, resource_name: str, used: Any, limit: Any, plan: str):
+    async def _trigger_threshold_warning(self, company_id: Optional[str], resource_name: str, used: Any, limit: Any, plan: str):
         """Send notification when resource reaches 80% limit."""
+        if not company_id:
+            return
         from app.services.notification_service import NotificationService
         ns = NotificationService(self.db)
         await ns.create_notification(
