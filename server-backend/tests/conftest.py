@@ -8,7 +8,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from app.core.config import settings
 from app.core.security import create_access_token, hash_password
-from app.main import app
 from app.models.user import UserDocument
 from app.utils.enums import UserRole
 
@@ -24,6 +23,7 @@ def event_loop():
 @pytest.fixture
 async def async_client() -> AsyncGenerator[AsyncClient, None]:
     """Async HTTPX client for requesting FastAPI routes in tests."""
+    from app.main import app
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",

@@ -10,7 +10,6 @@ import { FeedbackProvider } from "./components/ui/Feedback";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import CandidateDatabase from "./pages/CandidateDatabase";
-import Evaluation from "./pages/Evaluation";
 import JDMatch from "./pages/JDMatch";
 import InterviewManagement from "./pages/InterviewManagement";
 import AnalyticsReports from "./pages/AnalyticsReports";
@@ -30,6 +29,7 @@ import CandidateTracker from "./pages/CandidateTracker";
 import CareerPageBuilder from "./pages/CareerPageBuilder";
 import CareerPagePreviewFrame from "./pages/CareerPagePreviewFrame";
 import CareerPageIntegrate, { PublicIntegrationGuide } from "./pages/CareerPageIntegrate";
+import Candidate360 from "./pages/Candidate360";
 
 // Role links are now /jobs?job=<id> (the careers page can be embedded in any site)
 function RedirectToJob() {
@@ -132,7 +132,8 @@ export default function App() {
                         <Route path="/database" element={<CandidateDatabase />} />
                         <Route path="/applications" element={<Applications />} />
                         <Route path="/resume-templates" element={<ResumeTemplates />} />
-                        <Route path="/candidates/:id" element={<Evaluation />} />
+                        <Route path="/candidates" element={<Navigate to="/database" replace />} />
+                        <Route path="/candidates/:id" element={<Candidate360 />} />
                         {/* Old profile links */}
                         <Route path="/evaluation/:id" element={<RedirectToCandidate />} />
                         <Route path="/evaluation" element={<Navigate to="/database" replace />} />
