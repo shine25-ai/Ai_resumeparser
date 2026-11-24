@@ -13,14 +13,14 @@ def normalize_email(email: Optional[str]) -> str:
     """Normalize email address to lowercase and trimmed."""
     if not email:
         return ""
-    return str(email).strip().lower()
+    return email.strip().lower()
 
 
 def normalize_phone(phone: Optional[str]) -> str:
     """Normalize phone number to last 10 digits."""
     if not phone:
         return ""
-    digits = re.sub(r"\D", "", str(phone))
+    digits = re.sub(r"\D", "", phone)
     return digits[-10:] if len(digits) >= 10 else digits
 
 
@@ -31,6 +31,8 @@ def with_candidate_defaults(doc: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     d = dict(doc)
     d.setdefault("tags", [])
     d.setdefault("skills", [])
+    d.setdefault("email", "")
+    d.setdefault("phone", "")
     d.setdefault("emails", [d["email"]] if d.get("email") else [])
     d.setdefault("phones", [d["phone"]] if d.get("phone") else [])
     d.setdefault("status", "active")

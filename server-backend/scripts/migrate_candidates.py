@@ -41,15 +41,15 @@ from app.utils.helpers import generate_uuid, utc_now
 
 def _dedupe_key(doc: Dict[str, Any]) -> str:
     pd = doc.get("parsed_data") or {}
-    email = normalize_email(pd.get("email") or doc.get("applicant_email") or doc.get("uploaded_by_email"))
+    email = normalize_email(pd.get("email") or doc.get("email") or doc.get("applicant_email") or doc.get("uploaded_by_email"))
     if email:
         return f"email:{email}"
 
-    phone = normalize_phone(pd.get("phone"))
+    phone = normalize_phone(pd.get("phone") or doc.get("phone"))
     if phone and len(phone) >= 7:
         return f"phone:{phone}"
 
-    name = str(pd.get("full_name") or pd.get("name") or doc.get("original_filename") or "unknown").strip().lower()
+    name = str(pd.get("full_name") or pd.get("name") or doc.get("full_name") or doc.get("candidate_name") or doc.get("original_filename") or "unknown").strip().lower()
     return f"name_phone:{name}_{phone}"
 
 
@@ -112,8 +112,8 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
             primary_r = r_list[0]
             pd = primary_r.get("parsed_data") or {}
 
-            email = pd.get("email") or primary_r.get("applicant_email") or primary_r.get("uploaded_by_email") or ""
-            phone = pd.get("phone") or ""
+            email = pd.get("email") or primary_r.get("email") or primary_r.get("applicant_email") or primary_r.get("uploaded_by_email") or ""
+            phone = pd.get("phone") or primary_r.get("phone") or ""
             norm_em = normalize_email(email)
             norm_ph = normalize_phone(phone)
 

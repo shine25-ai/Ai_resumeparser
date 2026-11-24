@@ -45,7 +45,7 @@ async def ensure_candidate_indexes(db: AsyncIOMotorDatabase) -> None:
 
 
 class CandidateService:
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db: Any):
         self.db = db
 
     @property
@@ -310,8 +310,8 @@ class CandidateService:
         # Audit logs for activity timeline
         logs = await self.audit_logs.find(
             {"$or": [{"entity_id": candidate_id}, {"metadata.candidate_id": candidate_id}]},
-            {"_id": 0},
-        ).sort("created_at", -1).limit(50).to_list(length=50)
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(length=100)
 
         # Notes (stored in candidate document)
         notes = list(cand.get("notes") or [])
@@ -697,6 +697,7 @@ class CandidateService:
 
     async def export_csv(
         self,
+        candidate_ids: Optional[List[str]] = None,
         q: str = "",
         job_id: str = "",
         stage: str = "",
@@ -708,20 +709,27 @@ class CandidateService:
         owner_id: str = "",
         user: Optional[Dict[str, Any]] = None,
     ) -> str:
-        # Fetch up to 5,000 matching candidates
-        data = await self.list(
-            q=q,
-            job_id=job_id,
-            stage=stage,
-            source=source,
-            location=location,
-            min_experience=min_experience,
-            max_experience=max_experience,
-            tags=tags,
-            owner_id=owner_id,
-            page=1,
-            limit=5000,
-        )
+        if candidate_ids and isinstance(candidate_ids, list):
+            query_filter = {"id": {"$in": candidate_ids}, "$or": [{"merged_into": None}, {"merged_into": {"$exists": False}}, {"merged_into": ""}]}
+            cursor = self.candidates.find(query_filter).sort("created_at", -1)
+            docs = await cursor.to_list(length=len(candidate_ids))
+            items = [with_candidate_defaults(d) for d in docs]
+        else:
+            # Fetch up to 5,000 matching candidates
+            data = await self.list(
+                q=q or "",
+                job_id=job_id,
+                stage=stage,
+                source=source,
+                location=location,
+                min_experience=min_experience,
+                max_experience=max_experience,
+                tags=tags,
+                owner_id=owner_id,
+                page=1,
+                limit=5000,
+            )
+            items = data["items"]
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -730,7 +738,7 @@ class CandidateService:
             "Location", "Stage", "Latest Job Applied", "Tags", "Skills", "Owner", "Status", "Date Added"
         ])
 
-        for c in data.get("items", []):
+        for c in items:
             latest_job = (c.get("latest_application") or {}).get("opening_title", "")
             writer.writerow([
                 c.get("id"),
@@ -755,7 +763,7 @@ class CandidateService:
                 actor=user,
                 action="CANDIDATES_EXPORTED",
                 entity_type="candidate",
-                details=f"Exported {len(data.get('items', []))} candidates to CSV.",
+                details=f"Exported {len(items)} candidates to CSV.",
             )
 
         return output.getvalue()

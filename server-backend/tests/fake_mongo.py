@@ -132,7 +132,17 @@ class FakeCollection:
                 for field in update.get("$unset", {}):
                     d.pop(field, None)
                 for field, value in update.get("$push", {}).items():
-                    d.setdefault(field, []).append(copy.deepcopy(value))
+                    target = d.setdefault(field, [])
+                    if isinstance(value, dict) and "$each" in value:
+                        vals = value["$each"]
+                        pos = value.get("$position")
+                        if pos is not None:
+                            for i, v in enumerate(vals):
+                                target.insert(pos + i, copy.deepcopy(v))
+                        else:
+                            target.extend(copy.deepcopy(vals))
+                    else:
+                        target.append(copy.deepcopy(value))
                 for field, value in update.get("$addToSet", {}).items():
                     target = d.setdefault(field, [])
                     vals = value.get("$each", [value]) if isinstance(value, dict) and "$each" in value else [value]
@@ -169,7 +179,17 @@ class FakeCollection:
                 for field in update.get("$unset", {}):
                     d.pop(field, None)
                 for field, value in update.get("$push", {}).items():
-                    d.setdefault(field, []).append(copy.deepcopy(value))
+                    target = d.setdefault(field, [])
+                    if isinstance(value, dict) and "$each" in value:
+                        vals = value["$each"]
+                        pos = value.get("$position")
+                        if pos is not None:
+                            for i, v in enumerate(vals):
+                                target.insert(pos + i, copy.deepcopy(v))
+                        else:
+                            target.extend(copy.deepcopy(vals))
+                    else:
+                        target.append(copy.deepcopy(value))
                 for field, value in update.get("$addToSet", {}).items():
                     target = d.setdefault(field, [])
                     vals = value.get("$each", [value]) if isinstance(value, dict) and "$each" in value else [value]

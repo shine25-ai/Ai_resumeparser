@@ -12,7 +12,7 @@ data. Startup jobs, sign-in and the super admin's own screens run in `system_sco
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Generator, Iterator, List, Optional
 
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
@@ -83,7 +83,7 @@ def in_system_scope() -> bool:
 
 
 @contextmanager
-def system_scope() -> Iterator[None]:
+def system_scope() -> Generator[None, None, None]:
     """See and change every company's data. For startup jobs, sign-in and super admin screens only."""
     token = _scope.set(_SYSTEM)
     try:
@@ -93,7 +93,7 @@ def system_scope() -> Iterator[None]:
 
 
 @contextmanager
-def company_scope(company_id: str) -> Iterator[None]:
+def company_scope(company_id: str) -> Generator[None, None, None]:
     """Run a block for one company, then return to the previous scope."""
     if not company_id:
         raise TenantScopeError("A company is required.")
@@ -242,7 +242,7 @@ class ScopedCollection:
 class ScopedDatabase:
     """A Motor database whose company collections are ScopedCollections."""
 
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db: Any):
         self._db = db
 
     def _wrap(self, collection: AsyncIOMotorCollection):
