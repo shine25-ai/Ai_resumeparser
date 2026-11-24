@@ -404,7 +404,30 @@ class ApplicationService:
         path = os.path.join(self.upload_dir, f"draft_{draft_id}_{name}")
         with open(path, "wb") as f:
             f.write(content)
-        job_id, state = await self.parse(content, name, file.content_type or "application/octet-stream")
+
+        # Check AI parse quota for public career apply
+        from app.services.limit_service import LimitService
+        limit_svc = LimitService(self.db)
+        cid = opening.get("company_id")
+        can_parse = await limit_svc.can_parse_ai(cid)
+        if can_parse:
+            job_id, state = await self.parse(content, name, file.content_type or "application/octet-stream")
+            if cid:
+                await limit_svc.increment_ai_parses(cid)
+        else:
+            job_id, state = None, "skipped"
+            if cid:
+                from app.services.notification_service import NotificationService
+                await NotificationService(self.db).create_notification(
+                    company_id=cid,
+                    title="AI Parse Limit Reached on Application",
+                    message=f"Application received for '{opening.get('title', 'job')}' from {email}, but AI parsing was skipped because monthly AI parse quota has been reached.",
+                    notification_type="limit",
+                    link="/applications",
+                )
+        if cid:
+            await limit_svc.record_storage_bytes(cid, len(content))
+
         now = utc_now()
         # One draft per candidate and job: a new upload replaces the old one.
         await self._drop_drafts({"opening_id": opening["id"], "email": email})

@@ -51,6 +51,15 @@ class AuthController:
             status_code=status.HTTP_200_OK,
         )
 
+    async def verify_mfa_login(self, mfa_token: str, code: str) -> JSONResponse:
+        """Verify 2FA TOTP code or backup code and return token."""
+        token_response = await self.auth_service.verify_mfa_login(mfa_token, code)
+        return success_response(
+            data=token_response.model_dump(),
+            message="2FA verification successful.",
+            status_code=status.HTTP_200_OK,
+        )
+
     async def change_password(self, user_id: str, payload: ChangePasswordRequest) -> JSONResponse:
         """Process password update for authenticated user."""
         await self.auth_service.change_password(user_id, payload)

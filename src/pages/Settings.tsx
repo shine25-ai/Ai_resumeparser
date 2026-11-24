@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Building2, Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug, Database, Palette } from 'lucide-react';
+import { Building2, Mail, Save, Server, Key, User, ToggleLeft, ToggleRight, CheckCircle2, AlertCircle, Settings as SettingsIcon, FileText, Shield, Layers, Plug, Database, Palette, Sliders } from 'lucide-react';
 import { SETTINGS_EMAIL, SETTINGS_EMAIL_TEST, apiFetch } from "../utils/Api";
 import MailTemplates from '../components/MailTemplates';
 import RoleManagement from '../components/RoleManagement';
@@ -11,6 +11,7 @@ import IntegrationApiSettings from '../components/IntegrationApiSettings';
 import MasterDataManager from '../components/MasterDataManager';
 import BrandingSettings from '../components/BrandingSettings';
 import CompanySettings from '../components/CompanySettings';
+import PlatformSettingsView from '../components/PlatformSettingsView';
 import UsersOverview from '../components/UsersOverview';
 
 export default function Settings() {
@@ -129,7 +130,6 @@ export default function Settings() {
       </div>
 
       <div className="flex space-x-1 overflow-x-auto bg-slate-100 p-1 rounded-xl mb-8 border border-slate-200">
-        {!isPlatformAdmin && (
         <button
           onClick={() => { setActiveTab('company'); setSearchParams({ tab: 'company' }); }}
           className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${activeTab === 'company'
@@ -137,10 +137,9 @@ export default function Settings() {
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
         >
-          <Building2 className="w-4 h-4" />
-          Company
+          {isPlatformAdmin ? <Sliders className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+          {isPlatformAdmin ? "Platform Settings (Screen 22)" : "Company"}
         </button>
-        )}
         <button
           onClick={() => { setActiveTab('config'); setSearchParams({ tab: 'config' }); }}
           className={`flex items-center justify-center gap-2 shrink-0 whitespace-nowrap py-2.5 px-4 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === 'config'
@@ -233,8 +232,8 @@ export default function Settings() {
         </button>
       </div>
 
-      {activeTab === 'company' && !isPlatformAdmin ? (
-        <CompanySettings />
+      {activeTab === 'company' ? (
+        isPlatformAdmin ? <PlatformSettingsView /> : <CompanySettings />
       ) : activeTab === 'config' ? (
         <>
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">

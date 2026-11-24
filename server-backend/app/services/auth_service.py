@@ -2,6 +2,7 @@
 Authentication service handling user registration, login authentication, token refresh, and password updates.
 """
 
+from datetime import timedelta
 from typing import Optional
 
 from loguru import logger
@@ -33,7 +34,7 @@ class AuthService:
     async def _company(self, company_id: str):
         return await self.user_repo.db[COMPANIES_COLLECTION].find_one({"id": company_id})
 
-    def _issue_tokens(self, user: dict, company_id: str = None) -> TokenResponse:
+    def _issue_tokens(self, user: dict, company_id: Optional[str] = None) -> TokenResponse:
         """A super admin's token carries the company they are working in."""
         claims = {"company_id": company_id} if company_id else {}
         return TokenResponse(
@@ -41,6 +42,14 @@ class AuthService:
             refresh_token=create_refresh_token(subject=user["id"], extra_claims=claims or None),
             token_type="Bearer",
             expires_in_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        )
+
+    def _issue_mfa_token(self, user: dict) -> str:
+        """Temporary 5-minute token to complete MFA verification."""
+        return create_access_token(
+            subject=user["id"],
+            expires_delta=timedelta(minutes=5),
+            extra_claims={"type": "mfa_pending", "email": user["email"]},
         )
 
     async def _check_company_open(self, user: dict) -> None:
@@ -92,11 +101,59 @@ class AuthService:
         await self._check_company_open(user)
         await self._check_login_page(user, payload.company)
 
+        # Check MFA requirement
+        from app.services.mfa_service import MfaService
+        from app.services.branding_service import BrandingService
+        mfa_svc = MfaService(self.user_repo.db)
+        with system_scope():
+            company = await self.user_repo.db[COMPANIES_COLLECTION].find_one({"id": user.get("company_id")}) if user.get("company_id") else None
+        platform_settings = await BrandingService(self.user_repo.db).platform_settings()
+
+        if mfa_svc.is_mfa_required(user, company, platform_settings):
+            mfa_token = self._issue_mfa_token(user)
+            logger.info(f"MFA required for user '{email}'")
+            return TokenResponse(
+                access_token=None,
+                refresh_token=None,
+                mfa_required=True,
+                mfa_enrolled=bool(user.get("mfa_enabled")),
+                mfa_token=mfa_token,
+                email=user["email"],
+            )
+
         try:
             await self.user_repo.collection.update_one({"id": user["id"]}, {"$set": {"last_login_at": utc_now().isoformat()}})
         except Exception:  # never block a sign-in over this
             logger.warning("Could not record last sign-in for %s", user.get("id"))
         logger.info(f"User '{email}' logged in successfully.")
+        return self._issue_tokens(user)
+
+    async def verify_mfa_login(self, mfa_token: str, code: str) -> TokenResponse:
+        """Verify TOTP code or backup code and issue full tokens."""
+        payload = decode_jwt_token(mfa_token)
+        if payload.get("type") != "mfa_pending":
+            raise AuthenticationError("Invalid MFA verification token.")
+        user_id = payload.get("sub")
+        if not user_id:
+            raise AuthenticationError("Invalid MFA verification token.")
+
+        with system_scope():
+            user = await self.user_repo.get_by_id(str(user_id))
+        if not user or not user.get("is_active", True) or user.get("is_deleted"):
+            raise AuthenticationError("User account is invalid or inactive.")
+
+        from app.services.mfa_service import MfaService
+        mfa_svc = MfaService(self.user_repo.db)
+        is_valid, method = await mfa_svc.verify_user_code(user, code)
+        if not is_valid:
+            raise AuthenticationError("Invalid authentication code. Check your authenticator app or backup codes.")
+
+        try:
+            await self.user_repo.collection.update_one({"id": user["id"]}, {"$set": {"last_login_at": utc_now().isoformat()}})
+        except Exception:
+            pass
+
+        logger.info(f"User '{user.get('email')}' completed MFA verification via {method}.")
         return self._issue_tokens(user)
 
     async def _check_login_page(self, user: dict, slug: Optional[str]) -> None:
@@ -116,8 +173,12 @@ class AuthService:
         if payload.get("type") != "refresh":
             raise AuthenticationError("Invalid token type. Refresh token required.")
 
+        user_id = payload.get("sub")
+        if not user_id:
+            raise AuthenticationError("Invalid token subject.")
+
         with system_scope():
-            user = await self.user_repo.get_by_id(payload.get("sub"))
+            user = await self.user_repo.get_by_id(str(user_id))
         if not user or not user.get("is_active", True) or user.get("is_deleted"):
             raise AuthenticationError("User account is invalid or inactive.")
         await self._check_company_open(user)

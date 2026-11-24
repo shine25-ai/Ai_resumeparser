@@ -27,6 +27,12 @@ class ResumeController:
         uploaded_by_email: Optional[str] = None,
     ) -> JSONResponse:
         """Process resume file upload and text extraction with uploader details."""
+        from app.services.limit_service import LimitService
+        limit_svc = LimitService(self.resume_service.resume_repo.db)
+        upload_size = getattr(file, "size", 0) or 0
+        await limit_svc.check_storage_limit(upload_bytes=upload_size)
+        await limit_svc.record_ai_parse_or_raise()
+
         resume_response = await self.resume_service.upload_and_process_resume(
             user_id,
             file,

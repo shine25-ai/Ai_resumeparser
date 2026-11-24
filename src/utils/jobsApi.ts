@@ -300,6 +300,18 @@ export const updateCareersPageSettings = async (
 // ── Super admin: company workspaces ─────────────────────────────────────────
 
 /** Every company, with user and resume counts (super admin). */
+export interface CompanyUsageMeters {
+  company_id: string;
+  company_name: string;
+  plan: string;
+  plan_valid_until: string | null;
+  is_plan_expired: boolean;
+  users: { current: number; limit: number | null; pct: number };
+  active_jobs: { current: number; limit: number | null; pct: number };
+  storage_mb: { current: number; limit: number | null; pct: number };
+  ai_parses_month: { current: number; limit: number | null; pct: number; month: string };
+}
+
 /** The company details panel (Companies → a company). */
 export interface CompanySummary {
   company: Company;
@@ -307,6 +319,7 @@ export interface CompanySummary {
   counts: { jobs: number; open_jobs: number; users: number; candidates: number; applications: number; interviews: number; hires: number | null };
   admins: { id: string; full_name: string; email: string; role: string; is_active: boolean; last_login_at?: string | null }[];
   recent_activity: { action: string; entity_label: string; created_at: string; actor?: { name?: string } }[];
+  usage_meters?: CompanyUsageMeters;
 }
 
 export const fetchCompanySummary = async (id: string): Promise<CompanySummary> => readJson(await apiFetch(`${COMPANIES}/${id}/summary`));

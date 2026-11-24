@@ -10,9 +10,10 @@ from app.core.database import get_database
 from app.services.audit_service import record_audit
 from app.core.dependencies import get_current_active_user
 from app.repositories.user_repository import UserRepository
-from app.schemas.auth import LoginRequest, RefreshTokenRequest, RegisterRequest
+from app.schemas.auth import LoginRequest, RefreshTokenRequest, RegisterRequest, MfaVerifyRequest, MfaEnrolConfirmRequest
 from app.schemas.user import ChangePasswordRequest
 from app.services.auth_service import AuthService
+from app.services.mfa_service import MfaService
 from app.utils.response import success_response
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
@@ -93,6 +94,61 @@ async def change_password(
 
 class SwitchCompanyRequest(BaseModel):
     company_id: str = Field(..., min_length=1, max_length=64)
+
+
+@router.post(
+    "/mfa/verify",
+    status_code=status.HTTP_200_OK,
+    summary="Verify MFA TOTP or backup code during sign-in",
+)
+async def verify_mfa(
+    payload: MfaVerifyRequest,
+    controller: AuthController = Depends(get_auth_controller),
+):
+    return await controller.verify_mfa_login(payload.mfa_token, payload.code)
+
+
+@router.post(
+    "/mfa/enrol/start",
+    status_code=status.HTTP_200_OK,
+    summary="Start MFA enrolment: get secret, otpauth URI, backup codes & QR code",
+)
+async def start_mfa_enrol(
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    mfa_svc = MfaService(db)
+    res = await mfa_svc.start_enrolment(current_user["id"], current_user.get("email", ""))
+    return success_response(data=res, message="MFA enrolment initialized.")
+
+
+@router.post(
+    "/mfa/enrol/confirm",
+    status_code=status.HTTP_200_OK,
+    summary="Confirm MFA enrolment with 6-digit TOTP code",
+)
+async def confirm_mfa_enrol(
+    payload: MfaEnrolConfirmRequest,
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    mfa_svc = MfaService(db)
+    res = await mfa_svc.confirm_enrolment(current_user["id"], payload.code)
+    return success_response(data=res, message="MFA successfully activated.")
+
+
+@router.post(
+    "/mfa/disable",
+    status_code=status.HTTP_200_OK,
+    summary="Disable MFA on user account",
+)
+async def disable_mfa(
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    mfa_svc = MfaService(db)
+    res = await mfa_svc.disable_mfa(current_user["id"], current_user)
+    return success_response(data=res, message="MFA disabled.")
 
 
 @router.post(
