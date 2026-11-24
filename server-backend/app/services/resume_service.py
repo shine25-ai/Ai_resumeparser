@@ -30,7 +30,7 @@ from app.services.s3_service import S3Service
 from app.utils.enums import ResumeStatus
 from app.utils.helpers import generate_uuid, sanitize_filename, utc_now
 from app.utils.validators import validate_profile_picture, validate_uploaded_file
-from app.utils.hiring_stage import candidate_stage
+from app.utils.hiring_stage import candidate_stage, stage_of, verdict_of
 
 
 def company_conditions(company_id: Optional[str]) -> List[Dict[str, Any]]:
@@ -466,6 +466,66 @@ class ResumeService:
         matching = [k for k, v in stages.items() if v == stage.strip()]
         return [{"$or": [{"id": {"$in": matching}}, {"candidate_id": {"$in": matching}}]}]
 
+    async def get_stage_counts(self) -> Dict[str, int]:
+        """Compute the count of candidates in each hiring stage."""
+        try:
+            # 1. Fetch all resumes with their id and candidate_id to map every valid candidate
+            cursor = self.resume_repo.collection.find({}, {"_id": 0, "id": 1, "candidate_id": 1})
+            resumes = await cursor.to_list(length=10000)
+            total_resumes = len(resumes)
+            if total_resumes == 0:
+                return {st: 0 for st in ["All", "Screening", "Interviewing", "Selected", "Offer", "Hired", "Closed"]}
+
+            # Map both id and candidate_id to canonical resume id
+            id_map: Dict[str, str] = {}
+            for r in resumes:
+                rid = str(r.get("id") or "")
+                cid = str(r.get("candidate_id") or "")
+                if rid:
+                    id_map[rid] = rid
+                if cid and rid:
+                    id_map[cid] = rid
+
+            # 2. Fetch interviews and group by canonical resume id
+            inv_cursor = self.resume_repo.db["interviews"].find(
+                {},
+                {"_id": 0, "candidate_id": 1, "resume_id": 1, "recommendation": 1, "status": 1, "scheduled_date": 1, "scheduled_time": 1, "created_at": 1},
+            )
+            interviews_by_cand: Dict[str, List[Dict[str, Any]]] = {}
+            async for inv in inv_cursor:
+                matched_id = None
+                rid = inv.get("resume_id")
+                cid = inv.get("candidate_id")
+                if rid and str(rid) in id_map:
+                    matched_id = id_map[str(rid)]
+                elif cid and str(cid) in id_map:
+                    matched_id = id_map[str(cid)]
+                elif rid:
+                    matched_id = str(rid)
+                elif cid:
+                    matched_id = str(cid)
+
+                if matched_id:
+                    interviews_by_cand.setdefault(matched_id, []).append(inv)
+
+            counts = {st: 0 for st in ["Screening", "Interviewing", "Selected", "Offer", "Hired", "Closed"]}
+            interviewed_count = 0
+            for rid, invs in interviews_by_cand.items():
+                active = [i for i in invs if str(i.get("status", "")).upper() != "CANCELLED"]
+                st = candidate_stage(active or invs)
+                if st in counts:
+                    counts[st] += 1
+                else:
+                    counts["Interviewing"] += 1
+                interviewed_count += 1
+
+            counts["Screening"] = max(0, total_resumes - interviewed_count)
+            counts["All"] = total_resumes
+            return counts
+        except Exception as e:
+            logger.error(f"Failed to calculate stage counts: {e}")
+            return {}
+
     async def enrich_resumes_with_interviews(self, resumes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Enrich candidate resume dicts with interview assignment status and dates."""
         if not resumes:
@@ -555,6 +615,8 @@ class ResumeService:
                 # Return full interview document dicts without Mongo _id
                 latest_clean = dict(latest)
                 latest_clean.pop("_id", None)
+                latest_clean["verdict"] = verdict_of(latest.get("recommendation"), latest.get("status"))
+                latest_clean["stage"] = stage_of(latest.get("recommendation"), latest.get("status"))
                 r["latest_interview"] = latest_clean
                 if not r.get("job_title") and latest_clean.get("job_title"):
                     r["job_title"] = latest_clean["job_title"]
@@ -563,6 +625,8 @@ class ResumeService:
                 for inv in valid_invs:
                     inv_clean = dict(inv)
                     inv_clean.pop("_id", None)
+                    inv_clean["verdict"] = verdict_of(inv.get("recommendation"), inv.get("status"))
+                    inv_clean["stage"] = stage_of(inv.get("recommendation"), inv.get("status"))
                     clean_invs.append(inv_clean)
                 r["interviews"] = clean_invs
                 r["stage"] = candidate_stage(valid_invs)
@@ -673,7 +737,8 @@ class ResumeService:
         total = await self.resume_repo.count_by_user_id(user_id, is_admin=is_admin, search=search)
         items = [ResumeResponse.model_validate(r) for r in resumes]
         total_pages = math.ceil(total / limit) if limit > 0 else 1
-        return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items)
+        stage_counts = await self.get_stage_counts()
+        return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items, stage_counts=stage_counts)
 
     async def _attention_conditions(self, attention: str, stuck_days: int = 7) -> List[Dict[str, Any]]:
         """Exact MongoDB conditions matching Dashboard Needs Attention / KPI click-throughs."""
@@ -944,7 +1009,8 @@ class ResumeService:
         total = res_dict.get("total", 0)
         items = [ResumeResponse.model_validate(r) for r in resumes]
         total_pages = math.ceil(total / limit) if limit > 0 else 1
-        return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items)
+        stage_counts = await self.get_stage_counts()
+        return ResumeListResponse(total=total, page=page, limit=limit, total_pages=total_pages, resumes=items, stage_counts=stage_counts)
 
     async def extract_resume_text_for_ai(self, resume_id: str, user_id: str, is_admin: bool = False) -> ResumeExtractResponse:
         """Extract and format resume text for AI parsing pipeline."""

@@ -244,6 +244,7 @@ export interface PaginatedResumesResponse {
   limit: number;
   total_pages: number;
   resumes: any[];
+  stage_counts?: Record<string, number>;
 }
 
 export const generateInterviewQuestions = async (resumeId: string, roundSkills?: string[], roundCategories?: string[], existingQuestions?: string): Promise<any> => {
@@ -368,6 +369,7 @@ export const getResumes = async (params: CandidateQueryParams | number = 1, limi
     limit: dataPayload.limit || limit,
     total_pages: totalPagesVal,
     resumes: resumesList,
+    stage_counts: dataPayload.stage_counts,
   };
 };
 

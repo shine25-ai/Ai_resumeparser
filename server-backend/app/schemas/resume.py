@@ -106,6 +106,7 @@ class ResumeListResponse(BaseModel):
     limit: int = 10
     total_pages: int = 1
     resumes: List[ResumeResponse]
+    stage_counts: Optional[Dict[str, int]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

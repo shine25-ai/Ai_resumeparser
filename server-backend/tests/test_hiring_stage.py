@@ -21,8 +21,8 @@ from app.utils.enums import InterviewStatus
         (None, "Pending", "Interviewing"),
         ("Shortlisted", "Pending", "Interviewing"),
         ("Reschedule Required", "Pending", "Interviewing"),
-        ("Selected", "Selected", "Interviewing"),
-        ("Recommended", "Selected", "Interviewing"),
+        ("Selected", "Selected", "Selected"),
+        ("Recommended", "Selected", "Selected"),
         ("Offer to Be Released", "Selected", "Offer"),
         ("Offer Accepted", "Selected", "Hired"),
         ("Offer Rejected", "Selected", "Closed"),
@@ -32,7 +32,7 @@ from app.utils.enums import InterviewStatus
         ("Need Further Evaluation", "On Hold", "Interviewing"),
         ("No Show", "No Show", "Interviewing"),
         ("Withdrawn", "Pending", "Closed"),
-        ("selected", "Selected", "Interviewing"),
+        ("selected", "Selected", "Selected"),
     ],
 )
 def test_every_old_value_maps_to_a_verdict_and_stage(recommendation, verdict, stage):
@@ -66,6 +66,6 @@ def test_filters_agree_with_the_mapping():
     for verdict in ["Pending", "Selected", "Rejected", "On Hold", "No Show"]:
         cond = recommendation_filter_for_verdict(verdict)
         assert [v for v in values if _matches(cond, v)] == [v for v in values if verdict_of(v) == verdict]
-    for stage in ["Interviewing", "Offer", "Hired", "Closed"]:
+    for stage in ["Interviewing", "Selected", "Offer", "Hired", "Closed"]:
         cond = recommendation_filter_for_stage(stage)
         assert [v for v in values if _matches(cond, v)] == [v for v in values if stage_of(v) == stage]

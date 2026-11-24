@@ -39,8 +39,26 @@ export function getInterviewPhase(item: InterviewItem, today: string = todayIso(
 
 /** Verdict: how the interview went. Stage: where the candidate is. Both are worked out by the server. */
 export const VERDICTS = ["Pending", "Selected", "Rejected", "On Hold", "No Show"];
-export const INTERVIEW_STAGES = ["Interviewing", "Offer", "Hired", "Closed"];
+export const INTERVIEW_STAGES = ["Interviewing", "Selected", "Offer", "Hired", "Closed"];
 export const CANDIDATE_STAGES = ["Screening", ...INTERVIEW_STAGES];
+
+export function getStageBadge(stage: string): string {
+  switch (stage) {
+    case "Selected":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "Hired":
+      return "bg-teal-50 text-teal-700 border-teal-200";
+    case "Offer":
+      return "bg-amber-50 text-amber-800 border-amber-200";
+    case "Interviewing":
+      return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    case "Closed":
+      return "bg-rose-50 text-rose-700 border-rose-200";
+    case "Screening":
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-200";
+  }
+}
 
 export function getVerdictBadge(verdict: string): string {
   switch (verdict) {

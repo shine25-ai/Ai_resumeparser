@@ -677,16 +677,16 @@ class DashboardService:
                     stage_dwell_days["Interviewing"].append(dwell)
                     if dwell > stuck_days:
                         stage_stuck_counts["Interviewing"] += 1
-            elif st in ("Offer", "Hired", "Closed"):
+            elif st in ("Selected", "Offer", "Hired", "Closed"):
                 if first_inv_dt and latest_inv_dt and latest_inv_dt >= first_inv_dt:
                     stage_dwell_days["Interviewing"].append((latest_inv_dt - first_inv_dt).total_seconds() / 86400.0)
                 if latest_inv_dt:
                     dwell = max(0.0, (now_utc - latest_inv_dt).total_seconds() / 86400.0)
                     stage_dwell_days[st].append(dwell)
-                    if st == "Offer" and dwell > stuck_days:
-                        stage_stuck_counts["Offer"] += 1
+                    if st in ("Selected", "Offer") and dwell > stuck_days:
+                        stage_stuck_counts[st] += 1
 
-            if verd == "Selected" or st in ("Offer", "Hired"):
+            if verd == "Selected" or st in ("Selected", "Offer", "Hired"):
                 ref_sel = latest_inv_dt or first_inv_dt
                 if ref_sel:
                     selected_dwell_days.append(max(0.0, (now_utc - ref_sel).total_seconds() / 86400.0))
@@ -743,7 +743,7 @@ class DashboardService:
                 "count_int": selected_candidates,
                 "bg": "bg-emerald-400",
                 "avg_days_in_stage": avg_days(selected_dwell_days),
-                "stuck_count": 0,
+                "stuck_count": stage_stuck_counts.get("Selected", 0),
                 "definition": "Unique candidates passed interviews with Selected verdict",
             },
             {
@@ -795,23 +795,24 @@ class DashboardService:
         stage_colors = {
             "Screening": "#4f46e5",
             "Interviewing": "#0ea5e9",
-            "Offer": "#10b981",
+            "Selected": "#10b981",
+            "Offer": "#059669",
             "Hired": "#0f766e",
             "Closed": "#94a3b8",
         }
         statusData = [
             {
                 "name": st,
-                "percentage": share(stage_counts[st]),
-                "count": stage_counts[st],
-                "color": stage_colors[st],
-                "avg_days_in_stage": avg_days(stage_dwell_days[st]),
-                "stuck_count": stage_stuck_counts[st],
+                "percentage": share(stage_counts.get(st, 0)),
+                "count": stage_counts.get(st, 0),
+                "color": stage_colors.get(st, "#64748b"),
+                "avg_days_in_stage": avg_days(stage_dwell_days.get(st, [])),
+                "stuck_count": stage_stuck_counts.get(st, 0),
             }
             for st in STAGES
         ]
 
-        total_stuck = sum(stage_stuck_counts.get(st, 0) for st in ("Screening", "Interviewing", "Offer"))
+        total_stuck = sum(stage_stuck_counts.get(st, 0) for st in ("Screening", "Interviewing", "Selected", "Offer"))
 
         return {
             "pipelineData": pipelineData,

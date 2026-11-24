@@ -11,10 +11,10 @@ Nothing stored is rewritten: both are computed on read, so existing data and any
 integration that reads "recommendation" keep working unchanged.
 """
 
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 VERDICTS = ["Pending", "Selected", "Rejected", "On Hold", "No Show"]
-STAGES = ["Screening", "Interviewing", "Offer", "Hired", "Closed"]
+STAGES = ["Screening", "Interviewing", "Selected", "Offer", "Hired", "Closed"]
 
 _VERDICT_OF = {
     "selected": "Selected",
@@ -34,6 +34,10 @@ _VERDICT_OF = {
 }
 
 _STAGE_OF = {
+    "selected": "Selected",
+    "recommended": "Selected",
+    "strong hire": "Selected",
+    "hire": "Selected",
     "offer to be released": "Offer",
     "offer accepted": "Hired",
     "offer rejected": "Closed",
@@ -44,16 +48,18 @@ _STAGE_OF = {
 }
 
 
-def verdict_of(recommendation: Optional[str], status: Optional[str] = None) -> str:
+def verdict_of(recommendation: str | None, status: str | None = None) -> str:
     """How the interview went. Anything not yet decided is Pending."""
     if str(getattr(status, "value", status) or "").upper() == "NO_SHOW":
         return "No Show"
-    return _VERDICT_OF.get(str(recommendation or "").strip().lower(), "Pending")
+    rec = (recommendation or "").strip().lower()
+    return _VERDICT_OF.get(rec, "Pending")
 
 
-def stage_of(recommendation: Optional[str], status: Optional[str] = None) -> str:
+def stage_of(recommendation: str | None, status: str | None = None) -> str:
     """Where the candidate stands after this interview."""
-    return _STAGE_OF.get(str(recommendation or "").strip().lower(), "Interviewing")
+    rec = (recommendation or "").strip().lower()
+    return _STAGE_OF.get(rec, "Interviewing")
 
 
 def candidate_stage(interviews: Iterable[dict]) -> str:
