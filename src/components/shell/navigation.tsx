@@ -97,7 +97,14 @@ export const COMPANY_NAV: NavItem[] = [
       { label: "JD Match", path: "/jd-match", perm: "jd-match" },
     ],
   },
-  { key: "interviews", label: "Interviews", path: "/interviews", icon: <Calendar size={I} />, perm: "interviews" },
+  {
+    key: "interviews", label: "Interviews", path: "/interviews", icon: <Calendar size={I} />, perm: "interviews",
+    children: [
+      { label: "Interview Calendar", path: "/interviews/calendar" },
+      { label: "Interview Panels", path: "/interviews/panels" },
+      { label: "Evaluation & Scores", path: "/interviews/evaluations" },
+    ],
+  },
   {
     key: "career", label: "Career Page", path: "/career-page", icon: <Globe2 size={I} />, perm: "career-page",
     children: [

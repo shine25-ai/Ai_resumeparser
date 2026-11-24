@@ -92,6 +92,9 @@ export interface InterviewItem {
   scheduled_date: string;
   scheduled_time: string;
   timezone: string;
+  /** Set by the calendar: the date and time this interview shows for the signed-in viewer. */
+  viewer_date?: string;
+  viewer_time?: string;
   duration_minutes: number;
   interviewer_id?: string;
   interviewer_name: string;

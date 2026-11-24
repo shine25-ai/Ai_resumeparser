@@ -43,6 +43,7 @@ from app.utils.helpers import utc_now
 from app.utils.validators import validate_uploaded_file
 from app.core.database import get_database
 from app.services.mailer import address, brandify, email_context
+from app.services.interview_invites import KIND_CANCEL, KIND_INVITE, KIND_RESCHEDULE, InterviewInviteService
 
 
 def build_summary_csv(headers: List[str], rows: List[List[Any]]) -> bytes:
@@ -221,6 +222,7 @@ class InterviewService:
             interviewer_email=payload.interviewer_email,
             meeting_link=payload.meeting_link,
             meeting_platform=payload.meeting_platform,
+            interview_mode=getattr(payload, 'interview_mode', None),
             location=payload.location or payload.interview_location,
             interview_location=payload.interview_location or payload.location,
             hr_call_verification=payload.hr_call_verification,
@@ -253,7 +255,17 @@ class InterviewService:
 
         created = await self.interview_repo.create(interview_doc.to_dict())
         logger.info(f"Scheduled new interview ID '{interview_doc.id}' for candidate '{payload.candidate_name}'")
+        if getattr(payload, "send_invite", False):
+            await self._dispatch_invite(interview_doc.id, KIND_INVITE)
         return InterviewResponse.model_validate(created)
+
+    async def _dispatch_invite(self, interview_id: str, kind: str, reason: Optional[str] = None) -> Dict[str, Any]:
+        """Send an invite email with its .ics. A mail failure is logged and never fails the calendar action."""
+        db = self.interview_repo.collection.database
+        result = await InterviewInviteService(db, self.interview_repo).send(interview_id, kind, reason)
+        if not result.get("sent"):
+            logger.warning(f"Interview {kind} email not sent for {interview_id}: {result.get('reason')}")
+        return result
 
     async def batch_create_interviews(
         self, payload: InterviewBatchCreateRequest, created_by: Optional[str] = None
@@ -309,6 +321,7 @@ class InterviewService:
                 interviewer_email=payload.interviewer_email,
                 meeting_link=payload.meeting_link,
                 meeting_platform=payload.meeting_platform,
+                interview_mode=getattr(payload, 'interview_mode', None),
                 location=loc,
                 interview_location=loc,
                 hr_call_verification=payload.hr_call_verification,
@@ -517,6 +530,7 @@ class InterviewService:
         )
 
         logger.info(f"Rescheduled interview ID '{interview_id}' to date {payload.scheduled_date} at {payload.scheduled_time}")
+        await self._dispatch_invite(interview_id, KIND_RESCHEDULE)
         return InterviewResponse.model_validate(updated_doc)
 
     async def submit_feedback(
@@ -1394,19 +1408,8 @@ class InterviewService:
         updated_doc = await self.interview_repo.update(interview_id, update_fields)
 
         if payload.send_email:
-            try:
-                candidate_email = existing.get("candidate_email")
-                interviewer_email = existing.get("interviewer_email")
-                email_payload = SendInterviewEmailRequest(
-                    send_to_candidate=True if candidate_email else False,
-                    candidate_email=candidate_email,
-                    send_to_interviewer=True if interviewer_email else False,
-                    interviewer_email=interviewer_email,
-                    custom_notes=f"Interview Session Cancelled. Reason: {reason_str or 'No reason specified'}",
-                )
-                await self.send_interview_email(interview_id, email_payload)
-            except Exception as e:
-                logger.warning(f"Interview cancelled successfully but failed to dispatch cancellation email: {e}")
+            # Cancellation is sent as an .ics CANCEL so calendar clients remove the event
+            await self._dispatch_invite(interview_id, KIND_CANCEL, reason_str)
 
         logger.info(f"Cancelled interview ID '{interview_id}'")
         return InterviewResponse.model_validate(updated_doc)

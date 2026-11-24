@@ -32,6 +32,10 @@ TENANT_COLLECTIONS = frozenset({
     "job_openings",
     "careers_page_settings",
     "job_applications",
+    # Interview panels, evaluation forms and per-interviewer evaluations (Phase 8)
+    "interview_panels",
+    "evaluation_forms",
+    "interview_evaluations",
     "integration_api_keys",
     "integration_api_logs",
     "settings",

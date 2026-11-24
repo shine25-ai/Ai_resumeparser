@@ -45,6 +45,7 @@ class InterviewDocument(BaseModel):
     # Meeting Details
     meeting_link: Optional[str] = None
     meeting_platform: Optional[str] = None  # Google Meet / Zoom / Teams
+    interview_mode: Optional[str] = None  # ONLINE | IN_PERSON | TELEPHONIC
 
     # Location & Verification
     location: Optional[str] = None
