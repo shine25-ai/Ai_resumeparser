@@ -236,12 +236,79 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
     if (description) {
       setMeta("description", description);
       setMeta("og:description", description, "property");
+      setMeta("twitter:description", description);
     }
     setMeta("og:title", document.title, "property");
+    setMeta("twitter:title", document.title);
+    setMeta("twitter:card", "summary_large_image");
+
     const image = careerAssetUrl(content.seo.share_image_url || content.hero.banner_url);
-    if (image) setMeta("og:image", image, "property");
+    if (image) {
+      setMeta("og:image", image, "property");
+      setMeta("twitter:image", image);
+    }
+
+    // Set canonical URL
+    let canonicalEl = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!canonicalEl) {
+      canonicalEl = document.createElement("link");
+      canonicalEl.setAttribute("rel", "canonical");
+      document.head.appendChild(canonicalEl);
+    }
+    canonicalEl.href = window.location.href.split("#")[0];
+
+    // Schema.org JobPosting structured data for Google for Jobs
+    let schemaEl = document.getElementById("jobposting-schema") as HTMLScriptElement | null;
+    if (viewing) {
+      if (!schemaEl) {
+        schemaEl = document.createElement("script");
+        schemaEl.id = "jobposting-schema";
+        schemaEl.type = "application/ld+json";
+        document.head.appendChild(schemaEl);
+      }
+      const sal = viewing.salary;
+      const schemaData = {
+        "@context": "https://schema.org/",
+        "@type": "JobPosting",
+        "title": viewing.title,
+        "description": viewing.description || `${viewing.title} opening at ${name}`,
+        "datePosted": viewing.posted_at || viewing.created_at || new Date().toISOString(),
+        "validThrough": viewing.closing_date || undefined,
+        "employmentType": (viewing.employment_type || "FULL_TIME").toUpperCase().replace(/\s+/g, "_"),
+        "hiringOrganization": {
+          "@type": "Organization",
+          "name": name || "Company",
+          "sameAs": companyInfo?.website || undefined,
+          "logo": branding?.logo_url ? careerAssetUrl(branding.logo_url) : undefined,
+        },
+        "jobLocation": {
+          "@type": "Place",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": viewing.location || companyInfo?.city || "Remote",
+          },
+        },
+        "baseSalary": (sal && (sal.min || sal.max)) ? {
+          "@type": "MonetaryAmount",
+          "currency": sal.currency || "USD",
+          "value": {
+            "@type": "QuantitativeValue",
+            "minValue": sal.min ?? undefined,
+            "maxValue": sal.max ?? undefined,
+            "unitText": (sal.period || "year").toUpperCase(),
+          },
+        } : undefined,
+        "skills": viewing.required_skills?.join(", "),
+      };
+      schemaEl.textContent = JSON.stringify(schemaData);
+    } else if (schemaEl) {
+      schemaEl.remove();
+    }
+
     return () => {
       document.title = previous;
+      const el = document.getElementById("jobposting-schema");
+      if (el) el.remove();
     };
   }, [manageTitle, preview, viewing, content, companyInfo, branding]);
 
