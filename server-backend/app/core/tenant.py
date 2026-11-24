@@ -45,6 +45,10 @@ TENANT_COLLECTIONS = frozenset({
     "application_drafts",
     "candidates",
     "candidate_documents",
+    "interview_panels",
+    "evaluation_forms",
+    "interview_evaluations",
+    "candidate_skills",
     # ATS hub (pipeline, offers, onboarding, scorecards, automation templates, its audit trail)
     "ats_audit_logs",
     "ats_automation_templates",

@@ -46,7 +46,10 @@ def _match_value(value: Any, cond: Any) -> bool:
                 return False
             if op == "$regex":
                 flags = re.I if "i" in cond.get("$options", "") else 0
-                if not isinstance(v, str) or not re.search(arg, v, flags):
+                if isinstance(v, (list, tuple)):
+                    if not any(isinstance(item, str) and re.search(arg, item, flags) for item in v):
+                        return False
+                elif not isinstance(v, str) or not re.search(arg, v, flags):
                     return False
         return True
     v = None if value is _MISSING else value
@@ -228,6 +231,40 @@ class FakeCollection:
 
     async def create_index(self, *a: Any, **k: Any):
         return "idx"
+
+    def aggregate(self, pipeline: List[Dict[str, Any]], *a: Any, **k: Any) -> _Cursor:
+        docs = copy.deepcopy(self.docs)
+        for stage in pipeline:
+            if "$match" in stage:
+                docs = [d for d in docs if matches(d, stage["$match"])]
+            elif "$group" in stage:
+                group_spec = stage["$group"]
+                group_id_key = group_spec["_id"].lstrip("$")
+                groups: Dict[Any, List[Dict[str, Any]]] = {}
+                for d in docs:
+                    gid = d.get(group_id_key)
+                    groups.setdefault(gid, []).append(d)
+                grouped_docs = []
+                for gid, grp in groups.items():
+                    out = {"_id": gid}
+                    for field, expr in group_spec.items():
+                        if field == "_id":
+                            continue
+                        if "$sum" in expr:
+                            val = expr["$sum"]
+                            out[field] = len(grp) if val == 1 else sum(g.get(val.lstrip("$"), 0) for g in grp)
+                        elif "$avg" in expr:
+                            avg_field = expr["$avg"].lstrip("$")
+                            vals = [float(g.get(avg_field) or 0.0) for g in grp]
+                            out[field] = sum(vals) / len(vals) if vals else 0.0
+                    grouped_docs.append(out)
+                docs = grouped_docs
+            elif "$sort" in stage:
+                for k, v in stage["$sort"].items():
+                    docs.sort(key=lambda x: x.get(k) or 0, reverse=(v == -1))
+            elif "$limit" in stage:
+                docs = docs[: stage["$limit"]]
+        return _Cursor(docs)
 
 
 class FakeDatabase:

@@ -50,3 +50,7 @@ INTEGRATION_KEY_PREFIX = "rp_live_"
 
 MASTERS_COLLECTION = "masters"
 AUDIT_LOGS_COLLECTION = "audit_logs"
+INTERVIEW_PANELS_COLLECTION = "interview_panels"
+EVALUATION_FORMS_COLLECTION = "evaluation_forms"
+INTERVIEW_EVALUATIONS_COLLECTION = "interview_evaluations"
+CANDIDATE_SKILLS_COLLECTION = "candidate_skills"
