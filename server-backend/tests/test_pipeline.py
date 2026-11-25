@@ -41,8 +41,8 @@ def fake_db():
 
 @pytest.fixture
 def company_db(fake_db):
-    set_company("comp-alpha")
-    return ScopedDatabase(cast(Any, fake_db))
+    with company_scope("comp-alpha"):
+        yield ScopedDatabase(cast(Any, fake_db))
 
 
 @pytest.fixture
@@ -337,51 +337,75 @@ async def test_permissions_viewer_read_only(viewer_user, recruiter_user):
     assert can(viewer_user, "pipeline:edit") is False
 
 
-async def test_kanban_unifies_resumes_without_applications(company_db, recruiter_user):
+async def test_kanban_board_loads_applications_with_enrichment(company_db, recruiter_user):
     """
-    Candidates stored in resumes without job_applications records are seamlessly
-    represented on the Kanban board with stages derived from interviews or manual_stage.
+    Kanban board loads real applications from job_applications with skills, star rating,
+    and interview enrichment, capped properly without dumping all unapplied resumes.
     """
     svc = PipelineService(company_db)
 
-    # 1 resume with manual_stage "Selected"
+    # Application 1: Selected
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-real-1",
+        "company_id": "comp-alpha",
+        "candidate_id": "CND0101",
+        "resume_id": "res-1",
+        "candidate_name": "Divya R",
+        "stage_id": "selected",
+        "job_id": "job-101",
+    })
     await company_db[RESUMES_COLLECTION].insert_one({
         "id": "res-1",
         "company_id": "comp-alpha",
         "candidate_id": "CND0101",
         "candidate_name": "Divya R",
-        "manual_stage": "Selected",
-        "redirect_id": None,
         "parsed_data": {"name": "Divya R", "email": "divya@example.com", "primary_skills": ["Java", "Spring Boot"]},
         "ai_evaluation": {"ai_technical_score": 84.0},
     })
 
-    # 1 resume with interview verdict "Interviewing"
+    # Application 2: Interview
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-real-2",
+        "company_id": "comp-alpha",
+        "candidate_id": "CND0102",
+        "resume_id": "res-2",
+        "candidate_name": "Aravind K",
+        "stage_id": "interview",
+        "job_id": "job-101",
+    })
     await company_db[RESUMES_COLLECTION].insert_one({
         "id": "res-2",
         "company_id": "comp-alpha",
         "candidate_id": "CND0102",
         "candidate_name": "Aravind K",
-        "redirect_id": None,
         "parsed_data": {"name": "Aravind K", "email": "aravind@example.com", "primary_skills": ["Python", "FastAPI"]},
     })
     await company_db[INTERVIEWS_COLLECTION].insert_one({
         "id": "inv-1",
         "company_id": "comp-alpha",
+        "application_id": "app-real-2",
         "candidate_id": "res-2",
-        "recommendation": "Need Further Evaluation",
-        "status": "COMPLETED",
-        "scheduled_date": "2026-11-20",
+        "rating": 4.5,
+        "scheduled_time": "11:00 AM",
     })
 
-    # 1 resume in Applied (no interviews, no manual_stage)
-    await company_db[RESUMES_COLLECTION].insert_one({
-        "id": "res-3",
+    # Application 3: Applied
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-real-3",
         "company_id": "comp-alpha",
         "candidate_id": "CND0103",
+        "resume_id": "res-3",
         "candidate_name": "Karthik S",
-        "redirect_id": None,
-        "parsed_data": {"name": "Karthik S", "email": "karthik@example.com"},
+        "stage_id": "applied",
+        "job_id": "job-101",
+    })
+
+    # An unrelated resume that has NOT applied for any job
+    await company_db[RESUMES_COLLECTION].insert_one({
+        "id": "res-unapplied-candidate",
+        "company_id": "comp-alpha",
+        "candidate_name": "Unapplied Candidate",
+        "parsed_data": {"name": "Unapplied Candidate"},
     })
 
     board = await svc.get_kanban_board(recruiter_user)
@@ -396,53 +420,154 @@ async def test_kanban_unifies_resumes_without_applications(company_db, recruiter
 
     assert len(col_map["interview"]["cards"]) == 1
     assert col_map["interview"]["cards"][0]["candidate_name"] == "Aravind K"
+    assert col_map["interview"]["cards"][0]["rating"] == 4.5
 
     assert len(col_map["applied"]["cards"]) == 1
     assert col_map["applied"]["cards"][0]["candidate_name"] == "Karthik S"
 
+    # Verify that unapplied candidate resume is NOT on the board
+    all_cand_names = [card["candidate_name"] for col in board["columns"] for card in col["cards"]]
+    assert "Unapplied Candidate" not in all_cand_names
 
-async def test_moving_synthesized_candidate_creates_application_and_history(company_db, recruiter_user):
+
+async def test_stage_moves_do_not_leak_across_jobs_or_to_resumes(company_db, recruiter_user):
     """
-    Moving a candidate who only exists in resumes collection creates an official
-    job_applications record, records immutable history, and updates manual_stage on the resume.
+    Moving a candidate's application in Job A only updates Job A's application.
+    Their application in Job B stays unaffected, and no manual_stage is stamped on the resume.
     """
     svc = PipelineService(company_db)
 
-    cand_id = "res-synth-cand"
+    cand_id = "cand-multi-job"
+    resume_id = "res-multi-job"
     await company_db[RESUMES_COLLECTION].insert_one({
-        "id": cand_id,
+        "id": resume_id,
         "company_id": "comp-alpha",
-        "candidate_id": "CND0999",
+        "candidate_id": cand_id,
         "candidate_name": "Suresh R",
-        "manual_stage": "Applied",
-        "redirect_id": None,
         "parsed_data": {"name": "Suresh R", "email": "suresh@example.com"},
     })
 
-    # Initially not in job_applications
-    pre_app = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": cand_id})
-    assert pre_app is None
+    # Candidate has applied to Job A and Job B
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-job-a",
+        "company_id": "comp-alpha",
+        "candidate_id": cand_id,
+        "resume_id": resume_id,
+        "job_id": "job-a",
+        "stage_id": "applied",
+        "candidate_name": "Suresh R",
+    })
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-job-b",
+        "company_id": "comp-alpha",
+        "candidate_id": cand_id,
+        "resume_id": resume_id,
+        "job_id": "job-b",
+        "stage_id": "applied",
+        "candidate_name": "Suresh R",
+    })
 
-    # Move from applied to screening
-    updated = await svc.move_candidate_stage(recruiter_user, cand_id, "screening")
-    assert updated["stage_id"] == "screening"
+    # Move application in Job A to screening
+    updated_a = await svc.move_candidate_stage(recruiter_user, "app-job-a", "screening")
+    assert updated_a["stage_id"] == "screening"
 
-    # Now officially in job_applications collection
-    post_app = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": cand_id})
-    assert post_app is not None
-    assert post_app["stage_id"] == "screening"
-    assert post_app["candidate_name"] == "Suresh R"
+    # Application for Job B must still be in applied
+    app_b = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": "app-job-b"})
+    assert app_b is not None
+    assert app_b["stage_id"] == "applied"
 
-    # History entry recorded
-    history = await svc.get_application_history(cand_id)
-    assert len(history) == 1
-    assert history[0]["from_stage"] == "applied"
-    assert history[0]["to_stage"] == "screening"
-    assert history[0]["by"] == "recruiter-1"
+    # Resume must NOT have manual_stage set
+    resume = await company_db[RESUMES_COLLECTION].find_one({"id": resume_id})
+    assert resume.get("manual_stage") is None
 
-    # Resume's manual_stage updated
-    resume = await company_db[RESUMES_COLLECTION].find_one({"id": cand_id})
-    assert resume["manual_stage"] == "Screening"
+
+async def test_workflow_save_validations_and_default_clearing(company_db, recruiter_user):
+    """save_workflow validates empty stages, blank/duplicate IDs, and clears default on others."""
+    svc = PipelineService(company_db)
+
+    # 1. Empty stages fails
+    with pytest.raises(ValueError) as exc:
+        await svc.save_workflow(recruiter_user, {"name": "Empty WF", "stages": []})
+    assert "at least one stage" in str(exc.value).lower()
+
+    # 2. Blank stage id and name fails
+    with pytest.raises(ValueError) as exc:
+        await svc.save_workflow(recruiter_user, {"name": "Blank WF", "stages": [{"id": "", "name": "   "}]})
+    assert "valid non-empty id or name" in str(exc.value).lower()
+
+    # 3. Duplicate stage IDs fails
+    with pytest.raises(ValueError) as exc:
+        await svc.save_workflow(recruiter_user, {
+            "name": "Dup WF",
+            "stages": [{"id": "screening", "name": "Screening 1"}, {"id": "screening", "name": "Screening 2"}]
+        })
+    assert "duplicate stage id" in str(exc.value).lower()
+
+    # 4. is_default=True clears default on other workflows
+    wf1 = await svc.save_workflow(recruiter_user, {
+        "id": "wf-1",
+        "name": "Default 1",
+        "is_default": True,
+        "stages": [{"id": "s1", "name": "Stage 1"}]
+    })
+    assert wf1["is_default"] is True
+
+    wf2 = await svc.save_workflow(recruiter_user, {
+        "id": "wf-2",
+        "name": "Default 2",
+        "is_default": True,
+        "stages": [{"id": "s1", "name": "Stage 1"}]
+    })
+    assert wf2["is_default"] is True
+
+    wf1_reloaded = await company_db[WORKFLOWS_COLLECTION].find_one({"id": "wf-1"})
+    assert wf1_reloaded["is_default"] is False
+
+
+async def test_delete_stage_validations_and_job_scoping(company_db, recruiter_user):
+    """delete_stage checks target stage exists and scopes reassignments to workflow's job."""
+    svc = PipelineService(company_db)
+
+    # Create job-specific workflow
+    wf = await svc.save_workflow(recruiter_user, {
+        "id": "wf-job-scoped",
+        "job_id": "job-eng-1",
+        "stages": [
+            {"id": "applied", "name": "Applied"},
+            {"id": "tech_test", "name": "Tech Test"},
+            {"id": "hired", "name": "Hired"},
+        ]
+    })
+
+    # Invalid target stage fails
+    with pytest.raises(ValueError) as exc:
+        await svc.delete_stage(recruiter_user, "wf-job-scoped", "tech_test", reassign_to_stage_id="nonexistent_stage")
+    assert "does not exist in workflow" in str(exc.value).lower()
+
+    # Put an app in tech_test for job-eng-1, and an app in tech_test for job-other
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-scoped-eng",
+        "company_id": "comp-alpha",
+        "job_id": "job-eng-1",
+        "stage_id": "tech_test",
+    })
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-other-job",
+        "company_id": "comp-alpha",
+        "job_id": "job-other-99",
+        "stage_id": "tech_test",
+    })
+
+    res = await svc.delete_stage(recruiter_user, "wf-job-scoped", "tech_test", reassign_to_stage_id="applied")
+    assert res["reassigned_count"] == 1
+
+    # eng job candidate reassigned to applied
+    app_eng = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": "app-scoped-eng"})
+    assert app_eng["stage_id"] == "applied"
+
+    # other job candidate NOT touched
+    app_other = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": "app-other-job"})
+    assert app_other["stage_id"] == "tech_test"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

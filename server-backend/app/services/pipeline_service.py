@@ -131,18 +131,37 @@ class PipelineService:
         is_default = bool(payload.get("is_default", False))
 
         raw_stages = payload.get("stages", [])
+        if not raw_stages or len(raw_stages) == 0:
+            raise ValueError("Workflow must have at least one stage.")
+
+        seen_stage_ids: Set[str] = set()
         stages: List[Dict[str, Any]] = []
         for i, s in enumerate(raw_stages):
-            st_id = s.get("id") or re.sub(r"[^a-z0-9]+", "_", s.get("name", "").lower()).strip("_")
+            st_id = (s.get("id") or "").strip()
+            if not st_id:
+                st_id = re.sub(r"[^a-z0-9]+", "_", s.get("name", "").lower()).strip("_")
+            if not st_id:
+                raise ValueError(f"Stage at position {i+1} must have a valid non-empty id or name.")
+            if st_id in seen_stage_ids:
+                raise ValueError(f"Duplicate stage ID '{st_id}' found in workflow stages.")
+            seen_stage_ids.add(st_id)
+
             stages.append({
                 "id": st_id,
-                "name": s.get("name", f"Stage {i+1}"),
+                "name": (s.get("name") or f"Stage {i+1}").strip(),
                 "colour": s.get("colour", "#6366f1"),
                 "type": s.get("type", "active"),
                 "order": i + 1,
                 "requires_reason": bool(s.get("requires_reason", False)),
                 "allowed_transitions": s.get("allowed_transitions", []),
             })
+
+        # If setting this workflow as default, clear is_default on other workflows in the company
+        if is_default:
+            await self.db[WORKFLOWS_COLLECTION].update_many(
+                {"id": {"$ne": wf_id}, "is_default": True},
+                {"$set": {"is_default": False}},
+            )
 
         now_iso = utc_now().isoformat()
         doc = {
@@ -183,31 +202,65 @@ class PipelineService:
         """
         Delete a stage from a workflow. If applications are currently in that stage,
         reassign_to_stage_id must be provided to move them safely first.
+        Applications are scoped to the workflow's job if job_id is set.
         """
         wf = await self.db[WORKFLOWS_COLLECTION].find_one({"id": workflow_id})
         if not wf:
             raise ValueError("Workflow not found.")
 
-        # Check applications in this stage
-        apps_in_stage = await self.db[JOB_APPLICATIONS_COLLECTION].count_documents({"stage_id": stage_id})
+        stages = wf.get("stages", [])
+        stage_ids = {s.get("id") for s in stages}
+        if stage_id not in stage_ids:
+            raise ValueError(f"Stage '{stage_id}' does not exist in workflow.")
+
+        # Check target stage exists in the workflow (and isn't the one being deleted)
+        if reassign_to_stage_id:
+            valid_targets = {s.get("id") for s in stages if s.get("id") != stage_id}
+            if reassign_to_stage_id not in valid_targets:
+                raise ValueError(f"Target stage '{reassign_to_stage_id}' does not exist in workflow.")
+
+        # Scope application check and reassignment to the workflow's job if job_id is set
+        app_filter: Dict[str, Any] = {"stage_id": stage_id}
+        job_id = wf.get("job_id")
+        if job_id:
+            app_filter["$or"] = [{"job_id": job_id}, {"opening_id": job_id}]
+
+        apps_in_stage = await self.db[JOB_APPLICATIONS_COLLECTION].count_documents(app_filter)
         if apps_in_stage > 0:
             if not reassign_to_stage_id:
                 raise ValueError(
                     f"Stage '{stage_id}' is currently in use by {apps_in_stage} application(s). "
                     f"Please specify a target stage to reassign candidates to before deleting."
                 )
-            # Reassign all applications
+            target_stage = next((s for s in stages if s.get("id") == reassign_to_stage_id), None)
+            target_name = target_stage.get("name", reassign_to_stage_id.capitalize()) if target_stage else reassign_to_stage_id.capitalize()
             now_iso = utc_now().isoformat()
             await self.db[JOB_APPLICATIONS_COLLECTION].update_many(
-                {"stage_id": stage_id},
-                {"$set": {"stage_id": reassign_to_stage_id, "stage_updated_at": now_iso}},
+                app_filter,
+                {"$set": {"stage_id": reassign_to_stage_id, "stage_name": target_name, "stage_updated_at": now_iso}},
             )
 
         # Remove stage from workflow
-        new_stages = [s for s in wf.get("stages", []) if s.get("id") != stage_id]
+        new_stages = [s for s in stages if s.get("id") != stage_id]
         # Re-index order
         for idx, s in enumerate(new_stages):
             s["order"] = idx + 1
+
+        await self.db[WORKFLOWS_COLLECTION].update_one(
+            {"id": workflow_id},
+            {"$set": {"stages": new_stages, "updated_at": utc_now().isoformat()}},
+        )
+
+        await record_audit(
+            self.db,
+            user,
+            action="pipeline.delete_stage",
+            entity_type="workflow_stage",
+            entity_id=stage_id,
+            entity_label=stage_id,
+            details=f"workflow_id={workflow_id}, reassigned_to={reassign_to_stage_id}, moved_candidates={apps_in_stage}",
+        )
+        return {"success": True, "reassigned_count": apps_in_stage}
 
         await self.db[WORKFLOWS_COLLECTION].update_one(
             {"id": workflow_id},
@@ -244,66 +297,7 @@ class PipelineService:
         """
         app = await self.db[JOB_APPLICATIONS_COLLECTION].find_one({"id": application_id})
         if not app:
-            # Check if this candidate is in resumes collection
-            resume = await self.db[RESUMES_COLLECTION].find_one(
-                {"$or": [{"id": application_id}, {"resume_id": application_id}]}
-            )
-            if resume:
-                now_iso = utc_now().isoformat()
-                rid = resume.get("id") or resume.get("resume_id")
-                pd = resume.get("parsed_data") or {}
-                cname = pd.get("full_name") or pd.get("name") or resume.get("candidate_name") or resume.get("original_filename") or "Candidate"
-                cemail = pd.get("email") or ""
-                job_id = resume.get("opening_id") or resume.get("job_opening_id") or resume.get("job_id") or ""
-                jtitle = resume.get("job_title") or pd.get("current_role") or "Candidate"
-
-                cand_invs = await self.db[INTERVIEWS_COLLECTION].find(
-                    {"$or": [{"resume_id": rid}, {"candidate_id": rid}]}
-                ).to_list(length=None)
-
-                manual = resume.get("manual_stage")
-                if manual:
-                    curr_stage = normalize_stage_id(manual)
-                elif cand_invs:
-                    active = [i for i in cand_invs if str(i.get("status") or "").upper() != "CANCELLED"] or cand_invs
-                    latest = max(
-                        active,
-                        key=lambda i: (str(i.get("scheduled_date") or ""), str(i.get("scheduled_time") or ""), str(i.get("created_at") or "")),
-                    )
-                    verd = verdict_of(latest.get("recommendation"), latest.get("status"))
-                    st = stage_of(latest.get("recommendation"), latest.get("status"))
-                    if verd == "Selected" or st in ("Offer", "Hired"):
-                        curr_stage = "selected"
-                    elif verd == "Rejected" or st == "Closed":
-                        curr_stage = "rejected"
-                    else:
-                        curr_stage = "interview"
-                else:
-                    curr_stage = "applied"
-
-                app = {
-                    "id": application_id,
-                    "company_id": current_company_id() or resume.get("company_id") or user.get("company_id", ""),
-                    "candidate_id": rid,
-                    "resume_id": rid,
-                    "candidate_name": cname,
-                    "candidate_email": cemail,
-                    "job_id": job_id,
-                    "opening_id": job_id,
-                    "job_title": jtitle,
-                    "opening_title": jtitle,
-                    "stage_id": curr_stage,
-                    "stage_name": curr_stage.capitalize(),
-                    "applied_at": resume.get("upload_date") or resume.get("created_at") or now_iso,
-                    "stage_updated_at": resume.get("stage_updated_at") or now_iso,
-                    "source": resume.get("resume_source") or "upload",
-                    "created_at": now_iso,
-                    "updated_at": now_iso,
-                    "history": [],
-                }
-                await self.db[JOB_APPLICATIONS_COLLECTION].insert_one(dict(app))
-            else:
-                raise ValueError("Application not found.")
+            raise ValueError(f"Application '{application_id}' not found.")
 
         job_id = app.get("opening_id") or app.get("job_id")
         wf = await self.get_workflow(job_id)
@@ -382,14 +376,6 @@ class PipelineService:
             },
         )
 
-        # Also update candidate/resume record if applicable for search compatibility
-        candidate_id = app.get("candidate_id") or app.get("resume_id")
-        if candidate_id:
-            await self.db[RESUMES_COLLECTION].update_one(
-                {"$or": [{"id": candidate_id}, {"resume_id": candidate_id}]},
-                {"$set": {"manual_stage": to_stage_name, "stage_updated_at": now_iso}},
-            )
-
         # Audit log
         await record_audit(
             self.db,
@@ -461,6 +447,7 @@ class PipelineService:
         date_to: Optional[str] = None,
         search: Optional[str] = None,
         sort_by: Optional[str] = "applied_date",
+        limit: int = 1000,
     ) -> Dict[str, Any]:
         """
         Build the unified Recruitment Pipeline Kanban board (Screen 14) matching mockup:
@@ -468,6 +455,7 @@ class PipelineService:
         - Stage columns with badges and candidate cards
         - Progress vs vacancies for selected job
         - Stage-to-stage funnel conversion % and average days in stage
+        - Limits cards to real applications with a cap to prevent massive queries
         """
         workflow = await self.get_workflow(job_id)
         stages = workflow.get("stages", [])
@@ -490,111 +478,44 @@ class PipelineService:
                 date_filter["$lte"] = date_to
             query["applied_at"] = date_filter
 
-        # Fetch applications
-        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(query).to_list(length=None)
+        # Fetch real applications with a cap (no synthesized cards from whole resume db)
+        board_limit = min(max(1, limit), 1000)
+        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(query).sort("applied_at", -1).to_list(length=board_limit)
 
-        # Batch load all non-redirect resumes for this tenant
-        resume_query: Dict[str, Any] = {"redirect_id": None}
-        resumes_list = await self.db[RESUMES_COLLECTION].find(resume_query).to_list(length=None)
+        # Collect candidate and application IDs for referenced lookups
+        cand_ids = list({str(a.get("candidate_id") or a.get("resume_id")) for a in apps if (a.get("candidate_id") or a.get("resume_id"))})
+        app_ids = list({str(a.get("id")) for a in apps if a.get("id")})
 
-        # Batch load interview statuses
-        interviews = await self.db[INTERVIEWS_COLLECTION].find({}).to_list(length=None)
+        # Load only resumes referenced by these applications
+        resumes_by_id: Dict[str, Dict[str, Any]] = {}
+        if cand_ids:
+            resumes_list = await self.db[RESUMES_COLLECTION].find(
+                {"$or": [{"id": {"$in": cand_ids}}, {"resume_id": {"$in": cand_ids}}, {"candidate_id": {"$in": cand_ids}}]}
+            ).to_list(length=len(cand_ids) * 2)
+            for r in resumes_list:
+                if r.get("id"):
+                    resumes_by_id[str(r["id"])] = r
+                if r.get("resume_id"):
+                    resumes_by_id[str(r["resume_id"])] = r
+                if r.get("candidate_id"):
+                    resumes_by_id[str(r["candidate_id"])] = r
+
+        # Load only interviews referenced by these applications or candidates
+        interviews: List[Dict[str, Any]] = []
+        if app_ids or cand_ids:
+            inv_filter = []
+            if app_ids:
+                inv_filter.append({"application_id": {"$in": app_ids}})
+            if cand_ids:
+                inv_filter.append({"resume_id": {"$in": cand_ids}})
+                inv_filter.append({"candidate_id": {"$in": cand_ids}})
+            interviews = await self.db[INTERVIEWS_COLLECTION].find({"$or": inv_filter}).to_list(length=len(apps) * 5)
+
         inv_by_cand: Dict[str, List[Dict[str, Any]]] = {}
         for inv in interviews:
-            for k in (inv.get("resume_id"), inv.get("candidate_id")):
+            for k in (inv.get("application_id"), inv.get("resume_id"), inv.get("candidate_id")):
                 if k:
                     inv_by_cand.setdefault(str(k), []).append(inv)
-
-        # Index resumes by ID, resume_id, and candidate_id
-        resumes_by_id: Dict[str, Dict[str, Any]] = {}
-        for r in resumes_list:
-            if r.get("id"):
-                resumes_by_id[str(r["id"])] = r
-            if r.get("resume_id"):
-                resumes_by_id[str(r["resume_id"])] = r
-            if r.get("candidate_id"):
-                resumes_by_id[str(r["candidate_id"])] = r
-
-        # Synthesize applications for resumes that do not yet have a record in job_applications
-        seen_cand_keys: set = set()
-        for a in apps:
-            for k in (a.get("id"), a.get("candidate_id"), a.get("resume_id")):
-                if k:
-                    seen_cand_keys.add(str(k))
-
-        for r in resumes_list:
-            rid = str(r.get("id") or r.get("resume_id") or "")
-            cid = str(r.get("candidate_id") or "")
-            if not rid or rid in seen_cand_keys or (cid and cid in seen_cand_keys):
-                continue
-
-            # Check job_id filter if provided
-            if job_id and job_id != "all":
-                r_job = str(r.get("opening_id") or r.get("job_opening_id") or r.get("job_id") or "")
-                applied_jids = [str(j.get("job_id") or "") for j in (r.get("applied_jobs") or []) if isinstance(j, dict)]
-                if r_job != job_id and job_id not in applied_jids:
-                    continue
-
-            # Check source filter
-            if source and source != "all":
-                r_src = str(r.get("resume_source") or "upload").lower()
-                if r_src != source.lower():
-                    continue
-
-            # Check date filter
-            r_applied = r.get("upload_date") or r.get("created_at")
-            if date_from and (not r_applied or r_applied < date_from):
-                continue
-            if date_to and (not r_applied or r_applied > date_to):
-                continue
-
-            # Determine stage
-            cand_invs = inv_by_cand.get(rid) or (inv_by_cand.get(cid) if cid else []) or []
-            manual = r.get("manual_stage")
-            if manual:
-                stage_id = normalize_stage_id(manual)
-            elif cand_invs:
-                active = [i for i in cand_invs if str(i.get("status") or "").upper() != "CANCELLED"] or cand_invs
-                latest = max(
-                    active,
-                    key=lambda i: (str(i.get("scheduled_date") or ""), str(i.get("scheduled_time") or ""), str(i.get("created_at") or "")),
-                )
-                verd = verdict_of(latest.get("recommendation"), latest.get("status"))
-                st = stage_of(latest.get("recommendation"), latest.get("status"))
-                if verd == "Selected" or st in ("Offer", "Hired"):
-                    stage_id = "selected"
-                elif verd == "Rejected" or st == "Closed":
-                    stage_id = "rejected"
-                else:
-                    stage_id = "interview"
-            else:
-                stage_id = "applied"
-
-            pd = r.get("parsed_data") or {}
-            cname = pd.get("full_name") or pd.get("name") or r.get("candidate_name") or r.get("original_filename") or "Candidate"
-            cemail = pd.get("email") or ""
-            jtitle = r.get("job_title") or pd.get("current_role") or "Position"
-
-            code_suffix = (cid or rid).replace("-", "")[:5].upper()
-            candidate_code = cid or f"CAN-{code_suffix}"
-
-            synth_app = {
-                "id": rid,
-                "candidate_id": rid,
-                "candidate_name": cname,
-                "candidate_email": cemail,
-                "candidate_code": candidate_code,
-                "opening_id": r.get("opening_id") or r.get("job_opening_id") or r.get("job_id"),
-                "job_id": r.get("opening_id") or r.get("job_opening_id") or r.get("job_id"),
-                "job_title": jtitle,
-                "opening_title": jtitle,
-                "stage_id": stage_id,
-                "applied_at": r_applied or utc_now().isoformat(),
-                "stage_updated_at": r.get("stage_updated_at") or r_applied,
-                "source": r.get("resume_source") or "upload",
-                "is_synthesized": True,
-            }
-            apps.append(synth_app)
 
         now = utc_now()
         one_week_ago = (now - timedelta(days=7)).isoformat()
@@ -621,33 +542,22 @@ class PipelineService:
         for app in apps:
             app_id = app.get("id") or str(app.get("_id", ""))
             c_id = app.get("candidate_id") or app.get("resume_id") or app_id
-            resume = resumes_by_id.get(c_id, {})
+            r_id = app.get("resume_id")
+            resume = resumes_by_id.get(c_id) or (resumes_by_id.get(r_id) if r_id else {}) or {}
             parsed = resume.get("parsed_data", {})
             ai_eval = resume.get("ai_evaluation", {})
 
-            cand_invs = inv_by_cand.get(c_id) or (inv_by_cand.get(str(resume.get("candidate_id"))) if resume.get("candidate_id") else []) or []
+            cand_invs = (
+                inv_by_cand.get(app_id)
+                or inv_by_cand.get(c_id)
+                or (inv_by_cand.get(str(r_id)) if r_id else [])
+                or (inv_by_cand.get(str(resume.get("candidate_id"))) if resume.get("candidate_id") else [])
+                or []
+            )
             active_inv = cand_invs[0] if cand_invs else None
 
-            # Determine stage and normalize
+            # Stage is strictly determined from the application; never leaks from resume or other jobs
             raw_stage = normalize_stage_id(app.get("stage_id") or app.get("status"), default_stage=default_stage_id)
-            if raw_stage == default_stage_id and not app.get("is_synthesized"):
-                if resume.get("manual_stage"):
-                    raw_stage = normalize_stage_id(resume.get("manual_stage"), default_stage=default_stage_id)
-                elif cand_invs:
-                    active = [i for i in cand_invs if str(i.get("status") or "").upper() != "CANCELLED"] or cand_invs
-                    latest = max(
-                        active,
-                        key=lambda i: (str(i.get("scheduled_date") or ""), str(i.get("scheduled_time") or ""), str(i.get("created_at") or "")),
-                    )
-                    verd = verdict_of(latest.get("recommendation"), latest.get("status"))
-                    st = stage_of(latest.get("recommendation"), latest.get("status"))
-                    if verd == "Selected" or st in ("Offer", "Hired"):
-                        raw_stage = "selected"
-                    elif verd == "Rejected" or st == "Closed":
-                        raw_stage = "rejected"
-                    else:
-                        raw_stage = "interview"
-
             if raw_stage not in columns:
                 raw_stage = default_stage_id
 

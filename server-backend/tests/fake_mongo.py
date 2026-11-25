@@ -190,7 +190,7 @@ class FakeCollection:
             return _Result(matched_count=0, modified_count=0, upserted_id=new.get("id") or "new")
         return _Result(matched_count=0, modified_count=0, upserted_id=None)
 
-    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any], *a: Any, **k: Any):
+    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, *a: Any, **k: Any):
         count = 0
         for d in self.docs:
             if matches(d, query):
@@ -227,28 +227,12 @@ class FakeCollection:
                 for field, value in update.get("$inc", {}).items():
                     d[field] = d.get(field, 0) + value
                 count += 1
-        return _Result(matched_count=count, modified_count=count)
+        return _Result(matched_count=count, modified_count=count, upserted_id=None)
 
     async def delete_many(self, query: Dict[str, Any], *a: Any, **k: Any):
         before = len(self.docs)
         self.docs = [d for d in self.docs if not matches(d, query)]
         return _Result(deleted_count=before - len(self.docs))
-
-    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, *a: Any, **k: Any):
-        matched = 0
-        modified = 0
-        for d in self.docs:
-            if matches(d, query):
-                matched += 1
-                modified += 1
-                d.update(copy.deepcopy(update.get("$set", {})))
-                for field in update.get("$unset", {}):
-                    d.pop(field, None)
-                for field, value in update.get("$push", {}).items():
-                    d.setdefault(field, []).append(copy.deepcopy(value))
-                for field, value in update.get("$inc", {}).items():
-                    d[field] = d.get(field, 0) + value
-        return _Result(matched_count=matched, modified_count=modified, upserted_id=None)
 
     async def find_one_and_update(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, **k: Any):
         await self.update_one(query, update, upsert=upsert)

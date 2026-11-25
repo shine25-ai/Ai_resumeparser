@@ -1,11 +1,6 @@
-import { BASE_URL } from "./Api";
+import { BASE_URL, apiFetch } from "./Api";
 
 const PIPELINE_BASE = `${BASE_URL}/pipeline`;
-
-function getAuthHeader(): Record<string, string> {
-  const token = localStorage.getItem("access_token") || "";
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 async function parseApiJson<T>(res: Response, fallbackMsg: string): Promise<T> {
   const json = await res.json().catch(() => ({}));
@@ -141,9 +136,7 @@ export interface ApplicationHistoryItem {
 
 export async function getWorkflowApi(jobId?: string): Promise<WorkflowDocument> {
   const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
-  const res = await fetch(`${PIPELINE_BASE}/workflows${query}`, {
-    headers: { ...getAuthHeader() },
-  });
+  const res = await apiFetch(`${PIPELINE_BASE}/workflows${query}`);
   return parseApiJson<WorkflowDocument>(res, "Failed to fetch workflow");
 }
 
@@ -154,11 +147,10 @@ export async function saveWorkflowApi(payload: {
   is_default?: boolean;
   stages: WorkflowStage[];
 }): Promise<WorkflowDocument> {
-  const res = await fetch(`${PIPELINE_BASE}/workflows`, {
+  const res = await apiFetch(`${PIPELINE_BASE}/workflows`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeader(),
     },
     body: JSON.stringify(payload),
   });
@@ -171,10 +163,12 @@ export async function deleteWorkflowStageApi(
   reassignToStageId?: string
 ): Promise<{ success: boolean; reassigned_count: number }> {
   const query = reassignToStageId ? `?reassign_to_stage_id=${encodeURIComponent(reassignToStageId)}` : "";
-  const res = await fetch(`${PIPELINE_BASE}/workflows/${encodeURIComponent(workflowId)}/stages/${encodeURIComponent(stageId)}${query}`, {
-    method: "DELETE",
-    headers: { ...getAuthHeader() },
-  });
+  const res = await apiFetch(
+    `${PIPELINE_BASE}/workflows/${encodeURIComponent(workflowId)}/stages/${encodeURIComponent(stageId)}${query}`,
+    {
+      method: "DELETE",
+    }
+  );
   return parseApiJson<{ success: boolean; reassigned_count: number }>(res, "Failed to delete stage");
 }
 
@@ -197,9 +191,7 @@ export async function getKanbanBoardApi(params?: {
   if (params?.sort_by) query.set("sort_by", params.sort_by);
 
   const qs = query.toString() ? `?${query.toString()}` : "";
-  const res = await fetch(`${PIPELINE_BASE}/kanban${qs}`, {
-    headers: { ...getAuthHeader() },
-  });
+  const res = await apiFetch(`${PIPELINE_BASE}/kanban${qs}`);
   return parseApiJson<KanbanBoardData>(res, "Failed to fetch recruitment pipeline");
 }
 
@@ -211,11 +203,10 @@ export async function moveCandidateStageApi(
     comment?: string;
   }
 ): Promise<any> {
-  const res = await fetch(`${PIPELINE_BASE}/applications/${encodeURIComponent(applicationId)}/stage`, {
+  const res = await apiFetch(`${PIPELINE_BASE}/applications/${encodeURIComponent(applicationId)}/stage`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -228,11 +219,10 @@ export async function bulkMoveCandidatesApi(body: {
   reason?: string;
   comment?: string;
 }): Promise<{ moved_count: number; errors: any[] }> {
-  const res = await fetch(`${PIPELINE_BASE}/applications/bulk-move`, {
+  const res = await apiFetch(`${PIPELINE_BASE}/applications/bulk-move`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -240,8 +230,6 @@ export async function bulkMoveCandidatesApi(body: {
 }
 
 export async function getApplicationHistoryApi(applicationId: string): Promise<ApplicationHistoryItem[]> {
-  const res = await fetch(`${PIPELINE_BASE}/applications/${encodeURIComponent(applicationId)}/history`, {
-    headers: { ...getAuthHeader() },
-  });
+  const res = await apiFetch(`${PIPELINE_BASE}/applications/${encodeURIComponent(applicationId)}/history`);
   return parseApiJson<ApplicationHistoryItem[]>(res, "Failed to fetch candidate stage history");
 }

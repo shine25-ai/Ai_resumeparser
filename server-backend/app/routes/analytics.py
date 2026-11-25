@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, Query, Response, status
 from typing import Any, Dict, Optional
-from app.core.dependencies import get_current_active_user, require_superadmin, can
+from app.core.dependencies import get_current_active_user, require_superadmin, can, require_access
 from app.core.exceptions import AuthorizationError
 from app.schemas.common import ApiResponse
 from app.services.analytics_service import AnalyticsService
 from app.controllers.analytics_controller import AnalyticsController
 
-router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
+_REPORTS_ACCESS = require_access("reports", {
+    ("GET", "/api/v1/analytics/company-dashboard"): "dashboard:view",
+    ("GET", "/api/v1/analytics/platform-dashboard"): "dashboard:view",
+    ("GET", "/api/v1/analytics/reports/export"): "reports:export",
+})
+router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"], dependencies=[Depends(_REPORTS_ACCESS)])
 
 _analytics_service = AnalyticsService()
 

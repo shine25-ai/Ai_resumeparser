@@ -15,7 +15,14 @@ from app.core.dependencies import get_current_active_user, require_access
 from app.services.pipeline_service import PipelineService
 from app.utils.response import success_response
 
-_ACCESS = require_access("pipeline")
+_ACCESS = require_access(
+    "pipeline",
+    {
+        ("POST", "/api/v1/pipeline/applications/bulk-move"): "pipeline:edit",
+        ("POST", "/api/v1/pipeline/workflows"): "pipeline:edit",
+        ("DELETE", "/api/v1/pipeline/workflows/{workflow_id}/stages/{stage_id}"): "pipeline:edit",
+    },
+)
 router = APIRouter(prefix="/api/v1/pipeline", tags=["Recruitment Pipeline"], dependencies=[Depends(_ACCESS)])
 
 
@@ -97,6 +104,7 @@ async def get_kanban_board(
     date_to: Optional[str] = Query(None, description="Filter by application date end"),
     search: Optional[str] = Query(None, description="Search candidate name or email"),
     sort_by: Optional[str] = Query("applied_date", description="Sort by applied_date, rating, days, name"),
+    limit: int = Query(1000, ge=1, le=1000, description="Max applications to load on board"),
     user: dict = Depends(get_current_active_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
@@ -109,6 +117,7 @@ async def get_kanban_board(
         date_to=date_to,
         search=search,
         sort_by=sort_by,
+        limit=limit,
     )
     return success_response(data=board, message="Kanban board retrieved successfully.")
 

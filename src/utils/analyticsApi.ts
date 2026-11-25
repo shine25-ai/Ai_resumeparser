@@ -1,4 +1,4 @@
-import { BASE_URL } from "./Api";
+import { BASE_URL, apiFetch } from "./Api";
 
 export interface DashboardKpiItem {
   value: number;
@@ -170,11 +170,6 @@ export interface RecruitmentReportsData {
   end_date: string;
 }
 
-function getAuthHeader(): Record<string, string> {
-  const token = localStorage.getItem("access_token") || "";
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export async function fetchPlatformDashboard(
   days: number = 30,
   startDate?: string,
@@ -185,11 +180,9 @@ export async function fetchPlatformDashboard(
   if (startDate) q.set("start_date", startDate);
   if (endDate) q.set("end_date", endDate);
 
-  const res = await fetch(`${BASE_URL}/analytics/platform-dashboard?${q.toString()}`, {
-    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
-  });
+  const res = await apiFetch(`${BASE_URL}/analytics/platform-dashboard?${q.toString()}`);
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.message || "Failed to load platform dashboard");
+  if (!res.ok) throw new Error(json.message || json.detail || "Failed to load platform dashboard");
   return json.data;
 }
 
@@ -203,11 +196,9 @@ export async function fetchCompanyDashboard(
   if (startDate) q.set("start_date", startDate);
   if (endDate) q.set("end_date", endDate);
 
-  const res = await fetch(`${BASE_URL}/analytics/company-dashboard?${q.toString()}`, {
-    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
-  });
+  const res = await apiFetch(`${BASE_URL}/analytics/company-dashboard?${q.toString()}`);
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.message || "Failed to load company dashboard");
+  if (!res.ok) throw new Error(json.message || json.detail || "Failed to load company dashboard");
   return json.data;
 }
 
@@ -234,11 +225,9 @@ export async function fetchRecruitmentReports(params: ReportQueryParams = {}): P
   if (params.department && params.department !== "all") q.set("department", params.department);
   if (params.recruiterId && params.recruiterId !== "all") q.set("recruiter_id", params.recruiterId);
 
-  const res = await fetch(`${BASE_URL}/analytics/reports?${q.toString()}`, {
-    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
-  });
+  const res = await apiFetch(`${BASE_URL}/analytics/reports?${q.toString()}`);
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.message || "Failed to load recruitment reports");
+  if (!res.ok) throw new Error(json.message || json.detail || "Failed to load recruitment reports");
   return json.data;
 }
 
@@ -255,12 +244,10 @@ export async function downloadRecruitmentReportsCsv(params: ReportQueryParams = 
   if (params.department && params.department !== "all") q.set("department", params.department);
   if (params.recruiterId && params.recruiterId !== "all") q.set("recruiter_id", params.recruiterId);
 
-  const res = await fetch(`${BASE_URL}/analytics/reports/export?${q.toString()}`, {
-    headers: getAuthHeader(),
-  });
+  const res = await apiFetch(`${BASE_URL}/analytics/reports/export?${q.toString()}`);
   if (!res.ok) {
     const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.message || "Failed to export reports: Permission denied");
+    throw new Error(errJson.message || errJson.detail || "Failed to export reports: Permission denied");
   }
 
   const blob = await res.blob();
