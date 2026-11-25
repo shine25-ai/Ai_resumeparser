@@ -45,12 +45,20 @@ async def lifespan(app: FastAPI):
     """
     setup_logging()
     logger.info("Initializing FastAPI Application Startup Lifespan...")
+    from app.core.bootstrap import check_secret_key
+    check_secret_key()
 
     await db_manager.connect_to_database()
     # Startup jobs see every company's data (app.core.tenant); requests never inherit this.
     db = db_manager.get_raw_db()
 
     await bootstrap_default_admin(db)
+
+    try:
+        from app.core.indexes import ensure_indexes
+        logger.info(f"Ensured {await ensure_indexes(db)} database indexes.")
+    except Exception as e:
+        logger.warning(f"Could not create database indexes: {e}")
 
     try:
         await IntegrationRepository(db).ensure_indexes()
