@@ -444,3 +444,25 @@ def test_interview_create_accepts_an_application_link():
 
     fields = InterviewCreateRequest.model_fields
     assert "application_id" in fields and fields["application_id"].default is None
+
+
+@pytest.mark.asyncio
+async def test_submit_recalculates_skills_on_the_company_scoped_database(monkeypatch):
+    """The skill matrix is rebuilt inside the company: the repository's scoped db, never collection.database."""
+    import app.services.skill_intelligence_service as skills
+
+    calls = []
+
+    async def fake_recalculate(db, any_id, resume_id=None):
+        calls.append((db, any_id))
+
+    monkeypatch.setattr(skills, "recalculate_skills_for", fake_recalculate)
+    scoped_db = object()
+    interviews = FakeRepo([_interview(candidate_id="cand-1")])
+    interviews.db = scoped_db
+    service = EvaluationService(panels=FakeRepo(), forms=FakeRepo([_form()]), evaluations=FakeRepo(), interviews=interviews)
+
+    await service.save_evaluation("iv-1", ALICE, {"ratings": {"tech": 4}})   # a draft does not recalculate
+    assert calls == []
+    await service.save_evaluation("iv-1", ALICE, GOOD_RATINGS)
+    assert calls == [(scoped_db, "cand-1")]

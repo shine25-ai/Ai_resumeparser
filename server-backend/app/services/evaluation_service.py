@@ -284,7 +284,8 @@ class EvaluationService:
         if submit and doc.candidate_id:
             # Keep the candidate's skill matrix current. Never raises, so the submit always goes ahead.
             from app.services.skill_intelligence_service import recalculate_skills_for
-            await recalculate_skills_for(self.interviews.collection.database, doc.candidate_id)
+            # The repository's db is the company-scoped database; collection.database would be the raw one.
+            await recalculate_skills_for(self.interviews.db, doc.candidate_id)
         return doc.to_dict()
 
     async def reopen_evaluation(
