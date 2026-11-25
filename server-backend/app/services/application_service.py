@@ -396,12 +396,18 @@ class ApplicationService:
         with open(path, "wb") as f:
             f.write(content)
 
-        # Check AI parse quota for public career apply
+        # The same file uploaded again for this job reuses its earlier parse: no new parse, no quota use, no
+        # extra storage. A different file is parsed (and counted) as usual.
         from app.services.limit_service import LimitService
         limit_svc = LimitService(self.db)
         cid = opening.get("company_id")
-        can_parse = await limit_svc.can_parse_ai(cid)
-        if can_parse:
+        file_hash = hashlib.sha256(content).hexdigest()
+        previous = await self.drafts.find_one({"opening_id": opening["id"], "email": email})
+        reuse = bool(previous and previous.get("file_hash") == file_hash and previous.get("parser_job_id")
+                     and previous.get("parse_status") not in (PARSE_FAILED, PARSE_UNAVAILABLE, "skipped"))
+        if reuse:
+            job_id, state = previous["parser_job_id"], previous["parse_status"]
+        elif await limit_svc.can_parse_ai(cid):
             job_id, state = await self.parse(content, name, file.content_type or "application/octet-stream")
             if cid:
                 await limit_svc.increment_ai_parses(cid)
@@ -417,16 +423,18 @@ class ApplicationService:
                     link="/applications",
                 )
         if cid:
-            await limit_svc.record_storage_bytes(cid, len(content))
+            # The new draft replaces the old one, so storage changes by the difference
+            await limit_svc.record_storage_bytes(cid, len(content) - int((previous or {}).get("size") or 0))
 
         now = utc_now()
         # One draft per candidate and job: a new upload replaces the old one.
         await self._drop_drafts({"opening_id": opening["id"], "email": email})
         doc = {
             "id": draft_id, "opening_id": opening["id"], "email": email, "file_path": path, "filename": name,
-            "content_type": file.content_type or "application/octet-stream", "file_hash": hashlib.sha256(content).hexdigest(),
+            "content_type": file.content_type or "application/octet-stream", "file_hash": file_hash,
             "size": len(content), "parser_job_id": job_id, "parse_status": state, "parse_error": "",
-            "extracted": {}, "confidence": {}, "created_at": now.isoformat(),
+            "extracted": ((previous or {}).get("extracted") or {}) if reuse else {},
+            "confidence": ((previous or {}).get("confidence") or {}) if reuse else {}, "created_at": now.isoformat(),
             "expires_at": (now + timedelta(days=DRAFT_DAYS)).isoformat(),
         }
         await self.drafts.insert_one(dict(doc))

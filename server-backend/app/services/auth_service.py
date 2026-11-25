@@ -2,6 +2,7 @@
 Authentication service handling user registration, login authentication, token refresh, and password updates.
 """
 
+import secrets
 from datetime import timedelta
 from typing import Optional
 
@@ -21,7 +22,7 @@ from app.models.user import UserDocument
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 from app.schemas.user import ChangePasswordRequest, UserResponse
-from app.utils.constants import COMPANIES_COLLECTION, ERROR_INVALID_CREDENTIALS, ERROR_USER_EXISTS
+from app.utils.constants import COMPANIES_COLLECTION, ERROR_INVALID_CREDENTIALS, ERROR_USER_EXISTS, USERS_COLLECTION
 from app.utils.helpers import utc_now
 
 
@@ -44,13 +45,41 @@ class AuthService:
             expires_in_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
         )
 
-    def _issue_mfa_token(self, user: dict) -> str:
-        """Temporary 5-minute token to complete MFA verification."""
+    async def _issue_mfa_token(self, user: dict) -> str:
+        """Temporary 5-minute token to complete MFA (or first-time MFA setup). It works once: the nonce it
+        carries is stored on the user and cleared when sign-in completes, and a newer sign-in replaces it."""
+        nonce = secrets.token_urlsafe(16)
+        with system_scope():
+            await self.user_repo.db[USERS_COLLECTION].update_one({"id": user["id"]}, {"$set": {"mfa_login_nonce": nonce}})
         return create_access_token(
             subject=user["id"],
             expires_delta=timedelta(minutes=5),
-            extra_claims={"type": "mfa_pending", "email": user["email"]},
+            extra_claims={"type": "mfa_pending", "email": user["email"], "nonce": nonce},
         )
+
+    async def _mfa_pending_user(self, mfa_token: str) -> dict:
+        """The user an unused, unexpired MFA sign-in token belongs to."""
+        try:
+            payload = decode_jwt_token(mfa_token)
+        except Exception:
+            raise AuthenticationError("Your sign-in has expired. Please sign in again.")
+        if payload.get("type") != "mfa_pending" or not payload.get("sub") or not payload.get("nonce"):
+            raise AuthenticationError("Invalid MFA verification token.")
+        with system_scope():
+            user = await self.user_repo.get_by_id(str(payload["sub"]))
+        if not user or not user.get("is_active", True) or user.get("is_deleted"):
+            raise AuthenticationError("User account is invalid or inactive.")
+        if not secrets.compare_digest(str(user.get("mfa_login_nonce") or ""), str(payload["nonce"])):
+            raise AuthenticationError("This sign-in has already been used or replaced. Please sign in again.")
+        return user
+
+    async def _finish_mfa_sign_in(self, user: dict) -> TokenResponse:
+        with system_scope():
+            await self.user_repo.db[USERS_COLLECTION].update_one(
+                {"id": user["id"]},
+                {"$set": {"last_login_at": utc_now().isoformat()}, "$unset": {"mfa_login_nonce": ""}},
+            )
+        return self._issue_tokens(user)
 
     async def _check_company_open(self, user: dict) -> None:
         if str(user.get("role", "")).lower() == "superadmin":
@@ -110,7 +139,7 @@ class AuthService:
         platform_settings = await BrandingService(self.user_repo.db).platform_settings()
 
         if mfa_svc.is_mfa_required(user, company, platform_settings):
-            mfa_token = self._issue_mfa_token(user)
+            mfa_token = await self._issue_mfa_token(user)
             logger.info(f"MFA required for user '{email}'")
             return TokenResponse(
                 access_token=None,
@@ -129,32 +158,40 @@ class AuthService:
         return self._issue_tokens(user)
 
     async def verify_mfa_login(self, mfa_token: str, code: str) -> TokenResponse:
-        """Verify TOTP code or backup code and issue full tokens."""
-        payload = decode_jwt_token(mfa_token)
-        if payload.get("type") != "mfa_pending":
-            raise AuthenticationError("Invalid MFA verification token.")
-        user_id = payload.get("sub")
-        if not user_id:
-            raise AuthenticationError("Invalid MFA verification token.")
-
-        with system_scope():
-            user = await self.user_repo.get_by_id(str(user_id))
-        if not user or not user.get("is_active", True) or user.get("is_deleted"):
-            raise AuthenticationError("User account is invalid or inactive.")
-
+        """Verify TOTP code or backup code and issue full tokens. 5 wrong codes pause MFA for 15 minutes."""
         from app.services.mfa_service import MfaService
+        user = await self._mfa_pending_user(mfa_token)
         mfa_svc = MfaService(self.user_repo.db)
+        if not user.get("mfa_secret"):
+            raise AuthenticationError("Set up two-factor sign-in first.")
+        if mfa_svc.locked_until(user):
+            raise AuthenticationError("Too many wrong codes. Wait 15 minutes, then sign in again.")
         is_valid, method = await mfa_svc.verify_user_code(user, code)
+        await mfa_svc.record_attempt(user, is_valid)
         if not is_valid:
+            if method == "reused":
+                raise AuthenticationError("That code has already been used. Wait for the next code in your app.")
             raise AuthenticationError("Invalid authentication code. Check your authenticator app or backup codes.")
-
-        try:
-            await self.user_repo.collection.update_one({"id": user["id"]}, {"$set": {"last_login_at": utc_now().isoformat()}})
-        except Exception:
-            pass
-
         logger.info(f"User '{user.get('email')}' completed MFA verification via {method}.")
-        return self._issue_tokens(user)
+        return await self._finish_mfa_sign_in(user)
+
+    async def start_mfa_setup(self, mfa_token: str) -> dict:
+        """First-time MFA setup during sign-in (MFA is required but the account has no authenticator yet)."""
+        from app.services.mfa_service import MfaService
+        user = await self._mfa_pending_user(mfa_token)
+        if user.get("mfa_secret"):
+            raise AuthenticationError("Two-factor sign-in is already set up. Enter a code from your app.")
+        return await MfaService(self.user_repo.db).start_enrolment(user["id"], user.get("email", ""))
+
+    async def confirm_mfa_setup(self, mfa_token: str, code: str) -> TokenResponse:
+        """Finish first-time setup with the first code from the app, then complete sign-in."""
+        from app.services.mfa_service import MfaService
+        user = await self._mfa_pending_user(mfa_token)
+        if user.get("mfa_secret"):
+            raise AuthenticationError("Two-factor sign-in is already set up. Enter a code from your app.")
+        await MfaService(self.user_repo.db).confirm_enrolment(user["id"], code)
+        logger.info(f"User '{user.get('email')}' set up MFA during sign-in.")
+        return await self._finish_mfa_sign_in(user)
 
     async def _check_login_page(self, user: dict, slug: Optional[str]) -> None:
         """A company's own sign-in page only lets that company's users in (the super admin may use any)."""

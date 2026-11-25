@@ -50,3 +50,18 @@ class MfaVerifyRequest(BaseModel):
 
 class MfaEnrolConfirmRequest(BaseModel):
     code: str
+
+
+class MfaSetupStartRequest(BaseModel):
+    """First-time MFA setup during sign-in: the 5-minute token from the sign-in response."""
+    mfa_token: str
+
+
+class MfaSetupConfirmRequest(BaseModel):
+    mfa_token: str
+    code: str
+
+
+class MfaDisableRequest(BaseModel):
+    """A current code from the authenticator app, or a backup code."""
+    code: str

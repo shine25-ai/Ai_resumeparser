@@ -226,16 +226,35 @@ export const loginUser = async (credentials: LoginPayload): Promise<AuthSuccessR
   };
 };
 
-export const verifyMfaLogin = async (mfa_token: string, code: string): Promise<AuthSuccessResult> => {
-  const response = await fetch("/api/v1/auth/mfa/verify", {
+const mfaSignInPost = async (path: string, body: Record<string, string>) => {
+  const response = await fetch(`${BASE_URL}/auth/mfa/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mfa_token, code }),
+    body: JSON.stringify(body),
   });
-  const resData = await response.json();
+  const resData = await response.json().catch(() => ({}));
   if (!response.ok || !resData.success) {
     throw new Error(resData.message || resData.detail || "Invalid verification code");
   }
+  return resData.data;
+};
+
+const finishMfaSignIn = async (data: { access_token: string; refresh_token: string; token_type: string }): Promise<AuthSuccessResult> => {
+  const { access_token, refresh_token, token_type } = data;
+  const user = await fetchUserProfile(access_token);
+  return { access_token, refresh_token, token_type, user };
+};
+
+export interface MfaSetup { secret: string; otpauth_url: string; backup_codes: string[]; qr_svg: string }
+
+/** First-time two-factor setup during sign-in (MFA is required but the account has no authenticator yet). */
+export const startMfaSetup = async (mfa_token: string): Promise<MfaSetup> => mfaSignInPost("setup/start", { mfa_token });
+
+export const confirmMfaSetup = async (mfa_token: string, code: string): Promise<AuthSuccessResult> =>
+  finishMfaSignIn(await mfaSignInPost("setup/confirm", { mfa_token, code }));
+
+export const verifyMfaLogin = async (mfa_token: string, code: string): Promise<AuthSuccessResult> => {
+  const resData = { data: await mfaSignInPost("verify", { mfa_token, code }) };
   const { access_token, refresh_token, token_type } = resData.data;
   const user = await fetchUserProfile(access_token);
   return {
@@ -2192,24 +2211,20 @@ export const applyDataRetention = async (companyId?: string): Promise<any> => {
   return data.data || data;
 };
 
-export const startMfaEnrolment = async (): Promise<{ secret: string; otpauth_url: string; backup_codes: string[]; qr_svg: string }> => {
-  const token = localStorage.getItem("access_token") || "";
-  const res = await fetch("/api/v1/auth/mfa/enrol/start", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await res.json();
+export const startMfaEnrolment = async (): Promise<MfaSetup> => {
+  const res = await apiFetch(`${BASE_URL}/auth/mfa/enrol/start`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.detail || "Could not start two-factor setup");
   return data.data || data;
 };
 
 export const confirmMfaEnrolment = async (code: string): Promise<{ success: boolean; message: string }> => {
-  const token = localStorage.getItem("access_token") || "";
-  const res = await fetch("/api/v1/auth/mfa/enrol/confirm", {
+  const res = await apiFetch(`${BASE_URL}/auth/mfa/enrol/confirm`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || data.detail || "Verification failed");
   return data.data || data;
 };

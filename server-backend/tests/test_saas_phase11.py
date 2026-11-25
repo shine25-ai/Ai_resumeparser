@@ -247,9 +247,12 @@ async def test_mfa_totp_and_backup_code_acceptance():
     assert user is not None
     assert user["mfa_enabled"] is True
 
-    # 3. Verify with TOTP code
-    code_now = generate_totp_code(secret)
-    valid, method = await mfa_svc.verify_user_code(user, code_now)
+    # 3. The code used for setup cannot be used again; the next code works
+    valid, method = await mfa_svc.verify_user_code(user, current_code)
+    assert valid is False and method == "reused"
+    import time as _time
+    next_code = generate_totp_code(secret, int(_time.time() // 30) + 1)
+    valid, method = await mfa_svc.verify_user_code(user, next_code)
     assert valid is True
     assert method == "totp"
 

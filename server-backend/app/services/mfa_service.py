@@ -9,6 +9,7 @@ Provides:
 4. Verification with window drift (±30s)
 5. 8 single-use recovery backup codes
 6. Enforcement checks (Super Admin always; company/platform policies)
+7. Brute-force protection: 5 wrong codes pause MFA for 15 minutes; a TOTP code works once
 """
 
 import base64
@@ -17,6 +18,7 @@ import hmac
 import secrets
 import struct
 import time
+from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
@@ -48,19 +50,24 @@ def generate_totp_code(secret_b32: str, intervals_no: Optional[int] = None) -> s
     return str(code).zfill(6)
 
 
-def verify_totp_code(secret_b32: str, code: str, window: int = 1) -> bool:
-    """Verify TOTP code within a drift window of ±1 step (±30 seconds)."""
+def totp_step(secret_b32: str, code: str, window: int = 1) -> Optional[int]:
+    """The 30-second step a TOTP code belongs to (within ±1 step), or None when it is wrong."""
     if not code:
-        return False
+        return None
     clean = str(code).strip()
     if len(clean) != 6 or not clean.isdigit():
-        return False
+        return None
 
     current_interval = int(time.time() // 30)
     for step in range(-window, window + 1):
         if generate_totp_code(secret_b32, current_interval + step) == clean:
-            return True
-    return False
+            return current_interval + step
+    return None
+
+
+def verify_totp_code(secret_b32: str, code: str, window: int = 1) -> bool:
+    """Verify TOTP code within a drift window of ±1 step (±30 seconds)."""
+    return totp_step(secret_b32, code, window) is not None
 
 
 def generate_backup_codes(count: int = 8) -> List[str]:
@@ -77,62 +84,14 @@ def _hash_code(code: str) -> str:
 
 
 def render_svg_qr(content: str) -> str:
-    """
-    Generate a lightweight SVG QR code representation.
-    Produces a valid, scalable inline SVG with quiet zone and embedded data matrix pattern.
-    """
-    # Deterministic pseudo-grid encoding from sha256 to produce standard visual scannable matrix layout
-    h = hashlib.sha256(content.encode("utf-8")).digest()
-    size = 21  # 21x21 modules standard Version 1 grid
-    grid = [[0 for _ in range(size)] for _ in range(size)]
+    """A real, scannable QR code (segno) as inline SVG, for authenticator apps."""
+    import segno
 
-    def draw_finder(top_r: int, top_c: int):
-        for r in range(7):
-            for c in range(7):
-                if r in (0, 6) or c in (0, 6) or (2 <= r <= 4 and 2 <= c <= 4):
-                    grid[top_r + r][top_c + c] = 1
+    return segno.make(content, error="m").svg_inline(scale=5, border=2, dark="#0f172a", light="#ffffff")
 
-    draw_finder(0, 0)
-    draw_finder(0, size - 7)
-    draw_finder(size - 7, 0)
 
-    # Timing patterns
-    for i in range(8, size - 8):
-        grid[6][i] = 1 if i % 2 == 0 else 0
-        grid[i][6] = 1 if i % 2 == 0 else 0
-
-    # Data density
-    byte_idx = 0
-    bit_idx = 0
-    for r in range(size):
-        for c in range(size):
-            if (r < 8 and (c < 8 or c >= size - 8)) or (r >= size - 8 and c < 8) or r == 6 or c == 6:
-                continue
-            bit = (h[byte_idx % len(h)] >> (bit_idx % 8)) & 1
-            grid[r][c] = bit
-            bit_idx += 1
-            if bit_idx % 8 == 0:
-                byte_idx += 1
-
-    # Render SVG rect elements
-    scale = 10
-    total_size = (size + 4) * scale
-    rects = []
-    for r in range(size):
-        for c in range(size):
-            if grid[r][c] == 1:
-                x = (c + 2) * scale
-                y = (r + 2) * scale
-                rects.append(f'<rect x="{x}" y="{y}" width="{scale}" height="{scale}" fill="#0f172a" />')
-
-    svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total_size} {total_size}" '
-        f'width="220" height="220" shape-rendering="crispEdges">'
-        f'<rect width="{total_size}" height="{total_size}" fill="#ffffff" />'
-        f'{"".join(rects)}'
-        f'</svg>'
-    )
-    return svg
+MAX_FAILED_ATTEMPTS = 5     # wrong codes in a row before MFA sign-in is paused
+LOCK_MINUTES = 15
 
 
 class MfaService:
@@ -209,8 +168,12 @@ class MfaService:
         if not pending or not pending.get("secret"):
             raise BadRequestError("No pending MFA enrolment found. Please initiate setup again.")
 
+        if self.locked_until(user):
+            raise ForbiddenError("Too many wrong codes. Try again later.")
         secret = pending["secret"]
-        if not verify_totp_code(secret, code):
+        step = totp_step(secret, code)
+        await self.record_attempt(user, step is not None)
+        if step is None:
             raise BadRequestError("Invalid verification code. Please check your authenticator app and try again.")
 
         now = utc_now().isoformat()
@@ -223,6 +186,7 @@ class MfaService:
                         "mfa_secret": secret,
                         "mfa_backup_codes": pending.get("backup_codes", []),
                         "mfa_enrolled_at": now,
+                        "mfa_last_totp_step": step,
                     },
                     "$unset": {"mfa_enrolment_pending": ""},
                 },
@@ -234,12 +198,32 @@ class MfaService:
             "mfa_enrolled_at": now,
         }
 
+    @staticmethod
+    def locked_until(user: Dict[str, Any]) -> Optional[str]:
+        """When MFA sign-in is paused after too many wrong codes, the time it opens again; otherwise None."""
+        until = user.get("mfa_locked_until")
+        return until if until and until > utc_now().isoformat() else None
+
+    async def record_attempt(self, user: Dict[str, Any], ok: bool) -> None:
+        """Count wrong codes; the 5th in a row pauses MFA for 15 minutes. A right code clears the count."""
+        if ok:
+            update: Dict[str, Any] = {"$unset": {"mfa_failed_attempts": "", "mfa_locked_until": ""}}
+        else:
+            failed = int(user.get("mfa_failed_attempts") or 0) + 1
+            fields: Dict[str, Any] = {"mfa_failed_attempts": failed}
+            if failed >= MAX_FAILED_ATTEMPTS:
+                fields = {"mfa_failed_attempts": 0,
+                          "mfa_locked_until": (utc_now() + timedelta(minutes=LOCK_MINUTES)).isoformat()}
+            update = {"$set": fields}
+        with system_scope():
+            await self.db[USERS_COLLECTION].update_one({"id": user["id"]}, update)
+
     async def verify_user_code(self, user: Dict[str, Any], code: str) -> Tuple[bool, str]:
         """
         Verify code during sign-in.
         Accepts:
-        - 6-digit TOTP code
-        - Or 8-character recovery backup code (e.g. 'a8f1-c4d2')
+        - 6-digit TOTP code (each code works once)
+        - Or 8-character recovery backup code (e.g. 'a8f1-c4d2'), single use
         Returns (is_valid, method_used).
         """
         clean = str(code or "").strip()
@@ -247,9 +231,14 @@ class MfaService:
         if not secret:
             return False, "no_secret"
 
-        # 1. Try TOTP
+        # 1. Try TOTP (a code already used cannot be used again)
         if len(clean) == 6 and clean.isdigit():
-            if verify_totp_code(secret, clean):
+            step = totp_step(secret, clean)
+            if step is not None:
+                if step <= int(user.get("mfa_last_totp_step") or -1):
+                    return False, "reused"
+                with system_scope():
+                    await self.db[USERS_COLLECTION].update_one({"id": user["id"]}, {"$set": {"mfa_last_totp_step": step}})
                 return True, "totp"
 
         # 2. Try Backup code
@@ -267,8 +256,10 @@ class MfaService:
 
         return False, "invalid"
 
-    async def disable_mfa(self, user_id: str, actor: Dict[str, Any]) -> Dict[str, Any]:
-        """Disable MFA if not enforced by platform or super admin status."""
+    async def disable_mfa(self, user_id: str, actor: Dict[str, Any], code: str = "",
+                          company: Optional[Dict[str, Any]] = None,
+                          platform_settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Turn MFA off. Needs a current code, and is refused while MFA is required for this account."""
         with system_scope():
             user = await self.db[USERS_COLLECTION].find_one({"id": user_id})
         if not user:
@@ -276,13 +267,21 @@ class MfaService:
 
         if user.get("is_superadmin") or user.get("role") == "superadmin":
             raise ForbiddenError("MFA is permanently mandatory for Super Admin accounts.")
+        if self.is_mfa_required({**user, "mfa_enabled": False}, company, platform_settings):
+            raise ForbiddenError("Two-factor sign-in is required for your company, so it can't be turned off.")
+        if self.locked_until(user):
+            raise ForbiddenError("Too many wrong codes. Try again later.")
+        ok, _ = await self.verify_user_code(user, code)
+        await self.record_attempt(user, ok)
+        if not ok:
+            raise BadRequestError("Enter a current code from your authenticator app (or a backup code) to turn this off.")
 
         with system_scope():
             await self.db[USERS_COLLECTION].update_one(
                 {"id": user_id},
                 {
                     "$set": {"mfa_enabled": False},
-                    "$unset": {"mfa_secret": "", "mfa_backup_codes": "", "mfa_enrolled_at": ""},
+                    "$unset": {"mfa_secret": "", "mfa_backup_codes": "", "mfa_enrolled_at": "", "mfa_last_totp_step": ""},
                 },
             )
 
