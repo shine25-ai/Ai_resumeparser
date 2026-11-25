@@ -254,19 +254,29 @@ class SkillIntelligenceService:
         i_weight = weights["interview_weight"] / 100.0
         r_weight = weights["resume_weight"] / 100.0
 
-        # 1. Fetch Candidate info
+        # 1. Fetch Candidate info (Phase 6 fields)
         candidate = await self.db[CANDIDATES_COLLECTION].find_one({"id": candidate_id})
         candidate_role = ""
         resume_years_exp = None
         if candidate:
-            candidate_role = candidate.get("current_title") or candidate.get("role") or ""
-            resume_years_exp = candidate.get("total_experience")
+            candidate_role = candidate.get("current_role") or ""
+            resume_years_exp = candidate.get("total_experience_years")
+
+        # The candidate's resumes point at it with `candidate_ref` and keep their CND code in `candidate_id`.
+        # Interviews and evaluations may carry either the candidate's ID or a resume's CND code.
+        resumes = await self.db[RESUMES_COLLECTION].find(
+            {"$or": [{"candidate_ref": candidate_id}, {"candidate_id": candidate_id}]}
+        ).to_list(length=50)
+        resume_ids = [r["id"] for r in resumes if r.get("id")]
+        person_keys = [k for k in dict.fromkeys([candidate_id, *(r.get("candidate_id") for r in resumes),
+                                                (candidate or {}).get("candidate_id_display")]) if k]
 
         # 2. Gather resume skills
         resume_skills_data: Dict[str, Dict[str, Any]] = {}
-        resumes = await self.db[RESUMES_COLLECTION].find({"candidate_id": candidate_id}).to_list(length=10)
         for r in resumes:
             parsed = r.get("parsed_data") or {}
+            if resume_years_exp is None and parsed.get("total_experience_years") is not None:
+                resume_years_exp = parsed.get("total_experience_years")
             skills_list = parsed.get("primary_skills") or parsed.get("skills") or []
             if isinstance(skills_list, str):
                 skills_list = [s.strip() for s in skills_list.split(",") if s.strip()]
@@ -282,38 +292,48 @@ class SkillIntelligenceService:
 
         # 3. Gather interview ratings
         interview_ratings_data: Dict[str, Dict[str, Any]] = {}
-        evals = await self.db[INTERVIEW_EVALUATIONS_COLLECTION].find(
-            {"candidate_id": candidate_id, "status": "submitted"}
-        ).to_list(length=50)
 
+        def _add_rating(name: str, value: Any, scale_max: Any = 5) -> None:
+            try:
+                val = float(value or 0.0)
+                top = float(scale_max or 5)
+            except (TypeError, ValueError):
+                return
+            if val <= 0 or top <= 0:
+                return
+            val = round(val * 5.0 / top, 2)          # every scale counts as out of 5
+            norm_c, raw_c = SkillNormalizationEngine.normalize_skill(name or "")
+            if not norm_c:
+                return
+            interview_ratings_data.setdefault(norm_c, {"scores": [], "raw_name": raw_c})["scores"].append(val)
+
+        evals = await self.db[INTERVIEW_EVALUATIONS_COLLECTION].find(
+            {"candidate_id": {"$in": person_keys}}
+        ).to_list(length=200)
         for ev in evals:
-            ratings = ev.get("ratings") or []
-            for r in ratings:
-                c_name = r.get("criterion_name") or ""
-                val = float(r.get("rating") or 0.0)
-                if val <= 0:
-                    continue
-                norm_c, raw_c = SkillNormalizationEngine.normalize_skill(c_name)
-                if not norm_c:
-                    continue
-                if norm_c not in interview_ratings_data:
-                    interview_ratings_data[norm_c] = {"scores": [val], "raw_name": raw_c}
-                else:
-                    interview_ratings_data[norm_c]["scores"].append(val)
+            if str(ev.get("status") or "").upper() != "SUBMITTED":
+                continue
+            ratings = ev.get("ratings") or {}
+            if isinstance(ratings, dict):
+                # Phase 8: {criterion_id: score}, with the criteria (id, label) copied onto the evaluation
+                labels = {str(c.get("id")): c.get("label") or c.get("name") or "" for c in (ev.get("criteria") or [])
+                          if isinstance(c, dict)}
+                for crit_id, val in ratings.items():
+                    _add_rating(labels.get(str(crit_id)) or str(crit_id), val, ev.get("scale_max"))
+            else:
+                for r in ratings:
+                    if isinstance(r, dict):
+                        _add_rating(r.get("criterion_name") or r.get("label") or "", r.get("rating"), ev.get("scale_max"))
 
         # Also check old interview documents skill_ratings field if any
-        interviews = await self.db["interviews"].find({"candidate_id": candidate_id}).to_list(length=20)
+        inv_or: List[Dict[str, Any]] = [{"candidate_id": {"$in": person_keys}}]
+        if resume_ids:
+            inv_or.append({"resume_id": {"$in": resume_ids}})
+        interviews = await self.db["interviews"].find({"$or": inv_or}).to_list(length=50)
         for intv in interviews:
             for sr in (intv.get("skill_ratings") or []):
-                s_name = sr.get("skill_name") or ""
-                s_val = float(sr.get("rating") or 0.0)
-                if s_val > 0:
-                    norm_s, raw_s = SkillNormalizationEngine.normalize_skill(s_name)
-                    if norm_s:
-                        if norm_s not in interview_ratings_data:
-                            interview_ratings_data[norm_s] = {"scores": [s_val], "raw_name": raw_s}
-                        else:
-                            interview_ratings_data[norm_s]["scores"].append(s_val)
+                if isinstance(sr, dict):
+                    _add_rating(sr.get("skill_name") or "", sr.get("rating"))
 
         # 4. Merge and calculate combined proficiency
         all_skill_keys = set(resume_skills_data.keys()) | set(interview_ratings_data.keys())
@@ -413,9 +433,11 @@ class SkillIntelligenceService:
             ).to_dict()
 
             # Upsert into candidate_skills collection
+            # Upsert into candidate_skills collection (the record keeps its id and created_at)
+            fields = {k: v for k, v in doc.items() if k not in ("id", "created_at")}
             await self.col.update_one(
                 {"candidate_id": candidate_id, "skill_name": item["skill_name"]},
-                {"$set": doc},
+                {"$set": fields, "$setOnInsert": {"id": doc["id"], "created_at": doc["created_at"]}},
                 upsert=True,
             )
             final_docs.append(doc)
@@ -424,7 +446,7 @@ class SkillIntelligenceService:
 
     async def recalculate_all_candidate_skills(self, interview_weight: float, resume_weight: float) -> int:
         """Recalculate skills for all candidates when company weights change."""
-        candidates = await self.db[CANDIDATES_COLLECTION].find({}, {"id": 1}).to_list(length=1000)
+        candidates = await self.db[CANDIDATES_COLLECTION].find({"merged_into": None}, {"id": 1}).to_list(length=None)
         weights = {"interview_weight": interview_weight, "resume_weight": resume_weight}
         count = 0
         for cand in candidates:
@@ -566,8 +588,8 @@ class SkillIntelligenceService:
             matrix_rows.append({
                 "candidate_id": c_id,
                 "candidate_name": c.get("full_name") or c.get("name") or "Candidate",
-                "role": c.get("current_title") or c.get("role") or "",
-                "experience": c.get("total_experience") or 0.0,
+                "role": c.get("current_role") or "",
+                "experience": c.get("total_experience_years") or 0.0,
                 "primary_skills": [s["skill_name"] for s in c_skills if s.get("skill_class") == SKILL_CLASS_PRIMARY],
                 "skills": {s["skill_name"]: s["proficiency"] for s in c_skills},
             })
@@ -631,3 +653,29 @@ class SkillIntelligenceService:
             "updated_candidate_skills": updated_cand_skills.modified_count,
             "status": "merged",
         }
+
+
+async def recalculate_skills_for(db: Any, any_id: Optional[str], resume_id: Optional[str] = None) -> None:
+    """
+    Keep a candidate's skill matrix current without anyone pressing "Recalculate". Called when a resume is
+    parsed, when interview feedback is saved, and (Phase 8) when an evaluation is submitted.
+    `any_id` may be the candidate's ID or a resume's CND code; `resume_id` is used when that is all there is.
+    Never raises: a failure is logged and the save that triggered it goes ahead.
+    """
+    import logging
+
+    try:
+        candidate_id = None
+        if any_id and await db[CANDIDATES_COLLECTION].find_one({"id": any_id}, {"_id": 0, "id": 1}):
+            candidate_id = any_id
+        else:
+            ors = [{"candidate_id": any_id}] if any_id else []
+            if resume_id:
+                ors.append({"id": resume_id})
+            resume = await db[RESUMES_COLLECTION].find_one({"$or": ors}, {"_id": 0, "candidate_ref": 1}) if ors else None
+            candidate_id = (resume or {}).get("candidate_ref")
+        if candidate_id:
+            await SkillIntelligenceService(db).recalculate_candidate_skills(candidate_id)
+    except Exception as e:  # never block the save that triggered it
+        logging.getLogger(__name__).warning("Skill recalculation failed for %s: %s", any_id or resume_id, e)
+

@@ -92,8 +92,8 @@ async def test_candidate_skill_calculation_acceptance():
     await db["candidates"].insert_one({
         "id": cand_id,
         "name": "Sarah Connor",
-        "current_title": "Senior Java Developer",
-        "total_experience": 6.0,
+        "current_role": "Senior Java Developer",
+        "total_experience_years": 6.0,
     })
 
     # Seed resume with "Java" and "Spring Boot"
@@ -312,7 +312,7 @@ async def test_p9_02_interview_rating_recalculates_and_verifies():
     service = SkillIntelligenceService(db)
 
     cand_id = "cand-p9-02"
-    await db["candidates"].insert_one({"id": cand_id, "name": "Backend Dev", "total_experience": 3.0})
+    await db["candidates"].insert_one({"id": cand_id, "name": "Backend Dev", "total_experience_years": 3.0})
     await db["resumes"].insert_one({
         "id": "res-p9-02",
         "candidate_id": cand_id,
@@ -410,7 +410,7 @@ async def test_p9_05_explanation_details():
     service = SkillIntelligenceService(db)
 
     cand_id = "cand-p9-05"
-    await db["candidates"].insert_one({"id": cand_id, "name": "Java Lead", "total_experience": 6.0})
+    await db["candidates"].insert_one({"id": cand_id, "name": "Java Lead", "total_experience_years": 6.0})
     await db["resumes"].insert_one({
         "id": "res-p9-05",
         "candidate_id": cand_id,
@@ -437,7 +437,7 @@ async def test_p9_06_heatmap_20_candidates():
 
     for i in range(20):
         c_id = f"cand-{i}"
-        await db["candidates"].insert_one({"id": c_id, "name": f"Candidate {i}", "total_experience": 4.0})
+        await db["candidates"].insert_one({"id": c_id, "name": f"Candidate {i}", "total_experience_years": 4.0})
         await db["candidate_skills"].insert_one({
             "id": f"cs-{i}",
             "candidate_id": c_id,

@@ -290,7 +290,7 @@ export default function CareersPage({ showHeader = true, showFooter = true, mana
         },
         "baseSalary": (sal && (sal.min || sal.max)) ? {
           "@type": "MonetaryAmount",
-          "currency": sal.currency || "USD",
+          "currency": sal.currency || "INR",   // jobs store salary_currency, INR by default
           "value": {
             "@type": "QuantitativeValue",
             "minValue": sal.min ?? undefined,

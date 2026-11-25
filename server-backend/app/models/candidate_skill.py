@@ -39,7 +39,11 @@ class CandidateSkillDocument(BaseModel):
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.model_dump()
+        data = self.model_dump()
+        if not data.get("company_id"):
+            # The tenant layer stamps the request's company; a None here would be refused as a company change.
+            data.pop("company_id", None)
+        return data
 
 
 def with_candidate_skill_defaults(doc: Optional[Dict[str, Any]]) -> Dict[str, Any]:

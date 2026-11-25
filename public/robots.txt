@@ -22,5 +22,5 @@ Disallow: /companies
 Disallow: /users
 Disallow: /audit
 
-Sitemap: /sitemap.xml
+# No Sitemap line: a sitemap must use full URLs, and each company's careers site lives on its own domain.
 
