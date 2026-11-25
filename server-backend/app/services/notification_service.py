@@ -181,16 +181,18 @@ class NotificationService:
         }
 
     async def mark_read(self, notification_id: str, user_id: str) -> Dict[str, Any]:
+        """Mark one of the user's own notifications read. Anyone else's (even another company's) is "not found"."""
+        mine = {"id": notification_id, "user_id": user_id}
         with system_scope():
             await self.db[NOTIFICATIONS_COLLECTION].update_one(
-                {"id": notification_id, "user_id": user_id},
-                {"$set": {"is_read": True, "read_at": utc_now().isoformat()}},
+                mine, {"$set": {"is_read": True, "read_at": utc_now().isoformat()}},
             )
-            doc = await self.db[NOTIFICATIONS_COLLECTION].find_one({"id": notification_id})
-        if doc:
-            doc.pop("_id", None)
-            return doc
-        return {"id": notification_id, "is_read": True}
+            doc = await self.db[NOTIFICATIONS_COLLECTION].find_one(mine)
+        if not doc:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Notification not found.")
+        doc.pop("_id", None)
+        return doc
 
     async def mark_all_read(self, user_id: str, company_id: Optional[str] = None) -> int:
         cid = company_id or current_company_id()
