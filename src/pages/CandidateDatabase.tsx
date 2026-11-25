@@ -1,869 +1,981 @@
-import { useState, useEffect } from "react";
-import { Search, Filter, Download, FileText, User, ChevronLeft, ChevronRight, X, SlidersHorizontal, Edit3, Calendar, Briefcase } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { CompanyFilter, CompanyPills, appliedCompanies, useCompanies } from "../components/CompanyTags";
-import { getResumes, exportResumesApi, type CandidateQueryParams, type SortOption, SORT_OPTION_LABELS } from "../utils/Api";
-import { getCandidateRole, formatExperience } from "../utils/candidateFields";
-import { CANDIDATE_STAGES } from "../utils/interviewState";
-import { CandidateEditModal } from "../components/CandidateEditModal";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  Filter,
+  Layers,
+  Mail,
+  MapPin,
+  Phone,
+  RefreshCw,
+  Search,
+  Tag,
+  User,
+  UserCheck,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
+
+import { StatCard } from "../components/companies/companyForm";
 import { useFeedback } from "../components/ui/Feedback";
+import {
+  bulkCandidateAction,
+  exportCandidatesCsv,
+  fetchCandidates,
+  fetchCandidateStats,
+  fetchDuplicateCandidates,
+  mergeCandidatesApi,
+  type CandidateItem,
+  type CandidateSummaryStats,
+  type DuplicateGroup,
+} from "../utils/candidatesApi";
+import { fetchJobOpenings, type JobOpening } from "../utils/jobsApi";
+import { apiFetch } from "../utils/Api";
+
+const STAGES = [
+  "All",
+  "APPLIED",
+  "SCREENING",
+  "SHORTLISTED",
+  "INTERVIEW",
+  "SELECTED",
+  "OFFER",
+  "HIRED",
+  "REJECTED",
+];
+
+const SOURCES = ["All", "Careers page", "Direct upload", "Referral", "LinkedIn", "Agency"];
+
+const getInitials = (name?: string) => {
+  if (!name) return "C";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+};
 
 export default function CandidateDatabase() {
-  const { toast } = useFeedback();
+  const { toast, confirm } = useFeedback();
+  const [searchParams] = useSearchParams();
 
-  const navigate = useNavigate();
-  const [candidates, setCandidates] = useState<any[]>([]);
+  // Data states
+  const [candidates, setCandidates] = useState<CandidateItem[]>([]);
+  const [stats, setStats] = useState<CandidateSummaryStats>({
+    total_candidates: 0,
+    active_pipeline: 0,
+    hired: 0,
+    possible_duplicates: 0,
+  });
   const [loading, setLoading] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [openings, setOpenings] = useState<JobOpening[]>([]);
+  const [companyUsers, setCompanyUsers] = useState<{ id: string; full_name?: string; name?: string; email: string }[]>([]);
 
-  // Candidate Edit Modal State
-  const [editCandidateId, setEditCandidateId] = useState<string | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
-
-  // Pagination & Server Search/Filter State
-  const [page, setPage] = useState<number>(1);
-  const [limit, setLimit] = useState<number>(10);
+  // Pagination & sorting
+  const [page, setPage] = useState<number>(() => Number(searchParams.get("page")) || 1);
+  const [limit] = useState<number>(20);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
-  // URL-driven dashboard filters (?stage=, ?attention=, ?days=, ?seniority=, ?skill=, ?city=, ?source=, ?domain=, ?sort=)
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") || "");
-  const [sortBy, setSortBy] = useState<SortOption>(() => {
-    const s = searchParams.get("sort");
-    return (s && ["latest", "oldest", "ai_score", "experience_desc", "experience_asc", "name"].includes(s))
-      ? (s as SortOption)
-      : "latest";
-  });
-  const [stageFilter, setStageFilter] = useState<string>(() => {
-    const st = searchParams.get("stage");
-    return st && CANDIDATE_STAGES.includes(st as any) ? st : "All";
-  });
-  const companies = useCompanies();
-  const [companyFilter, setCompanyFilter] = useState<string>(() => searchParams.get("company") || "");
-  const [attentionFilter, setAttentionFilter] = useState<string>(() => searchParams.get("attention") || "");
-  const [stuckDaysFilter, setStuckDaysFilter] = useState<number>(() => {
-    const d = Number(searchParams.get("days"));
-    return Number.isFinite(d) && d > 0 ? d : 7;
-  });
-  const [seniorityFilter, setSeniorityFilter] = useState<string>(() => searchParams.get("seniority") || "");
-  const [skillFilter, setSkillFilter] = useState<string>(() => searchParams.get("skill") || "");
-  const [cityFilter, setCityFilter] = useState<string>(() => searchParams.get("city") || "");
-  const [sourceFilter, setSourceFilter] = useState<string>(() => searchParams.get("source") || "");
-  const [domainFilter, setDomainFilter] = useState<string>(() => searchParams.get("domain") || "");
 
-  // Sync if user navigates to /database with new query params
+  // Filters
+  const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("q") || "");
+  const [jobFilter, setJobFilter] = useState<string>(() => searchParams.get("job_id") || "");
+  const [stageFilter, setStageFilter] = useState<string>(() => searchParams.get("stage") || "All");
+  const [sourceFilter, setSourceFilter] = useState<string>(() => searchParams.get("source") || "All");
+  const [locationFilter, setLocationFilter] = useState<string>(() => searchParams.get("location") || "");
+  const [expRange, setExpRange] = useState<string>(() => searchParams.get("exp") || "All");
+  const [sortBy, setSortBy] = useState<"latest" | "oldest" | "experience_desc" | "experience_asc" | "name">("latest");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Selection & Bulk
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTagModalOpen, setBulkTagModalOpen] = useState(false);
+  const [bulkTagInput, setBulkTagInput] = useState("");
+  const [bulkOwnerModalOpen, setBulkOwnerModalOpen] = useState(false);
+  const [selectedOwnerId, setSelectedOwnerId] = useState("");
+
+  // Slide-over preview
+  const [previewCandidate, setPreviewCandidate] = useState<CandidateItem | null>(null);
+
+  // Duplicates review modal
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
+
+  // Load Openings & Users for filters
   useEffect(() => {
-    const st = searchParams.get("stage");
-    if (st && CANDIDATE_STAGES.includes(st as any)) setStageFilter(st);
-    setAttentionFilter(searchParams.get("attention") || "");
-    const d = Number(searchParams.get("days"));
-    if (Number.isFinite(d) && d > 0) setStuckDaysFilter(d);
-    setSeniorityFilter(searchParams.get("seniority") || "");
-    setSkillFilter(searchParams.get("skill") || "");
-    setCityFilter(searchParams.get("city") || "");
-    setSourceFilter(searchParams.get("source") || "");
-    setDomainFilter(searchParams.get("domain") || "");
-    const q = searchParams.get("search");
-    if (q !== null) setSearchTerm(q);
-  }, [searchParams]);
+    fetchJobOpenings()
+      .then((res: any) => setOpenings(Array.isArray(res) ? res : res.items || []))
+      .catch(() => {});
+    apiFetch("/users")
+      .then((res) => res.json())
+      .then((data) => setCompanyUsers(data?.data?.items || data?.data || []))
+      .catch(() => {});
+  }, []);
 
-  // Advanced Specific Field Filters State
-  const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
-  const [nameFilter, setNameFilter] = useState<string>("");
-  const [emailFilter, setEmailFilter] = useState<string>("");
-  const [roleFilter, setRoleFilter] = useState<string>("");
-  const [expFilter, setExpFilter] = useState<string>("");
-
-  const getSeniorityBounds = (tier: string): { min?: number; max?: number } => {
-    if (tier === "Junior") return { min: 0, max: 2 };
-    if (tier === "Mid") return { min: 2, max: 5 };
-    if (tier === "Senior") return { min: 5, max: 8 };
-    if (tier === "Lead / Architect") return { min: 8 };
-    return {};
-  };
-
-  const getDomainKeyword = (dom: string): string => {
-    const d = dom.toLowerCase();
-    if (d.includes("data")) return "data";
-    if (d.includes("support") || d.includes("security")) return "support";
-    if (d.includes("software")) return "developer";
-    if (d.includes("project") || d.includes("product")) return "manager";
-    if (d.includes("cloud") || d.includes("devops")) return "cloud";
-    if (d.includes("qa") || d.includes("test")) return "qa";
-    return dom;
-  };
-
-  const clearDashboardFilter = () => {
-    setAttentionFilter("");
-    setSeniorityFilter("");
-    setSkillFilter("");
-    setCityFilter("");
-    setSourceFilter("");
-    setDomainFilter("");
-    setStageFilter("All");
-    setSearchTerm("");
-    setPage(1);
-    setSearchParams({}, { replace: true });
-  };
-
-  const activeDashboardFilterLabel = (() => {
-    const parts: string[] = [];
-    if (attentionFilter === "unreviewed") parts.push("Resumes waiting for review");
-    else if (attentionFilter === "low_confidence") parts.push("Resumes needing manual check");
-    else if (attentionFilter === "stuck") parts.push(`Candidates waiting over ${stuckDaysFilter} days`);
-    else if (attentionFilter === "selected") parts.push("Selected & Offer candidates");
-    if (seniorityFilter) parts.push(`Experience: ${seniorityFilter}`);
-    if (skillFilter) parts.push(`Skill: ${skillFilter}`);
-    if (cityFilter) parts.push(`City: ${cityFilter}`);
-    if (sourceFilter) parts.push(`Source: ${sourceFilter}`);
-    if (domainFilter) parts.push(`Category: ${domainFilter}`);
-    return parts.join(" · ");
-  })();
-
-  // Export State & Handlers
-  const [exportLoading, setExportLoading] = useState<boolean>(false);
-
-  const handleExportZIP = async () => {
+  // Main loader
+  const loadData = useCallback(async () => {
     try {
-      setExportLoading(true);
-      await exportResumesApi("zip", {
-        search: searchTerm,
-        name: nameFilter,
-        email: emailFilter,
-        role: roleFilter,
-      });
+      setLoading(true);
+
+      let minExp: number | undefined;
+      let maxExp: number | undefined;
+      if (expRange === "0-2") {
+        minExp = 0;
+        maxExp = 2;
+      } else if (expRange === "2-5") {
+        minExp = 2;
+        maxExp = 5;
+      } else if (expRange === "5-8") {
+        minExp = 5;
+        maxExp = 8;
+      } else if (expRange === "8+") {
+        minExp = 8;
+      }
+
+      const [res, statsRes] = await Promise.all([
+        fetchCandidates({
+          q: searchTerm,
+          job_id: jobFilter,
+          stage: stageFilter === "All" ? undefined : stageFilter,
+          source: sourceFilter === "All" ? undefined : sourceFilter,
+          location: locationFilter,
+          min_experience: minExp,
+          max_experience: maxExp,
+          sort: sortBy,
+          page,
+          limit,
+        }),
+        fetchCandidateStats().catch(() => ({
+          total_candidates: 0,
+          active_pipeline: 0,
+          hired: 0,
+          possible_duplicates: 0,
+        })),
+      ]);
+
+      setCandidates(res.items || []);
+      setTotalCount(res.total || 0);
+      setTotalPages(res.total_pages || 1);
+      setStats(statsRes);
     } catch (err: any) {
-      console.error("ZIP export failed:", err);
-      toast(err.message || "Failed to download candidate ZIP archive from S3.", "error");
-    } finally {
-      setExportLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-  }, [
-    page,
-    limit,
-    sortBy,
-    stageFilter,
-    companyFilter,
-    attentionFilter,
-    stuckDaysFilter,
-    seniorityFilter,
-    skillFilter,
-    cityFilter,
-    sourceFilter,
-    domainFilter,
-  ]);
-
-  // Debounced search on typing
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPage(1);
-      fetchCandidates(1, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  const fetchCandidates = async (
-    targetPage: number = page,
-    targetLimit: number = limit,
-    searchVal: string = searchTerm,
-    nVal: string = nameFilter,
-    eVal: string = emailFilter,
-    rVal: string = roleFilter,
-    expVal: string = expFilter
-  ) => {
-    setLoading(true);
-    try {
-      const senBounds = getSeniorityBounds(seniorityFilter);
-      const effectiveRole = rVal || (domainFilter ? getDomainKeyword(domainFilter) : "");
-
-      const params: CandidateQueryParams = {
-        page: targetPage,
-        limit: targetLimit,
-        search: searchVal,
-        name: nVal,
-        email: eVal,
-        role: effectiveRole,
-        experience: expVal ? Number(expVal) : undefined,
-        min_experience: senBounds.min,
-        max_experience: senBounds.max,
-        sort_by: sortBy,
-        stage: stageFilter,
-        company_id: companyFilter,
-        attention: attentionFilter || undefined,
-        stuck_days: attentionFilter === "stuck" ? stuckDaysFilter : undefined,
-        source: sourceFilter || undefined,
-        skills: skillFilter ? [skillFilter] : undefined,
-        location: cityFilter ? [cityFilter] : undefined,
-      };
-
-      const resData = await getResumes(params);
-      const items = resData.resumes || [];
-
-      const mapped = items.map((item: any) => ({
-        id: item.candidate_id || `CND-${item.id.substring(0, 6).toUpperCase()}`,
-        realId: item.id,
-        name: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
-        candidateName: item.parsed_data?.full_name || item.parsed_data?.name || item.original_filename || "Candidate",
-        email: item.parsed_data?.email || item.email || "N/A",
-        candidateRole: getCandidateRole(item.parsed_data, "Role not specified"),
-        appliedJob: item.job_title || item.applied_jobs?.[0]?.job_title || item.latest_interview?.job_title || null,
-        appliedJobs: Array.isArray(item.applied_jobs) ? item.applied_jobs : [],
-        role: getCandidateRole(item.parsed_data, "Role not specified"),
-        targetRole: item.job_title || item.applied_jobs?.[0]?.job_title || getCandidateRole(item.parsed_data, "N/A"),
-        source: item.resume_source || "N/A",
-        category: item.category || "",
-        companies: appliedCompanies(item),
-        uploadedBy: item.uploaded_by_name || item.uploaded_by_email || "System / HR",
-        experience: formatExperience(item.parsed_data),
-        match: typeof item.ai_evaluation?.ai_technical_score === "number"
-          ? `${item.ai_evaluation.ai_technical_score}%`
-          : "Not scored",
-        status: item.status ? String(item.status).toUpperCase() : "PARSED",
-        stage: item.stage || "Screening",
-        statusBg: "bg-emerald-50 border-emerald-200 text-emerald-700",
-        s3Url: item.s3_url,
-        lastUpdated: item.upload_date
-          ? new Date(item.upload_date).toLocaleDateString()
-          : new Date().toLocaleDateString(),
-        interviewAssigned: Boolean(item.interview_assigned),
-        interviewStatus: item.interview_status || (item.interview_assigned ? "ASSIGNED" : "NOT_ASSIGNED"),
-        lastInterviewAssignedDate: item.last_interview_assigned_date
-          ? new Date(item.last_interview_assigned_date).toLocaleDateString()
-          : null,
-        latestInterview: item.latest_interview || null,
-        rawData: item,
-      }));
-
-      setCandidates(mapped);
-      setTotalCount(resData.total || 0);
-      setTotalPages(resData.total_pages || Math.ceil((resData.total || 0) / targetLimit) || 1);
-    } catch (err) {
-      console.error("Failed to fetch candidates from backend API:", err);
+      toast(err.message || "Failed to load candidates", "error");
     } finally {
       setLoading(false);
     }
+  }, [searchTerm, jobFilter, stageFilter, sourceFilter, locationFilter, expRange, sortBy, page, limit, toast]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Open duplicate review
+  const handleOpenDuplicates = async () => {
+    try {
+      setDuplicatesLoading(true);
+      setDuplicateModalOpen(true);
+      const groups = await fetchDuplicateCandidates();
+      setDuplicateGroups(groups);
+    } catch (err: any) {
+      toast(err.message || "Failed to load duplicate groups", "error");
+    } finally {
+      setDuplicatesLoading(false);
+    }
   };
 
-  const handleApplyAdvancedFilters = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(1);
-    fetchCandidates(1, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-    setShowFilterModal(false);
+  // Perform merge
+  const handleMerge = async (primaryId: string, secondaryId: string, secondaryName: string) => {
+    const ok = await confirm({
+      title: "Merge duplicate candidates?",
+      message: `Are you sure you want to merge ${secondaryName} into this profile? This action consolidates all applications, documents, notes, and tags and cannot be undone.`,
+      confirmLabel: "Merge Profiles",
+      danger: true,
+    });
+    if (!ok) return;
+
+    try {
+      await mergeCandidatesApi(primaryId, secondaryId);
+      toast("Candidate profiles successfully merged.", "success");
+      const groups = await fetchDuplicateCandidates();
+      setDuplicateGroups(groups);
+      loadData();
+    } catch (err: any) {
+      toast(err.message || "Failed to merge candidates.", "error");
+    }
   };
 
-  const handleResetFilters = () => {
-    setNameFilter("");
-    setEmailFilter("");
-    setRoleFilter("");
-    setExpFilter("");
-    setSearchTerm("");
-    setPage(1);
-    fetchCandidates(1, limit, "", "", "", "", "");
-    setShowFilterModal(false);
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.length === candidates.length && candidates.length > 0) {
-      setSelectedIds([]);
-    } else {
+  // Selection handlers
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
       setSelectedIds(candidates.map((c) => c.id));
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    if (selectedIds.includes(id)) {
-      setSelectedIds(selectedIds.filter((i) => i !== id));
     } else {
-      setSelectedIds([...selectedIds, id]);
+      setSelectedIds([]);
     }
   };
 
-  const startRecord = totalCount === 0 ? 0 : (page - 1) * limit + 1;
-  const endRecord = Math.min(page * limit, totalCount);
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // Bulk tag
+  const handleApplyBulkTag = async () => {
+    if (!bulkTagInput.trim()) return;
+    try {
+      await bulkCandidateAction(selectedIds, "add_tags", [bulkTagInput.trim()]);
+      toast(`Added tag "${bulkTagInput.trim()}" to ${selectedIds.length} candidates.`, "success");
+      setBulkTagModalOpen(false);
+      setBulkTagInput("");
+      setSelectedIds([]);
+      loadData();
+    } catch (err: any) {
+      toast(err.message || "Failed to apply tags.", "error");
+    }
+  };
+
+  // Bulk assign owner
+  const handleApplyBulkOwner = async () => {
+    const owner = companyUsers.find((u) => u.id === selectedOwnerId);
+    if (!owner) return;
+    try {
+      await bulkCandidateAction(selectedIds, "assign_owner", {
+        owner_id: owner.id,
+        owner_name: owner.full_name || owner.name || owner.email,
+      });
+      toast(`Assigned recruiter to ${selectedIds.length} candidates.`, "success");
+      setBulkOwnerModalOpen(false);
+      setSelectedIds([]);
+      loadData();
+    } catch (err: any) {
+      toast(err.message || "Failed to assign owner.", "error");
+    }
+  };
+
+  // Export CSV
+  const handleExportCSV = async () => {
+    try {
+      toast("Preparing CSV export...", "info");
+      await exportCandidatesCsv({
+        q: searchTerm,
+        job_id: jobFilter,
+        stage: stageFilter === "All" ? undefined : stageFilter,
+        source: sourceFilter === "All" ? undefined : sourceFilter,
+        location: locationFilter,
+      });
+      toast("Candidate export downloaded.", "success");
+    } catch (err: any) {
+      toast(err.message || "Failed to export candidates.", "error");
+    }
+  };
+
+  const stageBadgeTone = (stage?: string) => {
+    const s = (stage || "").toUpperCase();
+    if (s.includes("HIRED")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s.includes("OFFER")) return "bg-purple-50 text-purple-700 border-purple-200";
+    if (s.includes("INTERVIEW")) return "bg-blue-50 text-blue-700 border-blue-200";
+    if (s.includes("SHORTLIST")) return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    if (s.includes("REJECT") || s.includes("CLOSED")) return "bg-rose-50 text-rose-700 border-rose-200";
+    return "bg-slate-100 text-slate-700 border-slate-200";
+  };
 
   return (
-    <div className="max-w-[1380px] mx-auto space-y-5 pb-10 font-sans text-slate-900">
-      {/* 1. Unified Page Header matching Dashboard layout */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-6 pb-24">
+      {/* ── Page Header ── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-[20px] font-bold text-slate-900 tracking-[-0.02em] leading-tight">
-              Candidate Database
-            </h1>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 border border-indigo-200 text-indigo-700">
-              {totalCount} Candidates
-            </span>
-          </div>
-          <p className="text-xs font-medium text-slate-600 mt-0.5">
-            Search, filter, and review candidate talent profiles and application statuses
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidate Management</h1>
+          <p className="text-sm text-slate-500">
+            Search, filter, and review candidates across jobs, pipelines, and interviews.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => navigate("/resume-templates")}
-            className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-2xs cursor-pointer"
-          >
-            <FileText size={14} className="text-slate-500" />
-            <span>Resume templates</span>
-          </button>
+        <div className="flex items-center gap-3">
+          {stats.possible_duplicates > 0 && (
+            <button
+              onClick={handleOpenDuplicates}
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100"
+            >
+              <AlertTriangle size={16} className="text-amber-600" />
+              <span>{stats.possible_duplicates} Duplicates Found</span>
+            </button>
+          )}
 
           <button
-            onClick={handleExportZIP}
-            disabled={exportLoading}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
-            <Download size={14} />
-            <span>{exportLoading ? "Exporting ZIP..." : "Export Resumes (ZIP)"}</span>
+            <Download size={16} />
+            <span>Export CSV</span>
           </button>
         </div>
       </div>
 
-      {/* Main Table Card (Single Layer, Full Width, matching Dashboard Cards) */}
-      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs space-y-5">
-        {/* Active Dashboard Drill-Down Filter Chip */}
-        {activeDashboardFilterLabel && (
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-indigo-50/80 border border-indigo-200/80 text-xs text-indigo-800">
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
-              <span className="font-medium">Showing:</span>
-              <span className="font-semibold">{activeDashboardFilterLabel}</span>
-              <span className="text-indigo-600">({totalCount} matching)</span>
-            </div>
-            <button
-              type="button"
-              onClick={clearDashboardFilter}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100/60 font-medium transition-colors"
-            >
-              <X size={12} />
-              <span>Clear filter</span>
-            </button>
+      {/* ── KPI Summary Cards ── */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="Total Candidates" value={stats.total_candidates} icon={<Users size={20} />} tone="blue" />
+        <StatCard label="In Pipeline" value={stats.active_pipeline} icon={<Layers size={20} />} tone="violet" />
+        <StatCard label="Hired" value={stats.hired} icon={<UserCheck size={20} />} tone="green" />
+        <div
+          onClick={handleOpenDuplicates}
+          className="cursor-pointer rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-amber-400 hover:shadow"
+        >
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-sm font-medium">Possible Duplicates</span>
+            <AlertTriangle size={20} className="text-amber-500" />
           </div>
-        )}
-
-        {/* Hiring stage filter */}
-        <div role="radiogroup" aria-label="Filter by hiring stage" className="flex flex-wrap gap-2">
-          {["All", ...CANDIDATE_STAGES].map((st) => (
-            <button
-              key={st}
-              role="radio"
-              aria-checked={stageFilter === st}
-              onClick={() => {
-                setStageFilter(st);
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-full text-sm font-semibold border cursor-pointer ${
-                stageFilter === st ? "bg-indigo-50 border-indigo-400 text-indigo-700" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
-              }`}
-            >
-              {st}
-            </button>
-          ))}
+          <div className="mt-2 text-2xl font-bold text-amber-700">{stats.possible_duplicates}</div>
+          <div className="mt-1 text-xs text-amber-600 font-medium hover:underline">Review &amp; merge &rarr;</div>
         </div>
-        {/* Search Input Bar & Action Buttons */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+      </div>
+
+      {/* ── Search & Filter Bar ── */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by candidate name, email, role, ID..."
-              className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search by candidate name, email, phone number, or skill..."
+              className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                <X size={14} />
+                <X size={16} />
               </button>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 self-end sm:self-auto">
-            <CompanyFilter
-              companies={companies}
-              value={companyFilter}
-              onChange={(value) => {
-                setPage(1);
-                setCompanyFilter(value);
-              }}
-            />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold transition ${
+                showFilters || jobFilter || stageFilter !== "All" || sourceFilter !== "All" || locationFilter || expRange !== "All"
+                  ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <Filter size={16} />
+              <span>Filters</span>
+            </button>
+
             <select
               value={sortBy}
-              onChange={(e) => {
-                setPage(1);
-                setSortBy(e.target.value as SortOption);
-              }}
-              aria-label="Sort candidates"
-              className="bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 shadow-sm cursor-pointer focus:outline-none focus:border-indigo-500"
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 focus:border-indigo-500 focus:outline-none"
             >
-              {SORT_OPTION_LABELS.map((o) => (
-                <option key={o.value} value={o.value}>Sort: {o.label}</option>
-              ))}
+              <option value="latest">Newest Added</option>
+              <option value="oldest">Oldest Added</option>
+              <option value="experience_desc">Experience: High to Low</option>
+              <option value="experience_asc">Experience: Low to High</option>
+              <option value="name">Name (A-Z)</option>
             </select>
-            <button
-              onClick={() => setShowFilterModal(!showFilterModal)}
-              className={`flex items-center gap-2 border px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer ${nameFilter || emailFilter || roleFilter || expFilter
-                  ? "bg-indigo-50 border-indigo-300 text-indigo-700"
-                  : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-            >
-              <Filter size={14} />
-              <span>Filters</span>
-              {(nameFilter || emailFilter || roleFilter || expFilter) && (
-                <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-              )}
-            </button>
           </div>
         </div>
 
-        {/* Advanced Field Filters Expandable Panel */}
-        {showFilterModal && (
-          <form
-            onSubmit={handleApplyAdvancedFilters}
-            className="p-4 bg-slate-50/80 border border-indigo-100 rounded-2xl space-y-4 animate-fadeIn"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-900">
-                <SlidersHorizontal size={14} className="text-indigo-600" />
-                <span>Backend Candidate Filters</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFilterModal(false)}
-                className="text-slate-400 hover:text-slate-600"
+        {/* Expandable Multi-field filter options */}
+        {showFilters && (
+          <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 md:grid-cols-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Job Opening</label>
+              <select
+                value={jobFilter}
+                onChange={(e) => {
+                  setJobFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
               >
-                <X size={14} />
-              </button>
+                <option value="">All Jobs</option>
+                {openings.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.title}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Candidate Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. John Doe"
-                  value={nameFilter}
-                  onChange={(e) => setNameFilter(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Email Address</label>
-                <input
-                  type="text"
-                  placeholder="candidate@gmail.com"
-                  value={emailFilter}
-                  onChange={(e) => setEmailFilter(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Role / Designation</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Frontend Engineer"
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Min Experience (Yrs)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  placeholder="e.g. 3"
-                  value={expFilter}
-                  onChange={(e) => setExpFilter(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Hiring Stage</label>
+              <select
+                value={stageFilter}
+                onChange={(e) => {
+                  setStageFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              >
+                {STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 cursor-pointer"
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Source</label>
+              <select
+                value={sourceFilter}
+                onChange={(e) => {
+                  setSourceFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
               >
-                Reset Filters
-              </button>
-              <button
-                type="submit"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-              >
-                Apply Backend Filters
-              </button>
+                {SOURCES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
-          </form>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Location</label>
+              <input
+                type="text"
+                value={locationFilter}
+                onChange={(e) => {
+                  setLocationFilter(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="e.g. Chennai, Remote..."
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Experience</label>
+              <select
+                value={expRange}
+                onChange={(e) => {
+                  setExpRange(e.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              >
+                <option value="All">All Experience</option>
+                <option value="0-2">0 - 2 Years</option>
+                <option value="2-5">2 - 5 Years</option>
+                <option value="5-8">5 - 8 Years</option>
+                <option value="8+">8+ Years</option>
+              </select>
+            </div>
+          </div>
         )}
+      </div>
 
-        {/* Database Candidates Data Table */}
+      {/* ── Candidate Table ── */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 text-[11px] text-slate-500 font-semibold">
-                <th className="py-3 px-3 w-10 text-center">
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="w-12 px-4 py-3.5 text-center">
                   <input
                     type="checkbox"
-                    checked={selectedIds.length === candidates.length && candidates.length > 0}
-                    onChange={toggleSelectAll}
-                    className="rounded border-slate-300 bg-white accent-indigo-600 cursor-pointer"
+                    checked={candidates.length > 0 && selectedIds.length === candidates.length}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
                 </th>
-                <th className="py-3 px-3">Name & Email</th>
-                <th className="py-3 px-3">Role & Applied Job</th>
-                <th className="py-3 px-3">Exp & AI Score</th>
-                <th className="py-3 px-3">Interview Status</th>
-                <th className="py-3 px-3">Stage</th>
-                <th className="py-3 px-3">Last Updated</th>
-                <th className="py-3 px-3 text-right">Actions</th>
+                <th className="px-4 py-3.5">Candidate</th>
+                <th className="px-4 py-3.5">Role &amp; Experience</th>
+                <th className="px-4 py-3.5">Location</th>
+                <th className="px-4 py-3.5">Latest Applied Job</th>
+                <th className="px-4 py-3.5">Tags</th>
+                <th className="px-4 py-3.5">Owner</th>
+                <th className="px-4 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 text-xs">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span>Loading candidate pages from database...</span>
-                    </div>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <RefreshCw className="mx-auto mb-2 animate-spin" size={24} />
+                    Loading candidates...
                   </td>
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
-                    No candidate records found matching current query.
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <User className="mx-auto mb-2 text-slate-300" size={36} />
+                    No candidates found matching the active filters.
                   </td>
                 </tr>
               ) : (
-                candidates.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-3 text-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(row.id)}
-                        onChange={() => toggleSelect(row.id)}
-                        className="rounded border-slate-300 bg-white accent-indigo-600 cursor-pointer"
-                      />
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-slate-900">{row.name}</span>
-                        <span className="text-[11px] text-slate-500">{row.email}</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <div className="flex flex-col gap-1">
-                        {/* Primary: Job Applied For (or Direct Intake General Pool) */}
-                        {row.appliedJob ? (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <Briefcase size={13} className="text-indigo-600 shrink-0" />
-                            <span className="text-slate-900 font-bold text-xs" title={`Applied for: ${row.appliedJob}`}>
-                              {row.appliedJob}
-                            </span>
-                            {row.appliedJobs.length > 1 && (
-                              <span
-                                className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 cursor-help"
-                                title={`Applied to ${row.appliedJobs.length} roles: ${row.appliedJobs.map((j: any) => j.job_title).filter(Boolean).join(", ")}`}
-                              >
-                                +{row.appliedJobs.length - 1} more
-                              </span>
-                            )}
+                candidates.map((c) => {
+                  const isChecked = selectedIds.includes(c.id);
+                  const latestJob = c.latest_application?.opening_title || (c.applications?.[0]?.opening_title) || "—";
+                  const stage = c.stage || c.latest_application?.stage || "APPLIED";
+
+                  return (
+                    <tr
+                      key={c.id}
+                      className={`transition hover:bg-slate-50/80 ${isChecked ? "bg-indigo-50/40" : ""}`}
+                    >
+                      <td className="px-4 py-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSelect(c.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                      </td>
+
+                      {/* Candidate Avatar & Details */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 font-semibold text-indigo-700">
+                            {getInitials(c.full_name)}
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 w-fit">
-                              Direct Intake (General Pool)
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Subtext: Candidate's Parsed Resume Designation */}
-                        <div className="text-[11px] text-slate-500 font-medium">
-                          Profile: <span className="text-slate-700 font-semibold">{row.candidateRole}</span>
-                        </div>
-
-                        {/* Metadata Pills */}
-                        <div className="flex flex-wrap gap-1 items-center">
-                          <CompanyPills companies={row.companies} />
-                          {row.category && (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5 w-fit font-semibold">
-                              {row.category}
-                            </span>
-                          )}
-                          <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-1.5 py-0.5 w-fit font-medium">
-                            Source: {row.source}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 w-fit font-medium">
-                            Uploaded By: {row.uploadedBy}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                    {/* Combined Experience & AI Score Column */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-slate-800">{row.experience}</span>
-                        <span className={`font-bold text-[11px] ${row.match === "Not scored" ? "text-slate-400" : "text-emerald-600"}`}>{row.match}</span>
-                      </div>
-                    </td>
-                    {/* Interview Assignment Status */}
-                    <td className="py-3.5 px-3 min-w-[200px]">
-                      {row.interviewAssigned ? (
-                        <div className="flex flex-col gap-1.5">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 w-fit">
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
-                            Interview Assigned
-                          </span>
-                          {row.lastInterviewAssignedDate && (
-                            <span className="text-xs font-semibold text-indigo-800 flex items-center gap-1">
-                              <Calendar size={12} className="text-indigo-600 shrink-0" />
-                              {row.lastInterviewAssignedDate}
-                            </span>
-                          )}
-                          {row.latestInterview?.job_title && (
-                            <span className="text-[11px] text-slate-500 font-medium truncate max-w-[180px]" title={row.latestInterview.job_title}>
-                              Role: {row.latestInterview.job_title}
-                            </span>
-                          )}
-
-                          {/* Saved Evaluation Feedback snippet */}
-                          {row.latestInterview && (row.latestInterview.feedback || row.latestInterview.rating || row.latestInterview.client_feedback) && (
-                            <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] space-y-1 mt-0.5">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-slate-800 truncate">
-                                  By {row.latestInterview.interviewer_name || row.latestInterview.client_name || "Evaluator"}
-                                </span>
-                                {(row.latestInterview.rating || row.latestInterview.client_rating) && (
-                                  <span className="text-amber-800 font-bold bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-[10px] shrink-0">
-                                    ★ {row.latestInterview.rating || row.latestInterview.client_rating} / 5
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                Date: {row.latestInterview.client_feedback_date ||
-                                  (row.latestInterview.updated_at
-                                    ? new Date(row.latestInterview.updated_at).toLocaleDateString()
-                                    : row.latestInterview.scheduled_date || "N/A")}
-                              </div>
-                              {(row.latestInterview.feedback || row.latestInterview.client_feedback) && (
-                                <p
-                                  className="text-[11px] text-slate-600 line-clamp-2 italic leading-snug"
-                                  title={row.latestInterview.feedback || row.latestInterview.client_feedback}
-                                >
-                                  "{row.latestInterview.feedback || row.latestInterview.client_feedback}"
-                                </p>
-                              )}
+                          <div>
+                            <button
+                              onClick={() => setPreviewCandidate(c)}
+                              className="font-semibold text-slate-900 hover:text-indigo-600 hover:underline text-left"
+                            >
+                              {c.full_name}
+                            </button>
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                              <span>{c.email}</span>
+                              {c.phone && <span>&middot; {c.phone}</span>}
                             </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Role & Experience */}
+                      <td className="px-4 py-3.5">
+                        <div className="font-medium text-slate-800">{c.current_role || "Candidate"}</div>
+                        <div className="text-xs text-slate-500">
+                          {c.total_experience_years != null ? `${c.total_experience_years} yrs exp` : "Experience unlisted"}
+                        </div>
+                      </td>
+
+                      {/* Location */}
+                      <td className="px-4 py-3.5 text-slate-600">
+                        {c.location ? (
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin size={13} className="text-slate-400" />
+                            {c.location}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+
+                      {/* Latest Applied Job & Stage Pill */}
+                      <td className="px-4 py-3.5">
+                        <div className="text-xs font-semibold text-slate-900">{latestJob}</div>
+                        <span
+                          className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${stageBadgeTone(
+                            stage
+                          )}`}
+                        >
+                          {stage}
+                        </span>
+                      </td>
+
+                      {/* Tags */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          {c.tags && c.tags.length > 0 ? (
+                            c.tags.slice(0, 3).map((t, idx) => (
+                              <span
+                                key={idx}
+                                className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 font-medium"
+                              >
+                                {t}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                          {c.tags && c.tags.length > 3 && (
+                            <span className="text-xs text-slate-400">+{c.tags.length - 3}</span>
                           )}
                         </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 border border-slate-200 text-slate-500 w-fit">
-                          Not Assigned
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold border bg-indigo-50 border-indigo-200 text-indigo-700">
-                        {row.stage}
-                      </span>
-                      {/* Parse status only matters when parsing did not finish */}
-                      {row.status !== "PARSED" && (
-                        <span className="block mt-1 text-xs font-semibold text-amber-700">Parse: {row.status.toLowerCase()}</span>
-                      )}
-                    </td>
-                    {/* Last Updated Column containing Upload Date */}
-                    <td className="py-3.5 px-3 text-slate-500 font-medium">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-slate-700 font-medium text-xs">
-                          {row.lastUpdated}
-                        </span>
-                        <span className="text-[11px] text-slate-400 font-medium">
-                          (Upload Date)
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3 text-right">
-                      <div className="flex items-center justify-end gap-2 text-indigo-600">
-                        <button
-                          onClick={() => {
-                            navigate("/interviews", {
-                              state: {
-                                scheduleCandidate: {
-                                  candidate_id: row.realId || row.id,
-                                  candidate_name: row.candidateName,
-                                  candidate_email: row.email !== "N/A" ? row.email : "",
-                                  resume_id: row.realId || row.id,
-                                  job_title: row.appliedJob || (row.targetRole !== "N/A" ? row.targetRole : row.candidateRole),
-                                },
-                              },
-                            });
-                          }}
-                          className="p-1.5 hover:bg-indigo-50 rounded-md transition-colors border border-slate-200 text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                          title="Assign / Schedule New Interview Session"
-                         aria-label="Schedule interview">
-                          <Calendar size={14} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditCandidateId(row.realId);
-                            setIsEditModalOpen(true);
-                          }}
-                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
-                          title="Edit Candidate Resume & Evaluation Details"
-                         aria-label="Edit">
-                          <Edit3 size={14} />
-                        </button>
-                        <button
-                          onClick={() => navigate(`/candidates/${row.realId}`)}
-                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-700 hover:text-slate-900 cursor-pointer"
-                          title="View Candidate Full Evaluation Page"
-                         aria-label="View profile">
-                          <User size={14} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (row.s3Url) {
-                              const newWindow = window.open();
-                              if (newWindow) {
-                                newWindow.document.write(`
-                                  <!DOCTYPE html>
-                                  <html>
-                                    <head>
-                                      <title>Resume Preview</title>
-                                      <style>
-                                        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ffffff; }
-                                        iframe { width: 100%; height: 100%; border: none; }
-                                      </style>
-                                    </head>
-                                    <body>
-                                      <iframe src="${row.s3Url}"></iframe>
-                                    </body>
-                                  </html>
-                                `);
-                              } else {
-                                window.location.href = row.s3Url;
-                              }
-                            } else {
-                              toast("S3 Resume link is not available for this candidate.", "warning");
-                            }
-                          }}
-                          className="p-1.5 hover:bg-slate-100 rounded-md transition-colors border border-slate-200 text-slate-500 hover:text-slate-800 cursor-pointer"
-                          title="Open PDF Resume Document (New Tab)"
-                        >
-                          <FileText size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      {/* Recruiter / Owner */}
+                      <td className="px-4 py-3.5 text-xs text-slate-600">
+                        {c.owner_name ? (
+                          <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+                            <User size={13} className="text-slate-400" />
+                            {c.owner_name}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Unassigned</span>
+                        )}
+                      </td>
+
+                      {/* Row Action */}
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            to={`/candidates/${c.id}`}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            <Eye size={13} />
+                            <span>View 360</span>
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Backend Pagination Footer Controls */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-200 text-xs text-slate-600">
-          <div className="flex items-center gap-4">
-            <span>
-              Showing <strong className="font-semibold text-slate-800">{startRecord}</strong> to{" "}
-              <strong className="font-semibold text-slate-800">{endRecord}</strong> of{" "}
-              <strong className="font-semibold text-slate-900">{totalCount}</strong> candidates
-            </span>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 font-medium">Rows per page:</span>
-              <select
-                value={limit}
-                onChange={(e) => {
-                  const newLimit = Number(e.target.value);
-                  setLimit(newLimit);
-                  setPage(1);
-                }}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
+        {/* Pagination */}
+        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 bg-slate-50 text-xs text-slate-500">
+          <div>
+            Showing <span className="font-semibold">{candidates.length}</span> of{" "}
+            <span className="font-semibold">{totalCount}</span> candidates
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="mr-2 text-slate-500 font-medium">
-              Page <strong className="font-semibold text-slate-800">{page}</strong> of{" "}
-              <strong className="font-semibold text-slate-800">{totalPages}</strong>
-            </span>
-
+          <div className="flex items-center gap-2">
             <button
-              disabled={page <= 1 || loading}
-              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer"
-              title="Previous Page"
-             aria-label="Previous">
-              <ChevronLeft size={16} />
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-700 shadow-sm disabled:opacity-50"
+            >
+              <ChevronLeft size={14} /> Previous
             </button>
-
-            {/* Page number buttons */}
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              let pageNum = i + 1;
-              if (totalPages > 5 && page > 3) {
-                pageNum = page - 3 + i;
-                if (pageNum > totalPages) pageNum = totalPages - (4 - i);
-              }
-              if (pageNum <= 0) return null;
-
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => setPage(pageNum)}
-                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${page === pageNum
-                      ? "bg-indigo-600 text-white shadow-xs"
-                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
-
+            <span className="font-medium">
+              Page {page} of {totalPages}
+            </span>
             <button
-              disabled={page >= totalPages || loading}
-              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer"
-              title="Next Page"
-             aria-label="Next">
-              <ChevronRight size={16} />
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-700 shadow-sm disabled:opacity-50"
+            >
+              Next <ChevronRight size={14} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Candidate Edit Modal Component */}
-      <CandidateEditModal
-        isOpen={isEditModalOpen}
-        onClose={() => {
-          setIsEditModalOpen(false);
-          setEditCandidateId(null);
-        }}
-        candidateId={editCandidateId}
-        onSuccess={() => {
-          fetchCandidates(page, limit, searchTerm, nameFilter, emailFilter, roleFilter, expFilter);
-        }}
-      />
+      {/* ── Bulk Actions Floating Toolbar ── */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-slate-300 bg-slate-900 px-6 py-3 text-white shadow-2xl animate-in slide-in-from-bottom-6">
+          <span className="text-sm font-semibold">{selectedIds.length} candidates selected</span>
+          <div className="h-4 w-px bg-slate-700" />
+          <button
+            onClick={() => setBulkTagModalOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white"
+          >
+            <Tag size={14} /> Add Tag
+          </button>
+          <button
+            onClick={() => setBulkOwnerModalOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white"
+          >
+            <UserPlus size={14} /> Assign Owner
+          </button>
+          <button
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white"
+          >
+            <Download size={14} /> Export
+          </button>
+          <div className="h-4 w-px bg-slate-700" />
+          <button
+            onClick={() => setSelectedIds([])}
+            className="text-xs text-slate-400 hover:text-slate-200"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* ── Slide-Over Quick Preview Side Panel ── */}
+      {previewCandidate && (
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end">
+          <div className="relative w-full max-w-md bg-white p-6 shadow-2xl flex flex-col h-full animate-in slide-in-from-right">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h2 className="text-lg font-bold text-slate-900">Candidate Quick View</h2>
+              <button
+                onClick={() => setPreviewCandidate(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-6">
+              {/* Profile header */}
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-lg font-bold text-indigo-700">
+                  {getInitials(previewCandidate.full_name)}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{previewCandidate.full_name}</h3>
+                  <p className="text-sm text-slate-600">{previewCandidate.current_role || "Role unlisted"}</p>
+                  <p className="text-xs text-slate-400">ID: {previewCandidate.id}</p>
+                </div>
+              </div>
+
+              {/* Contact info */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <Mail size={14} className="text-slate-400" />
+                  <span>{previewCandidate.email}</span>
+                </div>
+                {previewCandidate.phone && (
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Phone size={14} className="text-slate-400" />
+                    <span>{previewCandidate.phone}</span>
+                  </div>
+                )}
+                {previewCandidate.location && (
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <MapPin size={14} className="text-slate-400" />
+                    <span>{previewCandidate.location}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Skills */}
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Skills</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {previewCandidate.skills && previewCandidate.skills.length > 0 ? (
+                    previewCandidate.skills.map((s, idx) => (
+                      <span key={idx} className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                        {s}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-400">No skills listed</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Applied jobs */}
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Applied Roles</h4>
+                {previewCandidate.applications && previewCandidate.applications.length > 0 ? (
+                  <div className="space-y-2">
+                    {previewCandidate.applications.map((app) => (
+                      <div key={app.id} className="rounded-lg border border-slate-200 p-2.5 text-xs flex justify-between items-center">
+                        <div>
+                          <div className="font-semibold text-slate-800">{app.opening_title}</div>
+                          <div className="text-slate-400 text-[11px]">{app.submitted_at?.slice(0, 10)}</div>
+                        </div>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${stageBadgeTone(app.stage)}`}>
+                          {app.stage}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">No active applications</p>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 flex gap-3">
+              <Link
+                to={`/candidates/${previewCandidate.id}`}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition"
+              >
+                <span>Open Full 360&deg; Profile</span>
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Duplicates Review Modal ── */}
+      {duplicateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl bg-white p-6 shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-amber-500" />
+                  <span>Duplicate Candidate Review</span>
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Detected candidate records with matching normalized email or phone number.
+                </p>
+              </div>
+              <button
+                onClick={() => setDuplicateModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-6">
+              {duplicatesLoading ? (
+                <div className="py-16 text-center text-slate-400">
+                  <RefreshCw className="mx-auto mb-2 animate-spin" size={24} />
+                  Scanning for duplicate candidate records...
+                </div>
+              ) : duplicateGroups.length === 0 ? (
+                <div className="py-16 text-center text-slate-400">
+                  <CheckCircle2 className="mx-auto mb-2 text-emerald-500" size={36} />
+                  No duplicate candidate records found!
+                </div>
+              ) : (
+                duplicateGroups.map((group) => {
+                  const primary = group.candidates[0];
+                  const others = group.candidates.slice(1);
+
+                  return (
+                    <div key={group.id} className="rounded-xl border border-amber-200 bg-amber-50/20 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                          {group.reason}
+                        </span>
+                        <span className="text-xs text-slate-500">{group.candidates.length} matching records</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Primary profile card */}
+                        <div className="rounded-lg border-2 border-indigo-500 bg-white p-3.5 shadow-xs relative">
+                          <span className="absolute top-2.5 right-2.5 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                            PRIMARY (NEWEST)
+                          </span>
+                          <div className="font-bold text-slate-900">{primary.full_name}</div>
+                          <div className="text-xs text-slate-500">{primary.email}</div>
+                          <div className="text-xs text-slate-500">{primary.phone || "No phone"}</div>
+                          <div className="mt-2 text-xs text-slate-700">
+                            <strong>Role:</strong> {primary.current_role || "Unlisted"} &middot; {primary.total_experience_years || 0} yrs
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {primary.skills.slice(0, 4).map((s, i) => (
+                              <span key={i} className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] text-slate-600">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Secondary candidates */}
+                        <div className="space-y-3">
+                          {others.map((sec) => (
+                            <div key={sec.id} className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-xs flex flex-col justify-between">
+                              <div>
+                                <div className="font-bold text-slate-900">{sec.full_name}</div>
+                                <div className="text-xs text-slate-500">{sec.email}</div>
+                                <div className="text-xs text-slate-500">{sec.phone || "No phone"}</div>
+                                <div className="mt-1 text-xs text-slate-700">
+                                  <strong>Role:</strong> {sec.current_role || "Unlisted"} &middot; {sec.total_experience_years || 0} yrs
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleMerge(primary.id, sec.id, sec.full_name)}
+                                className="mt-3 w-full rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 text-center"
+                              >
+                                Merge into Primary &rarr;
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 pt-3 flex justify-end">
+              <button
+                onClick={() => setDuplicateModalOpen(false)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Tag Modal ── */}
+      {bulkTagModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Add Tag to Selected</h3>
+            <input
+              type="text"
+              value={bulkTagInput}
+              onChange={(e) => setBulkTagInput(e.target.value)}
+              placeholder="e.g. Priority, Campus2026..."
+              className="w-full rounded-lg border border-slate-300 p-2.5 text-sm"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setBulkTagModalOpen(false)}
+                className="rounded-lg border px-3 py-1.5 text-sm text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyBulkTag}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white"
+              >
+                Apply Tag
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Owner Modal ── */}
+      {bulkOwnerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Assign Recruiter Owner</h3>
+            <select
+              value={selectedOwnerId}
+              onChange={(e) => setSelectedOwnerId(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 p-2.5 text-sm"
+            >
+              <option value="">Select Recruiter...</option>
+              {companyUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.name || u.email}
+                </option>
+              ))}
+            </select>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setBulkOwnerModalOpen(false)}
+                className="rounded-lg border px-3 py-1.5 text-sm text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyBulkOwner}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white"
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

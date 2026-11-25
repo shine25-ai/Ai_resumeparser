@@ -29,6 +29,9 @@ def _match_value(value: Any, cond: Any) -> bool:
                 return False
             if op == "$in" and v not in arg:
                 return False
+            if op == "$all":
+                if not isinstance(v, (list, tuple, set)) or not all(x in v for x in arg):
+                    return False
             if op == "$nin" and v in arg:
                 return False
             if op == "$exists" and (value is not _MISSING) != bool(arg):
@@ -70,7 +73,14 @@ class _Cursor:
     def sort(self, key: Any, direction: int = 1):
         keys = key if isinstance(key, list) else [(key, direction)]
         for k, d in reversed(keys):
-            self._docs.sort(key=lambda x: (str(_get(x, k)) if _get(x, k) is not _MISSING else ""), reverse=d < 0)
+            def _sort_key(x):
+                val = _get(x, k)
+                if val is _MISSING or val is None:
+                    return (0, 0, "")
+                if isinstance(val, (int, float)):
+                    return (1, float(val), "")
+                return (2, 0, str(val))
+            self._docs.sort(key=_sort_key, reverse=d < 0)
         return self
 
     def skip(self, n: int):
@@ -122,7 +132,32 @@ class FakeCollection:
                 for field in update.get("$unset", {}):
                     d.pop(field, None)
                 for field, value in update.get("$push", {}).items():
-                    d.setdefault(field, []).append(copy.deepcopy(value))
+                    target = d.setdefault(field, [])
+                    if isinstance(value, dict) and "$each" in value:
+                        vals = value["$each"]
+                        pos = value.get("$position")
+                        if pos is not None:
+                            for i, v in enumerate(vals):
+                                target.insert(pos + i, copy.deepcopy(v))
+                        else:
+                            target.extend(copy.deepcopy(vals))
+                    else:
+                        target.append(copy.deepcopy(value))
+                for field, value in update.get("$addToSet", {}).items():
+                    target = d.setdefault(field, [])
+                    vals = value.get("$each", [value]) if isinstance(value, dict) and "$each" in value else [value]
+                    for v in vals:
+                        if v not in target:
+                            target.append(copy.deepcopy(v))
+                for field, value in update.get("$pullAll", {}).items():
+                    target = d.get(field, [])
+                    d[field] = [x for x in target if x not in value]
+                for field, value in update.get("$pull", {}).items():
+                    target = d.get(field, [])
+                    if isinstance(value, dict):
+                        d[field] = [x for x in target if not matches(x, value)]
+                    else:
+                        d[field] = [x for x in target if x != value]
                 for field, value in update.get("$inc", {}).items():
                     d[field] = d.get(field, 0) + value
                 return _Result(matched_count=1, modified_count=1, upserted_id=None)
@@ -135,6 +170,50 @@ class FakeCollection:
             self.docs.append(copy.deepcopy(new))
             return _Result(matched_count=0, modified_count=0, upserted_id=new.get("id") or "new")
         return _Result(matched_count=0, modified_count=0, upserted_id=None)
+
+    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any], *a: Any, **k: Any):
+        count = 0
+        for d in self.docs:
+            if matches(d, query):
+                d.update(copy.deepcopy(update.get("$set", {})))
+                for field in update.get("$unset", {}):
+                    d.pop(field, None)
+                for field, value in update.get("$push", {}).items():
+                    target = d.setdefault(field, [])
+                    if isinstance(value, dict) and "$each" in value:
+                        vals = value["$each"]
+                        pos = value.get("$position")
+                        if pos is not None:
+                            for i, v in enumerate(vals):
+                                target.insert(pos + i, copy.deepcopy(v))
+                        else:
+                            target.extend(copy.deepcopy(vals))
+                    else:
+                        target.append(copy.deepcopy(value))
+                for field, value in update.get("$addToSet", {}).items():
+                    target = d.setdefault(field, [])
+                    vals = value.get("$each", [value]) if isinstance(value, dict) and "$each" in value else [value]
+                    for v in vals:
+                        if v not in target:
+                            target.append(copy.deepcopy(v))
+                for field, value in update.get("$pullAll", {}).items():
+                    target = d.get(field, [])
+                    d[field] = [x for x in target if x not in value]
+                for field, value in update.get("$pull", {}).items():
+                    target = d.get(field, [])
+                    if isinstance(value, dict):
+                        d[field] = [x for x in target if not matches(x, value)]
+                    else:
+                        d[field] = [x for x in target if x != value]
+                for field, value in update.get("$inc", {}).items():
+                    d[field] = d.get(field, 0) + value
+                count += 1
+        return _Result(matched_count=count, modified_count=count)
+
+    async def delete_many(self, query: Dict[str, Any], *a: Any, **k: Any):
+        before = len(self.docs)
+        self.docs = [d for d in self.docs if not matches(d, query)]
+        return _Result(deleted_count=before - len(self.docs))
 
     async def find_one_and_update(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, **k: Any):
         await self.update_one(query, update, upsert=upsert)

@@ -2,8 +2,13 @@
 S3 Upload Service for uploading resume documents to AWS S3 bucket.
 """
 
-import boto3
-from botocore.exceptions import BotoCoreError, ClientError
+try:
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+except ImportError:
+    boto3 = None
+    BotoCoreError = Exception
+    ClientError = Exception
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,7 +28,7 @@ class S3Service:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
             region_name=self.region,
-        )
+        ) if boto3 else None
 
     def upload_file(self, file_content: bytes, filename: str, content_type: str = "application/octet-stream", folder: str = "resumes") -> str:
         """
