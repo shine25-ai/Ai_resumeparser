@@ -259,24 +259,33 @@ async def reprocess_candidate_resume(
         from app.core.exceptions import BadRequestError
         raise BadRequestError("No resume document found to reprocess.")
 
-    doc = docs[0]
-    file_path = doc.get("file_path") or ""
-    original_filename = doc.get("original_filename") or "resume.pdf"
+    # A document's ID is its resume's ID. A resume merged into another profile no longer exists, so use the
+    # newest document whose resume is still on file.
+    from app.core.exceptions import BadRequestError
+    from app.utils.constants import RESUMES_COLLECTION
+    resume = None
+    for doc in docs:
+        resume = await db[RESUMES_COLLECTION].find_one({"id": doc.get("id")}) if doc.get("id") else None
+        if resume and resume.get("file_path"):
+            break
+        resume = None
+    if not resume:
+        raise BadRequestError("No resume file on record to read again.")
 
-    # Queue parsing background task if resume service is available
+    import mimetypes
+    from app.repositories.resume_log_repository import ResumeLogRepository
     from app.repositories.resume_repository import ResumeRepository
     from app.services.resume_service import ResumeService
-    resume_svc = ResumeService(ResumeRepository(db))
-    
-    if file_path:
-        background_tasks.add_task(
-            resume_svc._process_ai_parsing_async,
-            resume_id=doc.get("id"),
-            user_id=user.get("id", "staff"),
-            file_path=file_path,
-            original_filename=original_filename,
-            content_type="application/pdf",
-        )
+    resume_svc = ResumeService(ResumeRepository(db), resume_log_repo=ResumeLogRepository(db))
+    filename = resume.get("original_filename") or resume.get("filename") or "resume.pdf"
+    background_tasks.add_task(
+        resume_svc._process_ai_parsing_async,
+        resume_id=resume["id"],
+        user_id=user.get("id", "staff"),
+        file_path=resume["file_path"],
+        original_filename=filename,
+        content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+    )
 
     return success_response(message="Resume reprocessing queued successfully.")
 

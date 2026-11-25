@@ -31,7 +31,10 @@ export interface ApplicationRow {
   review_status: "pending" | "reviewed";
   confidence: Confidence;
   resume_id: string;
+  /** The candidate record (Phase 6); null for applications sent before it. */
   candidate_id: string | null;
+  /** The resume's CND code, for display. */
+  candidate_code: string | null;
   resume_status: string;
   /** false for applications sent before the 5-step form (resume only). */
   full_form: boolean;
