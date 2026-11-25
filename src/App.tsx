@@ -122,47 +122,47 @@ export default function App() {
                 <div className="flex h-screen overflow-hidden bg-[var(--app-bg)] text-slate-900">
                   <SessionExpiredModal />
                   <Sidebar />
-                  <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden transition-all duration-300">
-                    <TopHeader />
-                    <main className="flex-1 overflow-y-auto relative pb-20 md:pb-0">
-                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-[var(--app-bg)] to-[var(--app-bg)] -z-10" />
-                      <div className="p-2 sm:p-4 md:p-6 h-full">
-                        <Breadcrumb />
-                        <Routes>
-                          <Route path="/" element={<Dashboard />} />
-                          <Route path="/upload" element={<Upload />} />
-                          <Route path="/database" element={<CandidateDatabase />} />
-                          <Route path="/applications" element={<Applications />} />
-                          <Route path="/resume-templates" element={<ResumeTemplates />} />
-                          <Route path="/candidates" element={<Navigate to="/database" replace />} />
-                          <Route path="/candidates/:id" element={<Candidate360 />} />
-                          {/* Old profile links */}
-                          <Route path="/evaluation/:id" element={<RedirectToCandidate />} />
-                          <Route path="/evaluation" element={<Navigate to="/database" replace />} />
-                          <Route path="/jd-match" element={<JDMatch />} />
-                          <Route path="/skills" element={<SkillIntelligencePage />} />
-                          <Route path="/job-openings" element={<JobOpenings />} />
-                          <Route path="/job-openings/new" element={<JobEditor />} />
-                          <Route path="/job-openings/:id/edit" element={<JobEditor key="edit" />} />
-                          <Route path="/interviews" element={<InterviewManagement />} />
-                          {/* The Interview Dashboard is now the Interviews page's "Today and Upcoming" view */}
-                          <Route path="/interview-dashboard" element={<Navigate to="/interviews" replace />} />
-                          {/* Old link: the mock Client Feedback page was removed */}
-                          <Route path="/client-feedback" element={<Navigate to="/interviews" replace />} />
-                          <Route path="/analytics" element={<AnalyticsReports />} />
-                          <Route path="/pipeline" element={<RecruitmentPipeline />} />
-                          <Route path="/audit-log" element={<AuditLog />} />
-                          <Route path="/settings" element={<Settings />} />
-                          <Route path="/companies" element={<Companies />} />
-                          <Route path="/companies/new" element={<CreateCompany />} />
-                          <Route path="/platform/plans" element={<Plans />} />
-                          <Route path="/career-page" element={<CareerPageBuilder />} />
-                          <Route path="/career-page/integrate" element={<CareerPageIntegrate />} />
-                        </Routes>
-                      </div>
-                    </main>
-                  </div>
+                <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden transition-all duration-300">
+                  <TopHeader />
+                  <main className="flex-1 overflow-y-auto relative pb-20 md:pb-0">
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-[var(--app-bg)] to-[var(--app-bg)] -z-10" />
+                    <div className="p-2 sm:p-4 md:p-6 h-full">
+                      <Breadcrumb />
+                      <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/upload" element={<Upload />} />
+                        <Route path="/database" element={<CandidateDatabase />} />
+                        <Route path="/applications" element={<Applications />} />
+                        <Route path="/resume-templates" element={<ResumeTemplates />} />
+                        <Route path="/candidates" element={<Navigate to="/database" replace />} />
+                        <Route path="/candidates/:id" element={<Candidate360 />} />
+                        {/* Old profile links */}
+                        <Route path="/evaluation/:id" element={<RedirectToCandidate />} />
+                        <Route path="/evaluation" element={<Navigate to="/database" replace />} />
+                        <Route path="/jd-match" element={<JDMatch />} />
+                        <Route path="/skills" element={<SkillIntelligencePage />} />
+                        <Route path="/job-openings" element={<JobOpenings />} />
+                        <Route path="/job-openings/new" element={<JobEditor />} />
+                        <Route path="/job-openings/:id/edit" element={<JobEditor key="edit" />} />
+                        <Route path="/interviews" element={<InterviewManagement />} />
+                        {/* The Interview Dashboard is now the Interviews page's "Today and Upcoming" view */}
+                        <Route path="/interview-dashboard" element={<Navigate to="/interviews" replace />} />
+                        {/* Old link: the mock Client Feedback page was removed */}
+                        <Route path="/client-feedback" element={<Navigate to="/interviews" replace />} />
+                        <Route path="/analytics" element={<AnalyticsReports />} />
+                        <Route path="/pipeline" element={<RecruitmentPipeline />} />
+                        <Route path="/audit-log" element={<AuditLog />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/companies" element={<Companies />} />
+                        <Route path="/companies/new" element={<CreateCompany />} />
+                        <Route path="/platform/plans" element={<Plans />} />
+                        <Route path="/career-page" element={<CareerPageBuilder />} />
+                        <Route path="/career-page/integrate" element={<CareerPageIntegrate />} />
+                      </Routes>
+                    </div>
+                  </main>
                 </div>
+              </div>
               }
             />
           </Route>

@@ -12,7 +12,7 @@ data. Startup jobs, sign-in and the super admin's own screens run in `system_sco
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Generator, Generator, List, Optional
+from typing import Any, Dict, Generator, Iterator, List, Optional
 
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
