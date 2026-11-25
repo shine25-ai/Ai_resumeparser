@@ -637,6 +637,9 @@ async def company_summary(
             {**scope, "$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]})
         interviews = await db[INTERVIEWS_COLLECTION].count_documents(scope)
         applications = await db[JOB_APPLICATIONS_COLLECTION].count_documents(scope)
+        hires = await db[JOB_APPLICATIONS_COLLECTION].count_documents(
+            {**scope, "$or": [{"stage_id": "hired"}, {"stage_name": "Hired"}, {"hired_at": {"$ne": None}}]}
+        )
         activity = await db[AUDIT_LOGS_COLLECTION].find(scope, {"_id": 0}).sort("created_at", -1).limit(10).to_list(length=10)
     from app.services.domain_service import DomainService
     from app.services.limit_service import LimitService
@@ -654,8 +657,7 @@ async def company_summary(
             "candidates": candidates,
             "applications": applications,
             "interviews": interviews,
-            # Hires are recorded by the pipeline (Phase 7); until then this is None.
-            "hires": None,
+            "hires": hires,
         },
         "usage_meters": usage,
         "admins": [u for u in users if u.get("role") in ("admin", "company_admin")],

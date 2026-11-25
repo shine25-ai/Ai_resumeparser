@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import {
-  BarChart3, Briefcase, Building2, Calendar, CreditCard, Database, FileClock, Globe2, LayoutDashboard,
+  BarChart3, Briefcase, Building2, Calendar, CreditCard, Database, FileClock, GitFork, Globe2, LayoutDashboard,
   Settings, Users, UserCog,
 } from "lucide-react";
 
@@ -104,6 +104,18 @@ export const COMPANY_NAV: NavItem[] = [
       { label: "Interview Calendar", path: "/interviews/calendar" },
       { label: "Interview Panels", path: "/interviews/panels" },
       { label: "Evaluation & Scores", path: "/interviews/evaluations" },
+    ],
+  },
+  {
+    key: "pipeline",
+    label: "Recruitment Pipeline",
+    path: "/pipeline",
+    icon: <GitFork size={I} />,
+    perm: "pipeline",
+    children: [
+      { label: "Pipeline (Kanban)", path: "/pipeline" },
+      { label: "Pipeline Analytics", path: "/pipeline?tab=analytics" },
+      { label: "Stage Configuration", path: "/pipeline?tab=stages" },
     ],
   },
   {

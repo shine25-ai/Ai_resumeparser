@@ -124,6 +124,25 @@ class FakeCollection:
     async def count_documents(self, query: Optional[Dict[str, Any]] = None, *a: Any, **k: Any) -> int:
         return sum(1 for d in self.docs if matches(d, query))
 
+    def aggregate(self, pipeline: Optional[List[Dict[str, Any]]] = None, *a: Any, **k: Any):
+        docs = [d for d in self.docs]
+        for stage in (pipeline or []):
+            if "$match" in stage:
+                docs = [d for d in docs if matches(d, stage["$match"])]
+            elif "$group" in stage:
+                grp = stage["$group"]
+                by_key = grp.get("_id")
+                grouped: Dict[Any, int] = {}
+                for d in docs:
+                    val = _get(d, by_key[1:]) if isinstance(by_key, str) and by_key.startswith("$") else None
+                    if val is _MISSING:
+                        val = None
+                    grouped[val] = grouped.get(val, 0) + 1
+                docs = [{"_id": k, "count": v} for k, v in grouped.items()]
+            elif "$limit" in stage:
+                docs = docs[:stage["$limit"]]
+        return _Cursor(docs)
+
     async def insert_one(self, doc: Dict[str, Any], *a: Any, **k: Any):
         self.docs.append(copy.deepcopy(doc))
         return _Result(inserted_id=doc.get("id"))
@@ -174,7 +193,7 @@ class FakeCollection:
             return _Result(matched_count=0, modified_count=0, upserted_id=new.get("id") or "new")
         return _Result(matched_count=0, modified_count=0, upserted_id=None)
 
-    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any], *a: Any, **k: Any):
+    async def update_many(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, *a: Any, **k: Any):
         count = 0
         for d in self.docs:
             if matches(d, query):
@@ -211,7 +230,7 @@ class FakeCollection:
                 for field, value in update.get("$inc", {}).items():
                     d[field] = d.get(field, 0) + value
                 count += 1
-        return _Result(matched_count=count, modified_count=count)
+        return _Result(matched_count=count, modified_count=count, upserted_id=None)
 
     async def delete_many(self, query: Dict[str, Any], *a: Any, **k: Any):
         before = len(self.docs)

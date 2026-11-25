@@ -356,6 +356,17 @@ async def parser_status(job_id: str) -> Tuple[str, Dict[str, Any], str]:
 # ── Service ───────────────────────────────────────────────────────────────────
 
 
+
+DEFAULT_STAGE_ID = "applied"
+
+
+def stage_of(a: Dict[str, Any]) -> Dict[str, str]:
+    """The application's pipeline stage (Phase 7): its id and the name to show. Older applications are "Applied"."""
+    stage_id = a.get("stage_id") or str(a.get("stage") or DEFAULT_STAGE_ID).strip().lower().replace(" ", "_")
+    name = a.get("stage_name") or stage_id.replace("_", " ").title()
+    return {"stage_id": stage_id, "stage_name": name}
+
+
 class ApplicationService:
     def __init__(self, db: AsyncIOMotorDatabase, resume_service: Any = None, upload_dir: Optional[str] = None,
                  parse=send_to_parser, status=parser_status):
@@ -572,17 +583,26 @@ class ApplicationService:
 
     # ── Staff ─────────────────────────────────────────────────────────────────
 
-    async def list(self, job_id: str = "", review: str = "", q: str = "", page: int = 1, limit: int = 25) -> Dict[str, Any]:
-        query: Dict[str, Any] = {}
+    async def list(
+        self, job_id: str = "", review: str = "", q: str = "", page: int = 1, limit: int = 25, stage: str = "",
+    ) -> Dict[str, Any]:
+        conditions: List[Dict[str, Any]] = []
         if job_id:
-            query["opening_id"] = job_id
+            conditions.append({"opening_id": job_id})
         if review == REVIEW_PENDING:
-            query["review.status"] = {"$ne": REVIEW_DONE}
+            conditions.append({"review.status": {"$ne": REVIEW_DONE}})
         elif review == REVIEW_DONE:
-            query["review.status"] = REVIEW_DONE
+            conditions.append({"review.status": REVIEW_DONE})
         if q:
             rx = {"$regex": re.escape(q.strip()), "$options": "i"}
-            query["$or"] = [{"applicant_email": rx}, {"form.personal.full_name": rx}, {"opening_title": rx}]
+            conditions.append({"$or": [{"applicant_email": rx}, {"form.personal.full_name": rx}, {"opening_title": rx}]})
+        if stage:
+            # Applications sent before the pipeline (Phase 7) have no stage_id: they are still "applied".
+            stage_q: List[Dict[str, Any]] = [{"stage_id": stage}]
+            if stage == DEFAULT_STAGE_ID:
+                stage_q += [{"stage_id": {"$exists": False}}, {"stage_id": None}]
+            conditions.append({"$or": stage_q})
+        query: Dict[str, Any] = {"$and": conditions} if len(conditions) > 1 else (conditions[0] if conditions else {})
         total = await self.applications.count_documents(query)
         rows = await self.applications.find(query, {"_id": 0}).sort("submitted_at", -1).skip((page - 1) * limit).limit(limit).to_list(length=limit)
         resumes = await self._resumes([r["resume_id"] for r in rows])
@@ -611,7 +631,7 @@ class ApplicationService:
             "total_experience_years": form.get("total_experience_years"),
             "notice_period": form.get("notice_period", ""),
             "expected_ctc": form.get("expected_ctc"),
-            "stage": a.get("stage", "APPLIED"), "source": a.get("source") or "Careers page",
+            "stage": a.get("stage", "APPLIED"), **stage_of(a), "source": a.get("source") or "Careers page",
             "heard_from": a.get("heard_from"), "note": a.get("note"),
             "review_status": (a.get("review") or {}).get("status", REVIEW_PENDING),
             "confidence": a.get("confidence") or {},

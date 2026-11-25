@@ -34,6 +34,7 @@ import CareerPagePreviewFrame from "./pages/CareerPagePreviewFrame";
 import CareerPageIntegrate, { PublicIntegrationGuide } from "./pages/CareerPageIntegrate";
 import Candidate360 from "./pages/Candidate360";
 import SkillIntelligencePage from "./pages/SkillIntelligence";
+import RecruitmentPipeline from "./pages/RecruitmentPipeline";
 
 // Role links are now /jobs?job=<id> (the careers page can be embedded in any site)
 function RedirectToJob() {
@@ -155,7 +156,7 @@ export default function App() {
                         {/* Old link: the mock Client Feedback page was removed */}
                         <Route path="/client-feedback" element={<Navigate to="/interviews" replace />} />
                         <Route path="/analytics" element={<AnalyticsReports />} />
-                        <Route path="/pipeline" element={<Navigate to="/interviews" replace />} />
+                        <Route path="/pipeline" element={<RecruitmentPipeline />} />
                         <Route path="/audit-log" element={<AuditLog />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/companies" element={<Companies />} />

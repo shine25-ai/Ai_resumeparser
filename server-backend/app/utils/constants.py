@@ -31,6 +31,8 @@ EVALUATION_FORMS_COLLECTION = "evaluation_forms"
 INTERVIEW_EVALUATIONS_COLLECTION = "interview_evaluations"
 CANDIDATES_COLLECTION = "candidates"
 CANDIDATE_DOCUMENTS_COLLECTION = "candidate_documents"
+WORKFLOWS_COLLECTION = "workflows"
+APPLICATION_HISTORY_COLLECTION = "application_history"
 
 ERROR_USER_EXISTS = "User with this email already exists."
 ERROR_INVALID_CREDENTIALS = "Invalid email or password."
