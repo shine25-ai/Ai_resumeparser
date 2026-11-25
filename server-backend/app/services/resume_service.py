@@ -342,6 +342,7 @@ class ResumeService:
                 # 3. Clean up temporary upload document so resumes collection ONLY contains the updated existing candidate profile
                 await self.resume_repo.delete(resume_id)
                 logger.info(f"[EXISTING_EMAIL_FLOW] Step 3/3: Deleted temporary upload record '{resume_id}' from 'resumes' collection so ONLY updated candidate profile '{existing_doc['id']}' remains!")
+                await self._link_candidate(existing_doc["id"], dropped_resume_id=resume_id)
                 logger.info(f"=========================================================")
             else:
                 await self.resume_repo.update(resume_id, {
@@ -352,12 +353,27 @@ class ResumeService:
                     "existing_resume_id": None,
                 })
                 logger.info(f"[NEW_CANDIDATE_FLOW] No existing email conflict. Completed AI Parsing for new candidate resume ID '{resume_id}'")
+                await self._link_candidate(resume_id)
         except Exception as e:
             logger.error(f"Background AI Parsing failed for '{resume_id}': {e}")
             await self.resume_repo.update(resume_id, {
                 "status": ResumeStatus.FAILED.value,
                 "parse_error": str(e)[:1000],
             })
+
+    async def _link_candidate(self, resume_id: str, dropped_resume_id: Optional[str] = None) -> None:
+        """Phase 6: every parsed resume belongs to a candidate, so portal uploads (single and bulk) show in the
+        Candidate Database too. A failure here is logged and never fails the parse."""
+        try:
+            from app.services.candidate_service import link_resume_to_candidate
+            from app.utils.constants import CANDIDATE_DOCUMENTS_COLLECTION
+
+            db = self.resume_repo.db
+            if dropped_resume_id:
+                await db[CANDIDATE_DOCUMENTS_COLLECTION].delete_one({"id": dropped_resume_id})
+            await link_resume_to_candidate(db, resume_id)
+        except Exception as e:
+            logger.error(f"Could not link resume '{resume_id}' to a candidate: {e}")
 
     async def _poll_parser_job(self, status_url: str):
         """Wait for an AI parser job and return (parsed_data, evaluation, resume_text); raises on failure or timeout."""

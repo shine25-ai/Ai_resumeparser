@@ -174,7 +174,7 @@ async def test_staff_list_review_and_corrections(env):
     out = await env.svc.submit(OPENING, COMPANY, EMAIL, {"draft_id": d["draft_id"], "form": FORM, "consent": True}, BackgroundTasks())
     aid = out["application_id"]
     listed = await env.svc.list(review="pending")
-    assert listed["total"] == 1 and listed["items"][0]["full_name"] == "Rakesh Kumar" and listed["items"][0]["candidate_id"] == "CND0001"
+    assert listed["total"] == 1 and listed["items"][0]["full_name"] == "Rakesh Kumar" and listed["items"][0]["candidate_code"] == "CND0001"
     assert (await env.svc.list(q="nobody"))["total"] == 0
     detail = await env.svc.get(aid)
     assert {r["field"] for r in detail["comparison"]} >= {"full_name", "phone", "location"}
