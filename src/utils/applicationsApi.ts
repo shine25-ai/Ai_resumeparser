@@ -1,5 +1,6 @@
 import { BASE_URL, apiFetch } from "./Api";
 import { readJson, type ApplicationForm } from "../careers/api";
+import type { JobMatch } from "../components/JobMatchBadge";
 
 /** Applications, staff side (Phase 5): list, one application, review, corrections, read the resume again. */
 
@@ -41,6 +42,8 @@ export interface ApplicationRow {
   resume_status: string;
   /** false for applications sent before the 5-step form (resume only). */
   full_form: boolean;
+  /** Job match % (Phase 9); null until the candidate's skills are read or when the job lists no skills. */
+  match: JobMatch | null;
 }
 
 export interface ComparisonRow {

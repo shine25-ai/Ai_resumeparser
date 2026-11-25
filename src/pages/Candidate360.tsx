@@ -31,6 +31,7 @@ import {
 
 import { useFeedback } from "../components/ui/Feedback";
 import { ConfidenceBadge } from "./Applications";
+import JobMatchBadge from "../components/JobMatchBadge";
 import {
   addCandidateNote,
   fetchCandidate360,
@@ -735,10 +736,22 @@ export default function Candidate360() {
                         Applied via {app.source || "Careers page"} on {app.submitted_at?.slice(0, 10)}
                       </p>
                     </div>
-                    <span className="rounded-full bg-indigo-50 border border-indigo-200 px-3 py-1 text-xs font-bold text-indigo-700">
-                      {app.stage || "APPLIED"}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <JobMatchBadge match={app.match} />
+                      <span className="rounded-full bg-indigo-50 border border-indigo-200 px-3 py-1 text-xs font-bold text-indigo-700">
+                        {app.stage_name || app.stage || "Applied"}
+                      </span>
+                    </div>
                   </div>
+
+                  {!!app.match?.gaps?.length && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-slate-500">Missing for this job:</span>
+                      {app.match.gaps.map((g) => (
+                        <span key={g} className="rounded-full bg-rose-50 px-2 py-0.5 font-medium text-rose-700">{g}</span>
+                      ))}
+                    </div>
+                  )}
 
                   {app.history && app.history.length > 0 && (
                     <div className="rounded-lg bg-slate-50 p-3 text-xs space-y-1">

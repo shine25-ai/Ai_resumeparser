@@ -43,6 +43,9 @@ export interface PipelineCard {
   job_id?: string;
   job_title?: string;
   rating?: number | null;
+  /** Job match % (Phase 9); null when unknown */
+  match_pct?: number | null;
+  match_gaps?: string[];
   skills: string[];
   days_in_stage: number;
   applied_at?: string;

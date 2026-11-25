@@ -480,6 +480,19 @@ class JobManagementService:
         if target == JOB_STATUS_CLOSED:
             changes["closed_at"] = now
         await self.jobs.update_one({"id": job_id}, {"$set": changes, "$push": {"status_history": entry}})
+        if target == JOB_STATUS_PENDING:
+            # Everyone who can approve jobs (except the person who sent it) is told it is waiting.
+            from app.services.notification_service import NotificationService
+            by = user.get("full_name") or user.get("email") or "Someone"
+            await NotificationService(self.db).notify_permission(
+                "jobs:approve",
+                title="Job approval needed",
+                message=f"{by} sent {job.get('code') or ''} {job.get('title') or 'a job'} for approval.".replace("  ", " "),
+                notification_type="approval",
+                link=f"/job-openings?jobId={job_id}",
+                company_id=job.get("company_id"),
+                exclude_user_ids=[user.get("id")],
+            )
         return await self.get(job_id)
 
     # ── Templates ────────────────────────────────────────────────────────────

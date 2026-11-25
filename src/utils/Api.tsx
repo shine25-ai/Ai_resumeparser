@@ -2136,7 +2136,7 @@ export interface CompanyUsageMeters {
 
 export const fetchCompanyUsageMeters = async (companyId: string): Promise<CompanyUsageMeters> => {
   const token = localStorage.getItem("access_token") || "";
-  const res = await fetch(`/api/v1/companies/${companyId}/usage`, {
+  const res = await apiFetch(`${BASE_URL}/companies/${companyId}/usage`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
@@ -2157,7 +2157,7 @@ export interface InAppNotification {
 
 export const fetchInAppNotifications = async (unreadOnly = false): Promise<{ notifications: InAppNotification[]; unread_count: number }> => {
   const token = localStorage.getItem("access_token") || "";
-  const res = await fetch(`/api/v1/notifications?unread_only=${unreadOnly}`, {
+  const res = await apiFetch(`${BASE_URL}/notifications?unread_only=${unreadOnly}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
@@ -2166,7 +2166,7 @@ export const fetchInAppNotifications = async (unreadOnly = false): Promise<{ not
 
 export const markInAppNotificationRead = async (id: string): Promise<void> => {
   const token = localStorage.getItem("access_token") || "";
-  await fetch(`/api/v1/notifications/${id}/read`, {
+  await apiFetch(`${BASE_URL}/notifications/${id}/read`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -2174,7 +2174,7 @@ export const markInAppNotificationRead = async (id: string): Promise<void> => {
 
 export const markAllInAppNotificationsRead = async (): Promise<void> => {
   const token = localStorage.getItem("access_token") || "";
-  await fetch(`/api/v1/notifications/read-all`, {
+  await apiFetch(`${BASE_URL}/notifications/read-all`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -2182,7 +2182,7 @@ export const markAllInAppNotificationsRead = async (): Promise<void> => {
 
 export const fetchSystemHealthMetrics = async (): Promise<any> => {
   const token = localStorage.getItem("access_token") || "";
-  const res = await fetch("/api/v1/operations/health", {
+  const res = await apiFetch(`${BASE_URL}/operations/health`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
@@ -2191,7 +2191,7 @@ export const fetchSystemHealthMetrics = async (): Promise<any> => {
 
 export const runDataRetentionDryRun = async (companyId?: string): Promise<any> => {
   const token = localStorage.getItem("access_token") || "";
-  const res = await fetch("/api/v1/operations/retention/dry-run", {
+  const res = await apiFetch(`${BASE_URL}/operations/retention/dry-run`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ company_id: companyId }),
@@ -2202,7 +2202,7 @@ export const runDataRetentionDryRun = async (companyId?: string): Promise<any> =
 
 export const applyDataRetention = async (companyId?: string): Promise<any> => {
   const token = localStorage.getItem("access_token") || "";
-  const res = await fetch("/api/v1/operations/retention/apply", {
+  const res = await apiFetch(`${BASE_URL}/operations/retention/apply`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ company_id: companyId }),

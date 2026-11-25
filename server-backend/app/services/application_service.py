@@ -576,6 +576,17 @@ class ApplicationService:
         await self.applications.insert_one(dict(application))
         # The resume service saved its own copy of the file, so the draft and its file can go.
         await self._drop_drafts({"id": draft["id"]})
+        # Tell the staff who review applications (candidates:edit) that one arrived.
+        from app.services.notification_service import NotificationService
+        who = (personal.get("full_name") or email).strip()
+        await NotificationService(self.db).notify_permission(
+            "candidates:edit",
+            title="New application",
+            message=f"{who} applied for {opening['title']}.",
+            notification_type="application",
+            link=f"/applications?id={application['id']}",
+            company_id=ref.get("company_id"),
+        )
         return {
             "application_id": application["id"], "opening_title": opening["title"], "company_name": company.get("name"),
             "submitted_at": application["submitted_at"],
@@ -606,7 +617,16 @@ class ApplicationService:
         total = await self.applications.count_documents(query)
         rows = await self.applications.find(query, {"_id": 0}).sort("submitted_at", -1).skip((page - 1) * limit).limit(limit).to_list(length=limit)
         resumes = await self._resumes([r["resume_id"] for r in rows])
-        return {"items": [self._row(a, resumes.get(a["resume_id"])) for a in rows], "total": total, "page": page, "limit": limit}
+        items = [self._row(a, resumes.get(a["resume_id"])) for a in rows]
+        await self._add_matches(items)
+        return {"items": items, "total": total, "page": page, "limit": limit}
+
+    async def _add_matches(self, rows: List[Dict[str, Any]]) -> None:
+        """Job match % (Phase 9) on each row: the candidate's saved skills against the job's skills; None if unknown."""
+        from app.services.skill_intelligence_service import job_matches
+        found = await job_matches(self.db, [(r.get("candidate_id"), r.get("opening_id")) for r in rows])
+        for r in rows:
+            r["match"] = found.get((str(r.get("candidate_id")), str(r.get("opening_id"))))
 
     async def _resumes(self, ids: List[str]) -> Dict[str, Dict[str, Any]]:
         if not ids:
@@ -651,8 +671,10 @@ class ApplicationService:
         # Older applications (before the 5-step form) or a later re-read: compare with the profile as it is now.
         if resume and resume.get("parsed_data") and resume.get("status") == "PARSED":
             extracted = map_parsed(resume["parsed_data"])
+        row = self._row(a, resume)
+        await self._add_matches([row])
         return {
-            **self._row(a, resume),
+            **row,
             "form": a.get("form") or {},
             "extracted": extracted,
             "comparison": comparison(a.get("form") or {}, extracted) if a.get("form") else [],

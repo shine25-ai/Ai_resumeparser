@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { useFeedback } from "./ui/Feedback";
 import {
+  BASE_URL,
+  apiFetch,
   fetchSystemHealthMetrics,
   runDataRetentionDryRun,
   applyDataRetention,
@@ -66,7 +68,7 @@ export default function PlatformSettingsView() {
     try {
       const token = localStorage.getItem("access_token") || "";
       const [settingsRes, healthData] = await Promise.all([
-        fetch("/api/v1/operations/platform-settings", {
+        apiFetch(`${BASE_URL}/operations/platform-settings`, {
           headers: { Authorization: `Bearer ${token}` },
         }).then((r) => r.json()),
         fetchSystemHealthMetrics().catch(() => null),
@@ -90,7 +92,7 @@ export default function PlatformSettingsView() {
     setSaving(true);
     try {
       const token = localStorage.getItem("access_token") || "";
-      const res = await fetch("/api/v1/operations/platform-settings", {
+      const res = await apiFetch(`${BASE_URL}/operations/platform-settings`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
