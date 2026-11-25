@@ -13,10 +13,11 @@ The form itself is kept on the candidate's device until they submit ("Save as dr
 Staff side: the list of applications, one application with what the candidate entered next to what the AI read
 (and how sure it was), "mark reviewed", "use the candidate's corrections on the profile" and "read the resume again".
 
-Applications live in `job_applications` (one per candidate and job). The candidate profile is still the resume
-record (`resumes`); the separate `candidates` collection arrives with candidate management (Phase 6).
+Applications live in `job_applications` (one per candidate and job). Each carries `candidate_id`, the ID of the
+record in `candidates` (Phase 6); the resume keeps its CND code in `candidate_id` and points at the candidate
+with `candidate_ref`.
 """
- 
+
 import hashlib
 import io
 import json
@@ -33,24 +34,14 @@ from starlette.datastructures import Headers
 
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.models.candidate import (
-    CandidateDocument,
-    CandidateFileDocument,
-    normalize_email,
-    normalize_phone,
-)
 from app.models.job_opening import (
     REVIEW_DONE,
     REVIEW_PENDING,
     JobApplicationDocument,
 )
-from app.utils.constants import (
-    CANDIDATE_DOCUMENTS_COLLECTION,
-    CANDIDATES_COLLECTION,
-    JOB_APPLICATIONS_COLLECTION,
-    RESUMES_COLLECTION,
-)
-from app.utils.helpers import generate_uuid, sanitize_filename, utc_now
+from app.services.candidate_service import link_resume_to_candidate
+from app.utils.constants import JOB_APPLICATIONS_COLLECTION, RESUMES_COLLECTION
+from app.utils.helpers import sanitize_filename, utc_now
 
 DRAFTS_COLLECTION = "application_drafts"
 DRAFT_DAYS = 7
@@ -523,103 +514,31 @@ class ApplicationService:
             )
             resume_id = resume.id
         now = utc_now().isoformat()
-        existing_resume = await self.db[RESUMES_COLLECTION].find_one({"id": resume_id})
-        existing_cand_id = (existing_resume or {}).get("candidate_id")
-
-        # Phase 6 Candidate resolution: match candidate by normalized email (or phone), else create a new Candidate
-        norm_em = normalize_email(email)
-        personal = form.get("personal") or {}
-        phone_raw = personal.get("phone", "")
-        norm_ph = normalize_phone(phone_raw)
-
-        candidate = await self.db[CANDIDATES_COLLECTION].find_one({"id": existing_cand_id}) if existing_cand_id else None
-        if not candidate:
-            candidate = await self.db[CANDIDATES_COLLECTION].find_one({"normalized_email": norm_em})
-        if not candidate and norm_ph and len(norm_ph) >= 7:
-            candidate = await self.db[CANDIDATES_COLLECTION].find_one({"normalized_phone": norm_ph})
-
-        if candidate:
-            candidate_id = candidate["id"]
-            update_fields: Dict[str, Any] = {"updated_at": now}
-            if not candidate.get("location") and personal.get("location"):
-                update_fields["location"] = personal.get("location")
-            if not candidate.get("linkedin") and personal.get("linkedin"):
-                update_fields["linkedin"] = personal.get("linkedin")
-            if form.get("skills"):
-                existing_skills = list(candidate.get("skills") or [])
-                merged_skills = list(dict.fromkeys([*existing_skills, *form["skills"]]))
-                update_fields["skills"] = merged_skills
-            await self.db[CANDIDATES_COLLECTION].update_one({"id": candidate_id}, {"$set": update_fields})
-        else:
-            first_exp = (form.get("experience") or [{}])[0]
-            current_role = first_exp.get("designation") or ""
-            candidate_id = existing_cand_id or generate_uuid()
-            cand_doc = CandidateDocument(
-                id=candidate_id,
-                company_id=ref.get("company_id") or "default",
-                full_name=personal.get("full_name") or email.split("@")[0],
-                email=email,
-                normalized_email=norm_em,
-                emails=[email],
-                phone=phone_raw,
-                normalized_phone=norm_ph,
-                phones=[phone_raw] if phone_raw else [],
-                location=personal.get("location", ""),
-                linkedin=personal.get("linkedin", ""),
-                portfolio=personal.get("portfolio", ""),
-                total_experience_years=form.get("total_experience_years"),
-                current_role=current_role,
-                skills=form.get("skills") or [],
-                tags=[],
-                source="Careers page",
-                status="active",
-                candidate_id_display=existing_cand_id,
-                created_at=now,
-                updated_at=now,
-            )
-            candidate_dict = cand_doc.to_dict()
-            await self.db[CANDIDATES_COLLECTION].insert_one(dict(candidate_dict))
-
-        # Record CandidateFileDocument for candidate_documents collection
-        doc_record = CandidateFileDocument(
-            id=resume_id,
-            company_id=ref.get("company_id") or "default",
-            candidate_id=candidate_id,
-            original_filename=draft.get("filename", "resume.pdf"),
-            filename=draft.get("filename", "resume.pdf"),
-            file_path=draft.get("file_path", ""),
-            file_hash=draft.get("file_hash"),
-            extracted_text=draft.get("extracted_text"),
-            parsed_data=draft.get("extracted") or {},
-            confidence=draft.get("confidence") or {},
-            status="PARSED",
-            uploaded_by="public-applicant",
-            upload_date=now,
-            created_at=now,
-            updated_at=now,
-        )
-        await self.db[CANDIDATE_DOCUMENTS_COLLECTION].update_one(
-            {"id": resume_id},
-            {"$set": doc_record.to_dict()},
-            upsert=True,
-        )
-
-        res_update = {
-            "applicant_email": email,
-            "applicant_heard_from": form["heard_from"] or None,
-            "applicant_note": form["cover_note"] or None,
-        }
-        if not (existing_resume or {}).get("candidate_id"):
-            res_update["candidate_id"] = candidate_id
-
         await self.db[RESUMES_COLLECTION].update_one(
             {"id": resume_id},
-            {"$set": res_update},
+            {"$set": {"applicant_email": email, "applicant_heard_from": form["heard_from"] or None,
+                      "applicant_note": form["cover_note"] or None}},
+        )
+        # Phase 6: the application belongs to a candidate (same email in this company, else a new one).
+        personal = form.get("personal") or {}
+        first_job = (form.get("experience") or [{}])[0] or {}
+        candidate_id = await link_resume_to_candidate(
+            self.db, resume_id, source="Careers page", uploaded_by="public-applicant",
+            details={
+                "email": email,
+                "full_name": personal.get("full_name"),
+                "phone": personal.get("phone"),
+                "location": personal.get("location"),
+                "linkedin": personal.get("linkedin"),
+                "portfolio": personal.get("portfolio"),
+                "total_experience_years": form.get("total_experience_years"),
+                "current_role": first_job.get("designation"),
+                "skills": form.get("skills"),
+            },
         )
 
         application = JobApplicationDocument(
-            company_id=ref.get("company_id") or "default",
-            company_name=ref.get("company_name"),
+            **ref,
             opening_id=opening["id"],
             opening_title=opening["title"],
             applicant_email=email,
@@ -689,7 +608,8 @@ class ApplicationService:
             "review_status": (a.get("review") or {}).get("status", REVIEW_PENDING),
             "confidence": a.get("confidence") or {},
             "resume_id": a["resume_id"],
-            "candidate_id": (resume or {}).get("candidate_id"),
+            "candidate_id": a.get("candidate_id"),                  # the candidate record (Phase 6)
+            "candidate_code": (resume or {}).get("candidate_id"),   # the resume's CND code, for display
             "resume_status": (resume or {}).get("status", "MERGED"),
             "full_form": bool(form),
         }

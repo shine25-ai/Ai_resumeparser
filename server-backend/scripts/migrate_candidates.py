@@ -5,9 +5,12 @@ Splits resumes into `candidates` and `candidate_documents`, and links `job_appli
 Features:
 - --dry-run (default): reports counts that would be created/updated without changing data
 - --apply: writes changes to MongoDB
-- Deduplicates resumes per company by normalized email -> normalized phone -> name+phone
+- Deduplicates resumes per company by the candidate's normalized email -> normalized phone (never the uploader's
+  email); a resume with neither becomes its own candidate
 - Creates candidate_documents for each resume file
-- Sets candidate_id on all job_applications
+- Sets candidate_id on unlinked job_applications of the same company (by resume, or by a non-blank email)
+- Resumes keep their CND code in candidate_id and get `candidate_ref` = the candidate's ID
+- Resumes with no company are skipped and counted (run the tenant migration first)
 - Safe and idempotent: can be run repeatedly without duplicating candidates or documents
 """
 
@@ -41,7 +44,7 @@ from app.utils.helpers import generate_uuid, utc_now
 
 def _dedupe_key(doc: Dict[str, Any]) -> str:
     pd = doc.get("parsed_data") or {}
-    email = normalize_email(pd.get("email") or doc.get("email") or doc.get("applicant_email") or doc.get("uploaded_by_email"))
+    email = normalize_email(pd.get("email") or doc.get("email") or doc.get("applicant_email"))
     if email:
         return f"email:{email}"
 
@@ -49,8 +52,8 @@ def _dedupe_key(doc: Dict[str, Any]) -> str:
     if phone and len(phone) >= 7:
         return f"phone:{phone}"
 
-    name = str(pd.get("full_name") or pd.get("name") or doc.get("full_name") or doc.get("candidate_name") or doc.get("original_filename") or "unknown").strip().lower()
-    return f"name_phone:{name}_{phone}"
+    # Nothing to match on: this resume is its own candidate.
+    return f"resume:{doc.get('id')}"
 
 
 async def collect_counts(db) -> Tuple[Dict[str, Counter], Dict[str, str]]:
@@ -68,7 +71,7 @@ async def collect_counts(db) -> Tuple[Dict[str, Counter], Dict[str, str]]:
         if coll == JOB_APPLICATIONS_COLLECTION:
             filter_q = {"candidate_id": {"$exists": True, "$ne": None}}
         async for doc in db[coll].find(filter_q, {"company_id": 1}):
-            cid = doc.get("company_id") or "default"
+            cid = doc.get("company_id") or "(none)"
             row[names.get(cid, cid)] += 1
         table[coll if coll != JOB_APPLICATIONS_COLLECTION else "linked_applications"] = row
 
@@ -92,6 +95,7 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
         "candidate_documents_created": 0,
         "applications_linked": 0,
         "resumes_processed": 0,
+        "resumes_without_company": 0,
     }
 
     # Fetch all resumes
@@ -101,7 +105,10 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
     # Group by company_id -> dedupe_key -> list of resumes
     by_company: Dict[str, Dict[str, List[Dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for r in resumes:
-        cid = r.get("company_id") or "default"
+        cid = r.get("company_id")
+        if not cid:
+            stats["resumes_without_company"] += 1
+            continue
         key = _dedupe_key(r)
         by_company[cid][key].append(r)
 
@@ -112,14 +119,17 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
             primary_r = r_list[0]
             pd = primary_r.get("parsed_data") or {}
 
-            email = pd.get("email") or primary_r.get("email") or primary_r.get("applicant_email") or primary_r.get("uploaded_by_email") or ""
+            email = pd.get("email") or primary_r.get("email") or primary_r.get("applicant_email") or ""
             phone = pd.get("phone") or primary_r.get("phone") or ""
             norm_em = normalize_email(email)
             norm_ph = normalize_phone(phone)
 
-            # Check if candidate already exists in this company
+            # Check if candidate already exists in this company (a resume already linked wins)
             existing_candidate = None
-            if norm_em:
+            linked_ref = next((r.get("candidate_ref") for r in r_list if r.get("candidate_ref")), None)
+            if linked_ref:
+                existing_candidate = await db[CANDIDATES_COLLECTION].find_one({"company_id": cid, "id": linked_ref})
+            if not existing_candidate and norm_em:
                 existing_candidate = await db[CANDIDATES_COLLECTION].find_one({"company_id": cid, "normalized_email": norm_em})
             if not existing_candidate and norm_ph and len(norm_ph) >= 7:
                 existing_candidate = await db[CANDIDATES_COLLECTION].find_one({"company_id": cid, "normalized_phone": norm_ph})
@@ -159,8 +169,9 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
                         current_role=pd.get("current_role") or primary_r.get("job_title", ""),
                         skills=skills,
                         tags=tags,
-                        source=primary_r.get("resume_source") or "Careers page",
+                        source=primary_r.get("resume_source") or "Upload",
                         status="active",
+                        candidate_id_display=primary_r.get("candidate_id"),
                         created_at=str(primary_r.get("upload_date") or now),
                         updated_at=now,
                     )
@@ -199,22 +210,22 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
                         )
                         await db[CANDIDATE_DOCUMENTS_COLLECTION].insert_one(doc_record.to_dict())
 
-                # Link applications
-                unlinked = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-                    "$or": [{"resume_id": rid}, {"applicant_email": email}],
-                    "candidate_id": {"$in": [None, ""]},
-                })
+                # Link this company's unlinked applications for this resume (or this non-blank email)
+                match: List[Dict[str, Any]] = [{"resume_id": rid}]
+                if norm_em:
+                    match.append({"applicant_email": email})
+                    if email != norm_em:
+                        match.append({"applicant_email": norm_em})
+                app_filter = {"company_id": cid, "$or": match, "candidate_id": {"$in": [None, ""]}}
+                unlinked = await db[JOB_APPLICATIONS_COLLECTION].count_documents(app_filter)
                 if unlinked > 0:
                     stats["applications_linked"] += unlinked
                     if apply:
-                        await db[JOB_APPLICATIONS_COLLECTION].update_many(
-                            {"$or": [{"resume_id": rid}, {"applicant_email": email}]},
-                            {"$set": {"candidate_id": candidate_id}},
-                        )
+                        await db[JOB_APPLICATIONS_COLLECTION].update_many(app_filter, {"$set": {"candidate_id": candidate_id}})
 
-                # Also ensure resume has candidate_id
-                if apply and not r.get("candidate_id"):
-                    await db[RESUMES_COLLECTION].update_one({"id": rid}, {"$set": {"candidate_id": candidate_id}})
+                # The resume keeps its CND code; candidate_ref points at the candidate
+                if apply and not r.get("candidate_ref"):
+                    await db[RESUMES_COLLECTION].update_one({"id": rid}, {"$set": {"candidate_ref": candidate_id}})
 
     return stats
 
@@ -249,6 +260,7 @@ async def main():
     print(f"  Candidates created:           {stats['candidates_created']}")
     print(f"  Candidate documents created:  {stats['candidate_documents_created']}")
     print(f"  Applications linked:          {stats['applications_linked']}")
+    print(f"  Resumes skipped (no company): {stats['resumes_without_company']}")
 
     if is_apply:
         after, _ = await collect_counts(db)

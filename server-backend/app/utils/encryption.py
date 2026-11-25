@@ -1,18 +1,5 @@
 import os
-try:
-    from cryptography.fernet import Fernet
-except ImportError:
-    import base64
-
-    class Fernet:
-        def __init__(self, key):
-            pass
-
-        def encrypt(self, data: bytes) -> bytes:
-            return base64.b64encode(data)
-
-        def decrypt(self, token: bytes) -> bytes:
-            return base64.b64decode(token)
+from cryptography.fernet import Fernet
 from app.core.config import settings
 
 def get_fernet():

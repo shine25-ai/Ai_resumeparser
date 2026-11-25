@@ -54,7 +54,7 @@ class CandidateDocument(BaseModel):
     """The person entity in the recruitment platform."""
 
     id: str = Field(default_factory=generate_uuid)
-    company_id: str = "default"
+    company_id: str
     full_name: str
     email: str
     normalized_email: str
@@ -74,7 +74,8 @@ class CandidateDocument(BaseModel):
     status: str = "active"  # active, archived, merged
     source: str = "Direct"
     merged_into: Optional[str] = None
-    candidate_id_display: Optional[str] = None
+    candidate_id_display: Optional[str] = None   # the CND code of the first resume, for display
+    possible_duplicate_of: List[str] = Field(default_factory=list)   # same phone, different email (P6-05)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
@@ -93,7 +94,7 @@ class CandidateFileDocument(BaseModel):
     """Resume files and AI parse results for a candidate."""
 
     id: str = Field(default_factory=generate_uuid)
-    company_id: str = "default"
+    company_id: str
     candidate_id: str
     original_filename: str
     filename: str
