@@ -22,6 +22,7 @@ from app.core.database import get_database
 from app.core.dependencies import require_access, get_current_active_user, is_admin_or_staff_user, is_company_admin
 from app.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
 from app.core.tenant import company_scope, system_scope
+from app.core.rate_limit import client_ip, hit_ip
 from app.services.audit_service import AUDIT_LOGS_COLLECTION, diff as audit_diff, record_audit
 from app.models.company import SUPERADMIN_ONLY_FIELDS, with_profile_defaults
 from app.repositories.company_repository import CompanyRepository
@@ -124,13 +125,17 @@ async def get_public_page_settings(
 
 
 @public_router.post("/verification/request", summary="Email a verification code to the applicant")
-async def request_verification_code(body: EmailRequest, service: JobOpeningService = Depends(get_job_service)):
+async def request_verification_code(body: EmailRequest, request: Request, service: JobOpeningService = Depends(get_job_service),
+                                    db: AsyncIOMotorDatabase = Depends(get_database)):
+    await hit_ip(db, "applicant_code:ip", request)
     data = await service.request_code(body.email, body.company, opening_id=body.opening_id)
     return success_response(data=data, message="A verification code has been sent to your email.")
 
 
 @public_router.post("/verification/confirm", summary="Confirm the emailed code")
-async def confirm_verification_code(body: CodeConfirmRequest, service: JobOpeningService = Depends(get_job_service)):
+async def confirm_verification_code(body: CodeConfirmRequest, request: Request, service: JobOpeningService = Depends(get_job_service),
+                                    db: AsyncIOMotorDatabase = Depends(get_database)):
+    await hit_ip(db, "applicant_confirm:ip", request)
     data = await service.confirm_code(body.email, body.code)
     return success_response(data=data, message="Email verified.")
 
@@ -165,11 +170,13 @@ def get_applications(db: AsyncIOMotorDatabase = Depends(get_database)):
 @public_router.post("/{opening_id}/resume", summary="Upload the resume (step 1). The AI starts reading it to pre-fill the form.")
 async def upload_application_resume(
     opening_id: str,
+    request: Request,
     file: UploadFile = File(...),
     x_applicant_token: str = Header(..., alias="X-Applicant-Token"),
     service: JobOpeningService = Depends(get_job_service),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    await hit_ip(db, "applicant_upload:ip", request)
     email = service._email_from_token(x_applicant_token)
     opening, _company = await _accepting_opening(service, opening_id)
     data = await get_applications(db).upload_resume(opening, email, file)
@@ -199,9 +206,11 @@ async def submit_application(
     service: JobOpeningService = Depends(get_job_service),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    await hit_ip(db, "applicant_submit:ip", request)
     email = service._email_from_token(x_applicant_token)
     opening, company = await _accepting_opening(service, opening_id)
-    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "") or "").split(",")[0].strip()
+    # The consent record keeps the caller's address as uvicorn resolved it; X-Forwarded-For alone can be forged
+    ip = client_ip(request)
     data = await get_applications(db).submit(opening, company, email, body.model_dump(), background_tasks, ip=ip)
     return success_response(data=data, message="Application submitted.", status_code=status.HTTP_201_CREATED)
 
@@ -217,13 +226,16 @@ async def submit_application(
 )
 async def apply_for_role(
     opening_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     heard_from: Optional[str] = Form(None, max_length=100),
     note: Optional[str] = Form(None, max_length=1000),
     x_applicant_token: str = Header(..., alias="X-Applicant-Token"),
     service: JobOpeningService = Depends(get_job_service),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    await hit_ip(db, "applicant_upload:ip", request)
     data = await service.apply(
         opening_id, x_applicant_token, file, background_tasks, heard_from=heard_from, note=note
     )

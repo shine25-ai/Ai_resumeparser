@@ -11,6 +11,7 @@ from app.services.audit_service import record_audit
 from app.core.dependencies import get_current_active_user
 from app.repositories.user_repository import UserRepository
 from app.core.tenant import system_scope
+from app.core.rate_limit import hit, hit_ip
 from app.schemas.auth import (
     LoginRequest, MfaDisableRequest, MfaEnrolConfirmRequest, MfaSetupConfirmRequest, MfaSetupStartRequest,
     MfaVerifyRequest, RefreshTokenRequest, RegisterRequest,
@@ -38,8 +39,11 @@ def get_auth_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -> Aut
 )
 async def register(
     payload: RegisterRequest,
+    request: Request,
     controller: AuthController = Depends(get_auth_controller),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    await hit_ip(db, "register:ip", request)
     return await controller.register(payload)
 
 
@@ -51,8 +55,13 @@ async def register(
 )
 async def login(
     payload: LoginRequest,
+    request: Request,
     controller: AuthController = Depends(get_auth_controller),
+    db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    # Limits password guessing: per account, and per address trying many accounts
+    await hit_ip(db, "login:ip", request)
+    await hit(db, "login:email", str(payload.email))
     return await controller.login(payload)
 
 

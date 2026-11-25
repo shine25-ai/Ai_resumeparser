@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # Role permission checks on the API: "warn" logs a missing permission and lets the request through,
     # "enforce" refuses it. Start with "warn" on existing data, check the logs, then switch.
     PERMISSIONS_MODE: str = "warn"
+    # Rate limits on sign-in and the public applicant endpoints (app.core.rate_limit)
+    RATE_LIMITS_ENABLED: bool = True
 
     UPLOAD_FOLDER: str = "uploads"
     OPENAI_API_KEY: str = "sk-placeholder-api-key"
