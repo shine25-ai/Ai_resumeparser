@@ -103,10 +103,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not warm dashboard cache: {e}")
 
+    # Interview reminders (24h and 1h before). Each pass checks every company's upcoming interviews.
+    reminder_task = None
+    if settings.INTERVIEW_REMINDERS_ENABLED:
+        try:
+            from app.services.interview_reminders import start_reminder_loop
+            reminder_task = start_reminder_loop(db)
+        except Exception as e:
+            logger.warning(f"Could not start interview reminders: {e}")
+    else:
+        logger.info("Interview reminders are disabled (INTERVIEW_REMINDERS_ENABLED=false).")
+
     logger.info("Application startup completed successfully.")
 
     yield
 
     logger.info("Initiating FastAPI Application Shutdown Lifespan...")
+    if reminder_task is not None:
+        reminder_task.cancel()
     await db_manager.close_database_connection()
     logger.info("Application shutdown complete.")

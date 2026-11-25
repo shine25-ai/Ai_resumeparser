@@ -80,6 +80,10 @@ class ClientFeedbackItem(BaseModel):
 class InterviewCreateRequest(BaseModel):
     """Payload for scheduling a new interview."""
 
+    # Email the candidate and interviewers a calendar invite (.ics) on creation. Off by default.
+    send_invite: bool = False
+    application_id: Optional[str] = None
+
     candidate_id: str
     candidate_name: str
     candidate_email: Optional[str] = None
@@ -105,6 +109,7 @@ class InterviewCreateRequest(BaseModel):
 
     meeting_link: Optional[str] = None
     meeting_platform: Optional[str] = "Google Meet"
+    interview_mode: Optional[str] = None  # ONLINE | IN_PERSON | TELEPHONIC
 
     location: Optional[str] = None
     interview_location: Optional[str] = None
@@ -175,6 +180,7 @@ class InterviewBatchCreateRequest(BaseModel):
 
     meeting_link: Optional[str] = None
     meeting_platform: Optional[str] = "Google Meet"
+    interview_mode: Optional[str] = None  # ONLINE | IN_PERSON | TELEPHONIC
 
     location: Optional[str] = None
     interview_location: Optional[str] = None
@@ -233,6 +239,7 @@ class InterviewUpdateRequest(BaseModel):
 
     meeting_link: Optional[str] = None
     meeting_platform: Optional[str] = None
+    interview_mode: Optional[str] = None  # ONLINE | IN_PERSON | TELEPHONIC
 
     location: Optional[str] = None
     interview_location: Optional[str] = None
@@ -342,6 +349,7 @@ class InterviewFeedbackRequest(BaseModel):
     interview_location: Optional[str] = None
     meeting_link: Optional[str] = None
     meeting_platform: Optional[str] = None
+    interview_mode: Optional[str] = None  # ONLINE | IN_PERSON | TELEPHONIC
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -390,6 +398,7 @@ class InterviewResponse(BaseModel):
 
     meeting_link: Optional[str] = None
     meeting_platform: Optional[str] = None
+    interview_mode: Optional[str] = None  # ONLINE | IN_PERSON | TELEPHONIC
 
     location: Optional[str] = None
     interview_location: Optional[str] = None

@@ -12,6 +12,9 @@ import Upload from "./pages/Upload";
 import CandidateDatabase from "./pages/CandidateDatabase";
 import JDMatch from "./pages/JDMatch";
 import InterviewManagement from "./pages/InterviewManagement";
+import InterviewCalendar from "./pages/InterviewCalendar";
+import InterviewPanels from "./pages/InterviewPanels";
+import InterviewEvaluations from "./pages/InterviewEvaluations";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
@@ -144,6 +147,9 @@ export default function App() {
                         <Route path="/job-openings/new" element={<JobEditor />} />
                         <Route path="/job-openings/:id/edit" element={<JobEditor key="edit" />} />
                         <Route path="/interviews" element={<InterviewManagement />} />
+                        <Route path="/interviews/calendar" element={<InterviewCalendar />} />
+                        <Route path="/interviews/panels" element={<InterviewPanels />} />
+                        <Route path="/interviews/evaluations" element={<InterviewEvaluations />} />
                         {/* The Interview Dashboard is now the Interviews page's "Today and Upcoming" view */}
                         <Route path="/interview-dashboard" element={<Navigate to="/interviews" replace />} />
                         {/* Old link: the mock Client Feedback page was removed */}

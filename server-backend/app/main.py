@@ -21,6 +21,7 @@ from app.routes import transcription, skills_evaluation, resume_templates, inter
 from app.routes import integration, integration_settings
 from app.routes import job_openings
 from app.routes import ats_operations
+from app.routes import evaluation as evaluation_routes
 from app.routes import masters as masters_routes
 from app.routes import files as files_routes
 from app.routes import invitations as invitation_routes
@@ -110,6 +111,11 @@ def create_application() -> FastAPI:
     app.include_router(job_openings.companies_router)
     app.include_router(ats_operations.router)
     app.include_router(ats_operations.public_track_router)
+    app.include_router(evaluation_routes.panels_router)
+    app.include_router(evaluation_routes.forms_router)
+    app.include_router(evaluation_routes.interview_eval_router)
+    app.include_router(evaluation_routes.pipeline_router)
+    app.include_router(evaluation_routes.settings_router)
     app.include_router(masters_routes.router)
     app.include_router(files_routes.router)
     app.include_router(invitation_routes.router)

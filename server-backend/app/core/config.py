@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "ai_resume_parser_db"
+    # Interview reminder emails (24h and 1h). Turn off on a copy of real data to avoid emailing real people.
+    INTERVIEW_REMINDERS_ENABLED: bool = True
 
     SECRET_KEY: str = "super-secret-key-change-in-production-ai-resume-parser-2026"
     ALGORITHM: str = "HS256"

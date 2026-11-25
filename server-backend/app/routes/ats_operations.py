@@ -190,7 +190,7 @@ async def save_scorecard(
     payload: ScorecardPayload,
     current_user: Any = Depends(get_current_user),
 ):
-    data = await _service.save_scorecard(payload.model_dump(), _actor(current_user))
+    data = await _service.save_scorecard(payload.model_dump(), _actor(current_user), actor_id=(current_user or {}).get("id") if isinstance(current_user, dict) else None)
     return ApiResponse(success=True, message="Scorecard saved", data=data)
 
 

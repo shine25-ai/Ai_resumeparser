@@ -228,10 +228,14 @@ class AtsOperationsService:
             raise ValueError(f"Invalid stage '{target_stage}'. Must be one of {sorted(VALID_STAGES)}")
         db = get_database()
         now_iso = _utc_iso()
-        await db[RESUMES_COLLECTION].update_one(
-            {"$or": [{"id": candidate_id}, {"resume_id": candidate_id}]},
+        from app.core.exceptions import NotFoundError
+        result = await db[RESUMES_COLLECTION].update_one(
+            {"$or": [{"id": candidate_id}, {"resume_id": candidate_id}, {"candidate_id": candidate_id}]},
             {"$set": {"manual_stage": target_stage, "stage_updated_at": now_iso, "updated_at": now_iso}},
         )
+        if result.matched_count == 0:
+            # Nothing in this company matches: never report a move that did not happen.
+            raise NotFoundError("Candidate not found in this company.")
         await _log_audit(
             "STAGE_MOVED",
             actor,
@@ -443,7 +447,38 @@ class AtsOperationsService:
         db = get_database()
         return await db["ats_scorecards"].find({}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(length=200)
 
-    async def save_scorecard(self, payload: Dict[str, Any], actor: str) -> Dict[str, Any]:
+    async def save_scorecard(self, payload: Dict[str, Any], actor: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
+        # One system: when exactly one live interview matches this candidate and role, the scorecard becomes
+        # that interview's evaluation (same rule as the migration). Otherwise it stays a legacy scorecard.
+        from app.core.tenant import current_company_id
+        from app.models.company import DEFAULT_COMPANY_ID
+        from app.services.scorecard_migration import build_evaluation, plan_matches
+        from app.utils.constants import INTERVIEW_EVALUATIONS_COLLECTION, INTERVIEWS_COLLECTION
+        from app.utils.helpers import utc_now as _now
+
+        db = get_database()
+        candidate_id = str(payload.get("candidate_id") or "")
+        role = str(payload.get("role") or "")
+        if candidate_id:
+            interviews = await db[INTERVIEWS_COLLECTION].find({"candidate_id": candidate_id}).to_list(length=500)
+            pseudo = {"id": f"sc-{_now().timestamp()}", "candidate_id": candidate_id, "role": role,
+                      "technical": payload.get("technical", 3), "communication": payload.get("communication", 3),
+                      "culture_fit": payload.get("culture_fit", 3), "recommendation": payload.get("recommendation") or "",
+                      "notes": payload.get("notes") or "", "evaluator": actor, "created_at": _now().isoformat()}
+            plan = plan_matches([pseudo], interviews)
+            if plan["matched"]:
+                _, interview = plan["matched"][0]
+                company_id = current_company_id() or DEFAULT_COMPANY_ID
+                doc = build_evaluation(pseudo, interview, company_id)
+                if actor_id:
+                    doc["interviewer_user_id"] = actor_id
+                doc["id"] = f"ats-{pseudo['id']}"
+                await db[INTERVIEW_EVALUATIONS_COLLECTION].insert_one(doc)
+                await _log_audit("SCORECARD_SUBMITTED", actor, candidate_id,
+                                 f"Scorecard recorded as evaluation for interview {interview.get('id')}")
+                doc.pop("_id", None)
+                return {**doc, "stored_as": "evaluation"}
+
         tech = max(1.0, min(5.0, float(payload.get("technical", 3))))
         comm = max(1.0, min(5.0, float(payload.get("communication", 3))))
         culture = max(1.0, min(5.0, float(payload.get("culture_fit", 3))))
