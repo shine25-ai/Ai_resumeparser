@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Archive, ArchiveRestore, Briefcase, Building2, CalendarDays, Check, ChevronLeft, ChevronRight, CircleCheck,
   CircleOff, Download, ExternalLink, Eye, Globe, Loader2, LogIn, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus,
-  Power, RefreshCw, Search, User, Users, X,
+  Power, RefreshCw, Search, User, Users, X, AlertTriangle,
 } from "lucide-react";
 import { useFeedback } from "../components/ui/Feedback";
 import { downloadFile } from "../utils/adminApi";
@@ -233,6 +233,50 @@ function CompanyDetails({
           )
         ) : tab === "settings" ? (
           <div className="space-y-4">
+            {summary?.usage_meters?.is_plan_expired && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                <AlertTriangle size={15} className="shrink-0 text-amber-600" />
+                <span><strong>Plan Expired:</strong> Workspace is currently in read-only mode for company staff. The careers application portal remains open.</span>
+              </div>
+            )}
+
+            {summary?.usage_meters && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 space-y-3">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Live Usage & Quotas</h4>
+                <div className="space-y-2.5">
+                  {[
+                    { label: "Active Users", cur: summary.usage_meters.users.current, max: summary.usage_meters.users.limit, pct: summary.usage_meters.users.pct, unit: "" },
+                    { label: "Active Jobs", cur: summary.usage_meters.active_jobs.current, max: summary.usage_meters.active_jobs.limit, pct: summary.usage_meters.active_jobs.pct, unit: "" },
+                    { label: "Storage Used", cur: summary.usage_meters.storage_mb.current, max: summary.usage_meters.storage_mb.limit, pct: summary.usage_meters.storage_mb.pct, unit: "MB" },
+                    { label: `AI Parses (${summary.usage_meters.ai_parses_month.month})`, cur: summary.usage_meters.ai_parses_month.current, max: summary.usage_meters.ai_parses_month.limit, pct: summary.usage_meters.ai_parses_month.pct, unit: "" },
+                  ].map((m) => {
+                    const isOver = m.pct >= 100;
+                    const isWarn = m.pct >= 80 && !isOver;
+                    return (
+                      <div key={m.label} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-600 font-medium">{m.label}</span>
+                          <span className="text-slate-900 font-bold tabular-nums">
+                            {m.cur} {m.unit} {m.max !== null ? `/ ${m.max} ${m.unit} (${m.pct}%)` : `(unlimited)`}
+                          </span>
+                        </div>
+                        {m.max !== null && (
+                          <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                            <div
+                              className={`h-full transition-all rounded-full ${
+                                isOver ? "bg-rose-500" : isWarn ? "bg-amber-500" : "bg-indigo-600"
+                              }`}
+                              style={{ width: `${Math.min(m.pct, 100)}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             <dl className="grid grid-cols-2 gap-3">
               <div><dt className="text-xs text-slate-500">Plan</dt><dd className="font-medium"><PlanPill plan={company.plan} /></dd></div>
               <div><dt className="text-xs text-slate-500">Valid until</dt><dd className="font-medium">{dateText(company.plan_valid_until)}</dd></div>

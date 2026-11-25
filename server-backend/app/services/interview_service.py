@@ -589,6 +589,9 @@ class InterviewService:
         )
 
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
+        # Phase 9: interview ratings feed the candidate's skill matrix
+        from app.services.skill_intelligence_service import recalculate_skills_for
+        await recalculate_skills_for(self.interview_repo.db, existing.get("candidate_id"), existing.get("resume_id"))
         return InterviewResponse.model_validate(updated_doc)
 
     async def get_next_round_number(

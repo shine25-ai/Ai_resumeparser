@@ -371,9 +371,13 @@ class ResumeService:
             db = self.resume_repo.db
             if dropped_resume_id:
                 await db[CANDIDATE_DOCUMENTS_COLLECTION].delete_one({"id": dropped_resume_id})
-            await link_resume_to_candidate(db, resume_id)
+            candidate_id = await link_resume_to_candidate(db, resume_id)
         except Exception as e:
             logger.error(f"Could not link resume '{resume_id}' to a candidate: {e}")
+            return
+        # Phase 9: resume skills feed the candidate's skill matrix
+        from app.services.skill_intelligence_service import recalculate_skills_for
+        await recalculate_skills_for(db, candidate_id)
 
     async def _poll_parser_job(self, status_url: str):
         """Wait for an AI parser job and return (parsed_data, evaluation, resume_text); raises on failure or timeout."""

@@ -187,3 +187,30 @@ async def test_staff_list_review_and_corrections(env):
     resume = await env.db["resumes"].find_one({"id": detail["resume"]["id"]})
     assert resume["parsed_data"]["location"] == "Chennai" and resume["parsed_data"]["phone"] == "+91 98405 12345"
     assert resume["hr_updates"][-1]["fields"] == ["location", "phone"]
+
+
+@pytest.mark.asyncio
+async def test_same_file_again_reuses_the_parse_and_quota(tmp_path):
+    """PR #73 review: re-uploading the same resume must not use another AI parse (or more storage)."""
+    db = FakeDatabase()
+    await db["companies"].insert_one({"id": "acme", "name": "Acme", "plan_limits": {"ai_parses_per_month": 100}})
+    parses = []
+
+    async def parse(content, name, ctype):
+        parses.append(content)
+        return f"job-{len(parses)}", "queued"
+
+    async def status(job_id):
+        return ("done", PARSED, "")
+
+    svc = ApplicationService(db, FakeResumes(db), upload_dir=str(tmp_path), parse=parse, status=status)
+    opening = {**OPENING, "company_id": "acme"}
+
+    first = await svc.upload_resume(opening, EMAIL, _file())
+    await svc.draft(first["draft_id"], EMAIL)                   # the parse finishes
+    again = await svc.upload_resume(opening, EMAIL, _file())    # the same file
+    assert len(parses) == 1
+    assert again["extracted"]["personal"]["full_name"] == "Rakesh Kumar"   # pre-fill kept, no new parse
+
+    await svc.upload_resume(opening, EMAIL, _file(b"%PDF-1.4 a different resume"))
+    assert len(parses) == 2

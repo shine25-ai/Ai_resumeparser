@@ -395,15 +395,46 @@ class ApplicationService:
         path = os.path.join(self.upload_dir, f"draft_{draft_id}_{name}")
         with open(path, "wb") as f:
             f.write(content)
-        job_id, state = await self.parse(content, name, file.content_type or "application/octet-stream")
+
+        # The same file uploaded again for this job reuses its earlier parse: no new parse, no quota use, no
+        # extra storage. A different file is parsed (and counted) as usual.
+        from app.services.limit_service import LimitService
+        limit_svc = LimitService(self.db)
+        cid = opening.get("company_id")
+        file_hash = hashlib.sha256(content).hexdigest()
+        previous = await self.drafts.find_one({"opening_id": opening["id"], "email": email})
+        reuse = bool(previous and previous.get("file_hash") == file_hash and previous.get("parser_job_id")
+                     and previous.get("parse_status") not in (PARSE_FAILED, PARSE_UNAVAILABLE, "skipped"))
+        if reuse:
+            job_id, state = previous["parser_job_id"], previous["parse_status"]
+        elif await limit_svc.can_parse_ai(cid):
+            job_id, state = await self.parse(content, name, file.content_type or "application/octet-stream")
+            if cid:
+                await limit_svc.increment_ai_parses(cid)
+        else:
+            job_id, state = None, "skipped"
+            if cid:
+                from app.services.notification_service import NotificationService
+                await NotificationService(self.db).create_notification(
+                    company_id=cid,
+                    title="AI Parse Limit Reached on Application",
+                    message=f"Application received for '{opening.get('title', 'job')}' from {email}, but AI parsing was skipped because monthly AI parse quota has been reached.",
+                    notification_type="limit",
+                    link="/applications",
+                )
+        if cid:
+            # The new draft replaces the old one, so storage changes by the difference
+            await limit_svc.record_storage_bytes(cid, len(content) - int((previous or {}).get("size") or 0))
+
         now = utc_now()
         # One draft per candidate and job: a new upload replaces the old one.
         await self._drop_drafts({"opening_id": opening["id"], "email": email})
         doc = {
             "id": draft_id, "opening_id": opening["id"], "email": email, "file_path": path, "filename": name,
-            "content_type": file.content_type or "application/octet-stream", "file_hash": hashlib.sha256(content).hexdigest(),
+            "content_type": file.content_type or "application/octet-stream", "file_hash": file_hash,
             "size": len(content), "parser_job_id": job_id, "parse_status": state, "parse_error": "",
-            "extracted": {}, "confidence": {}, "created_at": now.isoformat(),
+            "extracted": ((previous or {}).get("extracted") or {}) if reuse else {},
+            "confidence": ((previous or {}).get("confidence") or {}) if reuse else {}, "created_at": now.isoformat(),
             "expires_at": (now + timedelta(days=DRAFT_DAYS)).isoformat(),
         }
         await self.drafts.insert_one(dict(doc))

@@ -2,13 +2,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Building2, CalendarClock, ChevronRight, Copy, Database, FileCheck2, Globe, Loader2, Mail, MapPin, Palette, Phone,
-  Plug, Save, ScanText, Settings2, ShieldCheck, Workflow,
+  Plug, Save, ScanText, Settings2, ShieldCheck, Workflow, BarChart3, AlertTriangle, QrCode, Check,
 } from "lucide-react";
 import { useFeedback } from "./ui/Feedback";
 import { useTheme } from "../theme/ThemeProvider";
 import { careerAssetUrl } from "../careers/api";
 import { fetchCompanies, fetchJobSettings, saveJobSettings, updateCompany, type Company, type TenantSettings } from "../utils/jobsApi";
 import { COMPANY_TYPES, Field, INDUSTRIES, SIZES, inputClass } from "./companies/companyForm";
+import { fetchCompanyUsageMeters, type CompanyUsageMeters, startMfaEnrolment, confirmMfaEnrolment } from "../utils/Api";
 
 /**
  * Settings → Company Settings (SRS Screen 21, "Company Settings & Tenant Configuration"): the company profile,
@@ -67,6 +68,10 @@ export default function CompanySettings() {
   const [draft, setDraft] = useState<Company | null>(null);
   const [approval, setApproval] = useState<{ saved: boolean; now: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [usage, setUsage] = useState<CompanyUsageMeters | null>(null);
+  const [mfaModal, setMfaModal] = useState<{ secret: string; otpauth_url: string; backup_codes: string[]; qr_svg: string } | null>(null);
+  const [totpInput, setTotpInput] = useState("");
+  const [enrollingMfa, setEnrollingMfa] = useState(false);
 
   useEffect(() => {
     fetchCompanies()
@@ -77,6 +82,7 @@ export default function CompanySettings() {
           const c = { ...own, tenant_settings: { ...DEFAULT_TENANT, ...(own.tenant_settings || {}) } };
           setCompany(c);
           setDraft(c);
+          fetchCompanyUsageMeters(own.id).then(setUsage).catch(() => null);
         }
       })
       .catch((e) => toast(e instanceof Error ? e.message : "Could not load the company.", "error"));
@@ -117,12 +123,160 @@ export default function CompanySettings() {
   const t = draft.tenant_settings;
   const colours: [string, string][] = [["Primary", branding.colors.primary], ["Secondary", branding.colors.secondary], ["Accent", branding.colors.accent]];
 
+  const startMfa = async () => {
+    setEnrollingMfa(true);
+    try {
+      const data = await startMfaEnrolment();
+      setMfaModal(data);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to initialize 2FA setup", "error");
+    } finally {
+      setEnrollingMfa(false);
+    }
+  };
+
+  const confirmMfa = async () => {
+    if (!totpInput.trim()) return;
+    try {
+      await confirmMfaEnrolment(totpInput.trim());
+      toast("2FA authenticator successfully verified and enabled!", "success");
+      setMfaModal(null);
+      setTotpInput("");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Invalid code. Please check your authenticator.", "error");
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold text-slate-900">Company Settings & Tenant Configuration</h2>
         <p className="text-sm text-slate-500">Configure your company profile, recruitment workflow, branding, integrations and tenant preferences.</p>
       </div>
+
+      {/* Plan Expiration Banner */}
+      {usage?.is_expired && (
+        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-900 shadow-sm">
+          <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
+          <div>
+            <p className="font-bold">Subscription Plan Expired</p>
+            <p className="mt-0.5 text-rose-700">
+              Your subscription plan ({usage.plan}) expired on {usage.plan_valid_until}. The workspace is currently in read-only mode.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Usage Quotas & Limits */}
+      {usage && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <BarChart3 className="text-indigo-600" size={20} />
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Subscription Plan Quotas & Live Usage</h2>
+                <p className="text-[11px] text-slate-500">
+                  Plan: <span className="font-semibold text-slate-700 capitalize">{usage.plan}</span> · Billing: <span className="capitalize">{usage.billing_mode}</span>
+                  {usage.plan_valid_until && ` · Valid until ${usage.plan_valid_until}`}
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+              Month: {usage.month}
+            </span>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* 1. Users Meter */}
+            <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/50">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-semibold text-slate-700">Active Staff Users</span>
+                <span className="font-bold text-slate-900 tabular-nums">
+                  {usage.users.used} / {usage.users.is_unlimited ? "∞" : usage.users.limit}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    usage.users.pct >= 80 ? "bg-amber-500" : "bg-indigo-600"
+                  }`}
+                  style={{ width: `${Math.min(100, usage.users.pct)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
+                <span>{usage.users.pct}% used</span>
+                {usage.users.pct >= 80 && <span className="text-amber-600 font-bold">Nearing Limit (80%)</span>}
+              </div>
+            </div>
+
+            {/* 2. Active Jobs Meter */}
+            <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/50">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-semibold text-slate-700">Open Job Postings</span>
+                <span className="font-bold text-slate-900 tabular-nums">
+                  {usage.active_jobs.used} / {usage.active_jobs.is_unlimited ? "∞" : usage.active_jobs.limit}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    usage.active_jobs.pct >= 80 ? "bg-amber-500" : "bg-indigo-600"
+                  }`}
+                  style={{ width: `${Math.min(100, usage.active_jobs.pct)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
+                <span>{usage.active_jobs.pct}% used</span>
+                {usage.active_jobs.pct >= 80 && <span className="text-amber-600 font-bold">Nearing Limit (80%)</span>}
+              </div>
+            </div>
+
+            {/* 3. Storage Meter */}
+            <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/50">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-semibold text-slate-700">Storage Capacity</span>
+                <span className="font-bold text-slate-900 tabular-nums">
+                  {usage.storage_mb.used} / {usage.storage_mb.is_unlimited ? "∞" : `${usage.storage_mb.limit} MB`}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    usage.storage_mb.pct >= 80 ? "bg-amber-500" : "bg-indigo-600"
+                  }`}
+                  style={{ width: `${Math.min(100, usage.storage_mb.pct)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
+                <span>{usage.storage_mb.pct}% used</span>
+                {usage.storage_mb.pct >= 80 && <span className="text-amber-600 font-bold">Nearing Limit (80%)</span>}
+              </div>
+            </div>
+
+            {/* 4. Monthly AI Parses Meter */}
+            <div className="rounded-xl border border-slate-200 p-3.5 bg-slate-50/50">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-semibold text-slate-700">AI Parses (Monthly)</span>
+                <span className="font-bold text-slate-900 tabular-nums">
+                  {usage.ai_parses.used} / {usage.ai_parses.is_unlimited ? "∞" : usage.ai_parses.limit}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    usage.ai_parses.pct >= 80 ? "bg-amber-500" : "bg-indigo-600"
+                  }`}
+                  style={{ width: `${Math.min(100, usage.ai_parses.pct)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
+                <span>{usage.ai_parses.pct}% used</span>
+                {usage.ai_parses.pct >= 80 && <span className="text-amber-600 font-bold">Nearing Limit (80%)</span>}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-2">
         <div className="space-y-5">
@@ -213,6 +367,63 @@ export default function CompanySettings() {
                 </select>
               </div>
             </div>
+          </Card>
+
+          <Card icon={<ShieldCheck size={22} />} title="Two-Factor Authentication (TOTP)" sub="Protect your company staff logins with authenticator apps (Google Authenticator, Authy, 1Password).">
+            {!mfaModal ? (
+              <div className="flex items-center justify-between py-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Authenticator App 2FA</p>
+                  <p className="text-xs text-slate-500">Require time-based one-time passcodes (TOTP) and backup codes during login.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={startMfa}
+                  disabled={enrollingMfa}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3.5 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {enrollingMfa ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Set Up 2FA
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4 rounded-xl border border-indigo-100 bg-indigo-50/30 p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Scan Authenticator QR Code</h3>
+                    <p className="text-xs text-slate-500">Scan this image in Google Authenticator or enter the manual secret key.</p>
+                  </div>
+                  <button onClick={() => setMfaModal(null)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <div className="p-2 bg-white rounded-xl border border-slate-200" dangerouslySetInnerHTML={{ __html: mfaModal.qr_svg }} />
+                  <div className="space-y-2 text-xs text-slate-700">
+                    <p className="font-semibold text-slate-900">Manual Setup Key:</p>
+                    <code className="block bg-slate-100 p-2 rounded text-slate-800 font-mono select-all break-all">{mfaModal.secret}</code>
+                    <p className="text-[11px] text-slate-500">Backup codes (keep these in a safe place):</p>
+                    <div className="grid grid-cols-2 gap-1 font-mono text-[11px] text-slate-600">
+                      {mfaModal.backup_codes.map((c) => <span key={c} className="bg-white px-2 py-0.5 rounded border border-slate-200">{c}</span>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-2 border-t border-indigo-100">
+                  <input
+                    type="text"
+                    placeholder="Enter 6-digit code"
+                    value={totpInput}
+                    onChange={(e) => setTotpInput(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono max-w-[180px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={confirmMfa}
+                    disabled={!totpInput.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    <Check size={13} /> Verify & Activate
+                  </button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       </div>

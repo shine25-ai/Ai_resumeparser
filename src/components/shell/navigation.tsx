@@ -95,6 +95,7 @@ export const COMPANY_NAV: NavItem[] = [
       { label: "Applications", path: "/applications" },
       { label: "Upload Resumes", path: "/upload", perm: "upload" },
       { label: "JD Match", path: "/jd-match", perm: "jd-match" },
+      { label: "Skill Intelligence", path: "/skills", perm: "jd-match" },
     ],
   },
   {
@@ -160,7 +161,11 @@ export function pathMatches(path: string, pathname: string, search: string): boo
   if (p !== pathname) return false;
   const want = new URLSearchParams(q || "");
   const have = new URLSearchParams(search);
-  for (const [k, v] of want) if (have.get(k) !== v) return false;
+  let mismatch = false;
+  want.forEach((v, k) => {
+    if (have.get(k) !== v) mismatch = true;
+  });
+  if (mismatch) return false;
   // "/settings" with no tab is the first tab; "/job-openings" without ?view is the list.
   if (!q && (have.get("view") || (p === "/settings" && have.get("tab")))) return false;
   return true;
