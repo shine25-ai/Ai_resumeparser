@@ -76,6 +76,78 @@ class NotificationService:
 
         return created_docs
 
+    async def notify_permission(
+        self,
+        permission: str,
+        title: str,
+        message: str,
+        notification_type: str = "info",
+        link: Optional[str] = None,
+        company_id: Optional[str] = None,
+        exclude_user_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Notify every active staff member of the company who may do `permission` ("module:action").
+        Company admins always qualify; other users through their role's permissions (same rule as sign-in).
+        Never raises: a notification must not fail the action that caused it.
+        """
+        try:
+            return await self._notify_permission(permission, title, message, notification_type, link, company_id, exclude_user_ids)
+        except Exception as exc:  # pragma: no cover - logged, never fatal
+            from loguru import logger
+            logger.warning(f"Notification '{title}' not created: {exc}")
+            return []
+
+    async def _notify_permission(self, permission, title, message, notification_type, link, company_id, exclude_user_ids):
+        from app.core.dependencies import _enrich_user_permissions, can
+
+        cid = company_id or current_company_id()
+        if not cid:
+            return []
+        skip = {str(u) for u in (exclude_user_ids or []) if u}
+        with system_scope():
+            users = await self.db[USERS_COLLECTION].find(
+                {"company_id": cid, "is_deleted": {"$ne": True}, "is_active": {"$ne": False}},
+                {"_id": 0, "id": 1, "role": 1, "permissions": 1},
+            ).to_list(length=500)
+        allowed: Dict[str, bool] = {}   # one role lookup per role
+        out: List[Dict[str, Any]] = []
+        with company_scope(cid):
+            for u in users:
+                if not u.get("id") or u["id"] in skip:
+                    continue
+                role = str(u.get("role") or "")
+                if role not in allowed:
+                    allowed[role] = can(await _enrich_user_permissions(dict(u), self.db), permission)
+                if allowed[role]:
+                    out += await self.create_notification(
+                        company_id=cid, user_id=u["id"], title=title, message=message,
+                        notification_type=notification_type, link=link,
+                    )
+        return out
+
+    async def notify_users(
+        self,
+        user_ids: List[str],
+        title: str,
+        message: str,
+        notification_type: str = "info",
+        link: Optional[str] = None,
+        company_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Notify specific staff members (e.g. an interview's interviewers). Never raises."""
+        out: List[Dict[str, Any]] = []
+        for uid in dict.fromkeys(str(u) for u in user_ids if u):
+            try:
+                out += await self.create_notification(
+                    company_id=company_id, user_id=uid, title=title, message=message,
+                    notification_type=notification_type, link=link,
+                )
+            except Exception as exc:  # pragma: no cover
+                from loguru import logger
+                logger.warning(f"Notification '{title}' not created for {uid}: {exc}")
+        return out
+
     async def list_notifications(
         self,
         user_id: str,

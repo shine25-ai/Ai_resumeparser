@@ -256,17 +256,43 @@ class InterviewService:
 
         created = await self.interview_repo.create(interview_doc.to_dict())
         logger.info(f"Scheduled new interview ID '{interview_doc.id}' for candidate '{payload.candidate_name}'")
+        await self._notify_interviewers(created, "scheduled", created_by)
         if getattr(payload, "send_invite", False):
             await self._dispatch_invite(interview_doc.id, KIND_INVITE)
         return InterviewResponse.model_validate(created)
 
     async def _dispatch_invite(self, interview_id: str, kind: str, reason: Optional[str] = None) -> Dict[str, Any]:
         """Send an invite email with its .ics. A mail failure is logged and never fails the calendar action."""
-        db = self.interview_repo.collection.database
+        db = self.interview_repo.db
         result = await InterviewInviteService(db, self.interview_repo).send(interview_id, kind, reason)
         if not result.get("sent"):
             logger.warning(f"Interview {kind} email not sent for {interview_id}: {result.get('reason')}")
         return result
+
+    async def _notify_interviewers(self, interview: Optional[Dict[str, Any]], change: str, actor_id: Optional[str] = None) -> None:
+        """In-app notice to the interview's assigned interviewers (not the person who made the change). Never raises."""
+        if not interview:
+            return
+        try:
+            from app.services.evaluation_service import assigned_interviewer_ids
+            from app.services.notification_service import NotificationService
+
+            to = [u for u in assigned_interviewer_ids(interview) if u != actor_id]
+            if not to:
+                return
+            who = interview.get("candidate_name") or "a candidate"
+            job = f" for {interview['job_title']}" if interview.get("job_title") else ""
+            when = " ".join(x for x in (interview.get("scheduled_date"), interview.get("scheduled_time")) if x)
+            titles = {"scheduled": "Interview scheduled", "rescheduled": "Interview rescheduled",
+                      "updated": "Interview updated", "cancelled": "Interview cancelled"}
+            message = f"Interview with {who}{job}" + (f" on {when}" if when and change != "cancelled" else "") + (
+                " was cancelled." if change == "cancelled" else ".")
+            await NotificationService(self.interview_repo.db).notify_users(
+                to, title=titles.get(change, "Interview updated"), message=message,
+                notification_type="interview", link="/interviews", company_id=interview.get("company_id"),
+            )
+        except Exception as exc:
+            logger.warning(f"Interview notification not created for {interview.get('id')}: {exc}")
 
     async def batch_create_interviews(
         self, payload: InterviewBatchCreateRequest, created_by: Optional[str] = None
@@ -355,6 +381,7 @@ class InterviewService:
 
             created = await self.interview_repo.create(interview_doc.to_dict())
             created_interviews.append(InterviewResponse.model_validate(created))
+            await self._notify_interviewers(created, "scheduled", created_by)
 
         logger.info(f"Batch scheduled {len(created_interviews)} interviews for job '{payload.job_title}'")
         return created_interviews
@@ -482,6 +509,9 @@ class InterviewService:
 
         updated_doc = await self.interview_repo.update(interview_id, update_fields)
         logger.info(f"Updated interview record '{interview_id}'")
+        watched = ("scheduled_date", "scheduled_time", "timezone", "interviewer_id", "interviewers")
+        if any(k in update_fields and update_fields[k] != existing.get(k) for k in watched):
+            await self._notify_interviewers(updated_doc, "updated", updated_by)
         return InterviewResponse.model_validate(updated_doc)
 
     async def reschedule_interview(
@@ -532,6 +562,7 @@ class InterviewService:
 
         logger.info(f"Rescheduled interview ID '{interview_id}' to date {payload.scheduled_date} at {payload.scheduled_time}")
         await self._dispatch_invite(interview_id, KIND_RESCHEDULE)
+        await self._notify_interviewers(updated_doc, "rescheduled", updated_by)
         return InterviewResponse.model_validate(updated_doc)
 
     async def submit_feedback(
@@ -744,7 +775,7 @@ class InterviewService:
         candidate_email = payload.candidate_email or existing.get("candidate_email")
         if not candidate_email and existing.get("resume_id"):
             try:
-                db = self.interview_repo.collection.database
+                db = self.interview_repo.db
                 resume_doc = await db.resumes.find_one({"_id": existing.get("resume_id")})
                 if resume_doc:
                     parsed = resume_doc.get("parsed_data") or {}
@@ -1124,7 +1155,7 @@ class InterviewService:
         # Resolve interview type labels from configured types (by id, then code)
         type_labels: Dict[str, str] = {}
         try:
-            db = self.interview_repo.collection.database
+            db = self.interview_repo.db
             async for t in db.interview_types.find({}, {"id": 1, "code": 1, "name": 1}):
                 if t.get("id"):
                     type_labels[str(t["id"])] = t.get("name", "")
@@ -1416,6 +1447,7 @@ class InterviewService:
             await self._dispatch_invite(interview_id, KIND_CANCEL, reason_str)
 
         logger.info(f"Cancelled interview ID '{interview_id}'")
+        await self._notify_interviewers(updated_doc or existing, "cancelled", updated_by)
         return InterviewResponse.model_validate(updated_doc)
 
 
