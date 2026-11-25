@@ -65,19 +65,8 @@ class UserService:
 
     async def check_user_limit(self, extra: int = 0) -> None:
         """The company's plan may limit its users (limits.users, 0 = no limit). `extra` counts pending invitations."""
-        company_id = current_company_id()
-        if not company_id:
-            return
-        company = await self.user_repo.db[COMPANIES_COLLECTION].find_one({"id": company_id}) or {}
-        limit = int(((company.get("limits") or {}).get("users")) or 0)
-        if not limit:
-            return
-        used = await self.user_repo.db[USERS_COLLECTION].count_documents({"is_deleted": {"$ne": True}})
-        if used + extra >= limit:
-            raise BadRequestError(
-                f"{company.get('name', 'This company')}'s plan allows {limit} users. "
-                "Remove a user or ask the platform admin to raise the limit."
-            )
+        from app.services.limit_service import LimitService
+        await LimitService(self.user_repo.db).check_users_limit(extra=extra)
 
     @staticmethod
     def _check_role_change(actor: Optional[Dict[str, Any]], role: Optional[str]) -> None:

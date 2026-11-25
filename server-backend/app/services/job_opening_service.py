@@ -99,9 +99,16 @@ class JobOpeningService:
         self.verification_repo = verification_repo
         self.resume_repo = resume_repo
         self.resume_service = resume_service
-        self.settings_repo = SettingsRepository()
+        try:
+            self.settings_repo = SettingsRepository()
+        except Exception:
+            self.settings_repo = None
         self.page_settings_repo = page_settings_repo
-        self.company_repo = company_repo
+        self.company_repo = company_repo or (
+            CompanyRepository(opening_repo.collection.database)
+            if hasattr(opening_repo, "collection") and hasattr(opening_repo.collection, "database")
+            else None
+        )
 
     # ── Companies ─────────────────────────────────────────────────────────────
 
@@ -145,11 +152,12 @@ class JobOpeningService:
     async def list_companies(self, all_companies: bool = False, include_archived: bool = False) -> List[Dict[str, Any]]:
         """The request's own company, or every company for the super admin (all_companies).
         Archived companies are left out unless include_archived."""
-        await self.company_repo.ensure_default()
+        if self.company_repo:
+            await self.company_repo.ensure_default()
         interview_counts: Dict[str, int] = {}
         if all_companies:
             with system_scope():
-                companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500)
+                companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500) if self.company_repo else []
                 if not include_archived:
                     companies = [c for c in companies if not c.get("archived_at")]
                 roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=100000)
@@ -270,6 +278,15 @@ class JobOpeningService:
             clean["is_active"] = bool(changes["is_active"])
         clean.update(self._clean_profile({k: v for k, v in changes.items() if k != "name"}))
         clean.update(self._clean_plan(changes))
+        if "plan" in clean and clean["plan"] != existing.get("plan"):
+            history = list(existing.get("plan_history") or [])
+            history.append({
+                "from_plan": existing.get("plan"),
+                "to_plan": clean["plan"],
+                "limits": clean.get("limits") or existing.get("limits"),
+                "changed_at": utc_now().isoformat(),
+            })
+            clean["plan_history"] = history
         if not clean:
             return with_profile_defaults(existing)
         clean["updated_at"] = utc_now().isoformat()

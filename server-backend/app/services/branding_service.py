@@ -47,6 +47,25 @@ def _sniff(data: bytes) -> Optional[str]:
     return None
 
 
+DEFAULT_INTEGRATIONS = [
+    {"id": "slack", "name": "Slack", "category": "messaging", "is_enabled": False, "description": "Send interview and candidate updates to Slack channels."},
+    {"id": "google_meet", "name": "Google Meet", "category": "video", "is_enabled": False, "description": "Automatically generate Google Meet links for online interviews."},
+    {"id": "ms_teams", "name": "Microsoft Teams", "category": "video", "is_enabled": False, "description": "Schedule video interviews with Teams links."},
+    {"id": "zoom", "name": "Zoom", "category": "video", "is_enabled": False, "description": "Generate Zoom video conference meetings for scheduled rounds."},
+    {"id": "linkedin", "name": "LinkedIn Job Posting", "category": "sourcing", "is_enabled": False, "description": "Sync published jobs to LinkedIn Talent Solutions."},
+    {"id": "webhooks", "name": "Custom Webhooks", "category": "developer", "is_enabled": False, "description": "Post HTTP payloads on candidate and application events."},
+]
+
+DEFAULT_EMAIL_TEMPLATES = {
+    "welcome": {"subject": "Welcome to {app_name}", "body": "Hello {user_name}, welcome to your recruitment workspace."},
+    "interview_invite": {"subject": "Interview Invitation: {job_title} at {company_name}", "body": "Dear {candidate_name}, you are invited for an interview."},
+    "interview_reminder": {"subject": "Reminder: Upcoming Interview for {job_title}", "body": "Your interview is scheduled shortly."},
+    "application_received": {"subject": "Application Received: {job_title}", "body": "Thank you for applying to {company_name}."},
+    "offer_letter": {"subject": "Offer of Employment - {job_title}", "body": "Congratulations {candidate_name}, we are pleased to extend an offer."},
+    "rejection": {"subject": "Update on your application for {job_title}", "body": "Thank you for your interest. We have decided to proceed with other candidates."},
+}
+
+
 class BrandingService:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
@@ -63,6 +82,12 @@ class BrandingService:
             "default_language": doc.get("default_language") or "en",
             "allowed_resume_types": doc.get("allowed_resume_types") or list(RESUME_TYPES),
             "branding": doc.get("branding") or {},
+            "security": doc.get("security") or {
+                "require_mfa_all_staff": False,
+                "session_timeout_minutes": 1440,
+            },
+            "email_templates": doc.get("email_templates") or DEFAULT_EMAIL_TEMPLATES,
+            "integrations": doc.get("integrations") or DEFAULT_INTEGRATIONS,
         }
 
     async def save_platform_settings(self, changes: Dict[str, Any]) -> Dict[str, Any]:
@@ -87,6 +112,17 @@ class BrandingService:
             update["allowed_resume_types"] = list(dict.fromkeys(types))
         if isinstance(changes.get("branding"), dict):
             update["branding"] = _merge_partial(current["branding"], clean_branding(changes["branding"]))
+        if "security" in changes and isinstance(changes["security"], dict):
+            sec = dict(current.get("security") or {})
+            sec.update(changes["security"])
+            update["security"] = sec
+        if "email_templates" in changes and isinstance(changes["email_templates"], dict):
+            tmpl = dict(current.get("email_templates") or {})
+            tmpl.update(changes["email_templates"])
+            update["email_templates"] = tmpl
+        if "integrations" in changes and isinstance(changes["integrations"], list):
+            update["integrations"] = changes["integrations"]
+
         await self.db[PLATFORM_SETTINGS_COLLECTION].update_one(
             {"id": PLATFORM_DOC_ID}, {"$set": update, "$setOnInsert": {"id": PLATFORM_DOC_ID}}, upsert=True
         )

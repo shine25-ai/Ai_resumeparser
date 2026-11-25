@@ -11,7 +11,12 @@ import {
   LogOut,
   CheckCheck,
 } from 'lucide-react';
-import { getDashboardNotifications } from '../utils/Api';
+import {
+  getDashboardNotifications,
+  fetchInAppNotifications,
+  markInAppNotificationRead,
+  markAllInAppNotificationsRead,
+} from '../utils/Api';
 import type { DashboardNotification } from '../types/dashboard';
 import { clearBrandingCache, useTheme } from '../theme/ThemeProvider';
 import { loginPath } from '../theme/brandingCache';
@@ -90,14 +95,46 @@ export function TopHeader() {
 
   useEffect(() => {
     let active = true;
-    getDashboardNotifications(7)
+    fetchInAppNotifications()
       .then((res) => {
-        if (active && Array.isArray(res?.notifications)) {
-          setNotifications(res.notifications);
+        if (!active) return;
+        if (Array.isArray(res?.notifications) && res.notifications.length > 0) {
+          const mapped: (DashboardNotification & { inAppId?: string; isRead?: boolean })[] = res.notifications.map((n) => ({
+            id: n.id,
+            inAppId: n.id,
+            title: n.title,
+            description: n.message,
+            time: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+            type: n.type || 'info',
+            severity: (n.type === 'limit_warning' || n.type === 'warning' ? 'warning' : n.type === 'error' ? 'danger' : 'info') as any,
+            actionPath: n.link || '',
+            isRead: n.is_read,
+          }));
+          setNotifications(mapped);
+          const read = new Set<string>();
+          mapped.forEach((m) => {
+            if (m.isRead) read.add(m.id);
+          });
+          setReadIds(read);
+          return;
         }
+        // Fallback to dashboard notifications
+        getDashboardNotifications(7)
+          .then((dRes) => {
+            if (active && Array.isArray(dRes?.notifications)) {
+              setNotifications(dRes.notifications);
+            }
+          })
+          .catch(() => undefined);
       })
       .catch(() => {
-        // silent fallback
+        getDashboardNotifications(7)
+          .then((dRes) => {
+            if (active && Array.isArray(dRes?.notifications)) {
+              setNotifications(dRes.notifications);
+            }
+          })
+          .catch(() => undefined);
       });
     return () => {
       active = false;
@@ -135,6 +172,7 @@ export function TopHeader() {
   const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
 
   const markRead = (id: string) => {
+    markInAppNotificationRead(id).catch(() => undefined);
     setReadIds((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
@@ -149,6 +187,7 @@ export function TopHeader() {
   };
 
   const markAllRead = () => {
+    markAllInAppNotificationsRead().catch(() => undefined);
     setReadIds((prev) => {
       const next = new Set(prev);
       notifications.forEach((n) => next.add(n.id));

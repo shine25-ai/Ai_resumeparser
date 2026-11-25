@@ -62,3 +62,17 @@ class S3Service:
             raise ValueError("Not a file in this bucket.")
         obj = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
         return obj["Body"].read()
+
+    def delete_file(self, url: str) -> bool:
+        """Delete a file this service uploaded (by its URL). Returns False when it isn't one of ours or fails."""
+        from app.core.file_access import key_of
+
+        key = key_of(url)
+        if not key:
+            return False
+        try:
+            self.s3_client.delete_object(Bucket=self.bucket_name, Key=key)
+            return True
+        except (BotoCoreError, ClientError) as e:
+            logger.error(f"Failed to delete '{key}' from S3: {e}")
+            return False
