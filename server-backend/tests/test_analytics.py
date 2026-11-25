@@ -17,6 +17,7 @@ from app.core.tenant import set_company, ScopedDatabase, system_scope
 from app.core import dependencies
 from app.routes.analytics import router as analytics_router
 from app.services.analytics_service import AnalyticsService
+from app.models.job_opening import JobApplicationDocument
 from app.utils.constants import (
     COMPANIES_COLLECTION,
     JOB_OPENINGS_COLLECTION,
@@ -336,3 +337,69 @@ async def test_permissions_and_export_forbidden(fake_db):
         res_export_ok = await client.get("/api/v1/analytics/reports/export")
         assert res_export_ok.status_code == 200
         assert res_export_ok.headers["content-type"].startswith("text/csv")
+
+
+async def test_real_job_application_document_metrics_and_dwell_time(fake_db):
+    """
+    Real Phase 5 applications store submitted_at instead of applied_at.
+    Verifies that dashboard counts, report counts, and time-to-hire dwell times
+    read submitted_at properly when JobApplicationDocument instances are present.
+    """
+    set_company("comp-real-apps")
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    sub_1 = (now - timedelta(days=20)).isoformat()
+    sub_2 = (now - timedelta(days=10)).isoformat()
+    hired_2 = (now - timedelta(days=2)).isoformat()  # 8 days dwell
+
+    app1 = JobApplicationDocument(
+        id="app-real-doc-1",
+        company_id="comp-real-apps",
+        opening_id="job-opening-1",
+        opening_title="Staff Engineer",
+        applicant_email="staff@example.com",
+        resume_id="res-real-1",
+        candidate_id="cand-rec-1",
+        form={"personal": {"full_name": "Staff Candidate"}},
+        submitted_at=sub_1,
+        stage="APPLIED",
+        stage_id="applied",
+    ).to_dict()
+
+    app2 = JobApplicationDocument(
+        id="app-real-doc-2",
+        company_id="comp-real-apps",
+        opening_id="job-opening-1",
+        opening_title="Staff Engineer",
+        applicant_email="hired@example.com",
+        resume_id="res-real-2",
+        candidate_id="cand-rec-2",
+        form={"personal": {"full_name": "Hired Candidate"}},
+        submitted_at=sub_2,
+        stage="Hired",
+        stage_id="hired",
+        hired_at=hired_2,
+    ).to_dict()
+
+    fake_db[JOB_APPLICATIONS_COLLECTION].docs = [app1, app2]
+    fake_db[JOB_OPENINGS_COLLECTION].docs = [{
+        "id": "job-opening-1",
+        "company_id": "comp-real-apps",
+        "title": "Staff Engineer",
+        "status": "OPEN",
+        "accept_applications": True,
+        "created_at": sub_1,
+    }]
+
+    svc = AnalyticsService()
+    dash = await svc.get_company_dashboard(days=30)
+    assert dash["kpis"]["new_applications"]["value"] == 2
+    assert dash["kpis"]["hires"]["value"] == 1
+    # Dwell time: 8 days (sub_2 to hired_2)
+    assert dash["kpis"]["avg_time_to_hire"]["value_days"] == 8.0
+
+    reports = await svc.get_recruitment_reports(days=30)
+    assert reports["kpis"]["applications"]["value"] == 2
+    assert reports["kpis"]["hired"]["value"] == 1
+    assert reports["kpis"]["time_to_hire"]["value_days"] == 8.0
+

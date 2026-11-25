@@ -1,5 +1,9 @@
-# Point Pyrefly to the virtual environment's Python interpreter and site-packages
+# Point Pyrefly to the virtual environment's Python interpreter
 # so it resolves packages installed in the venv (FastAPI, Motor, Pytest, etc.)
-python-interpreter-path = "./venv/Scripts/python.exe"
-site-packages-path = ["./venv/Lib/site-packages"]
-
+python-interpreter-path = "./venv/bin/python"
+site-packages-path = [
+    "./venv/Lib/site-packages",
+    "./venv/lib/python3.12/site-packages",
+    "./venv/lib/python3.11/site-packages",
+    "./venv/lib/python3.10/site-packages",
+]

@@ -29,6 +29,7 @@ from app.utils.constants import (
     INTERVIEWS_COLLECTION,
 )
 from app.services.job_management import JobManagementService
+from app.models.job_opening import JobApplicationDocument
 from tests.fake_mongo import FakeDatabase
 
 pytestmark = pytest.mark.asyncio
@@ -70,7 +71,7 @@ def viewer_user():
 
 
 async def test_default_workflow_seeding(company_db):
-    """Accessing workflow when none exists seeds standard 8 stages."""
+    """Accessing workflow when none exists returns standard 8 stages template without writing to DB on read."""
     svc = PipelineService(company_db)
     wf = await svc.get_workflow()
     assert wf is not None
@@ -88,6 +89,9 @@ async def test_default_workflow_seeding(company_db):
         "rejected",
         "withdrawn",
     ]
+    # Verify no document inserted into DB on read
+    db_count = await company_db[WORKFLOWS_COLLECTION].count_documents({})
+    assert db_count == 0
 
 
 async def test_job_override_wins(company_db, recruiter_user):
@@ -936,5 +940,200 @@ async def test_p7_10_keyboard_move_menu_payload_compatibility(company_db, recrui
     assert len(hist) == 2
     assert hist[0]["to_stage"] == "screening"
     assert hist[1]["to_stage"] == "shortlisted"
+
+
+async def test_real_job_application_document_kanban_and_cnd_lookup(company_db, recruiter_user):
+    """
+    Test real Phase 5 JobApplicationDocument fields:
+    - Uses submitted_at, applicant_email, form.personal.full_name, opening_title
+    - candidate_id on application is the candidate record ID (Phase 6)
+    - Resume lookup links via app.resume_id / resume.candidate_ref and displays CND code
+    - Date filtering, sorting, and search work on real fields
+    """
+    svc = PipelineService(company_db)
+
+    # 1. Seed Resume with CND code in candidate_id and candidate record link in candidate_ref
+    resume_id = "res-real-cnd-01"
+    cand_rec_id = "cand-rec-p5-01"
+    cnd_code = "CND0101"
+
+    await company_db[RESUMES_COLLECTION].insert_one({
+        "id": resume_id,
+        "company_id": "comp-alpha",
+        "candidate_id": cnd_code,
+        "candidate_ref": cand_rec_id,
+        "candidate_name": "Priya Lakshmi",
+        "parsed_data": {
+            "full_name": "Priya Lakshmi",
+            "email": "priya@example.com",
+            "primary_skills": ["Python", "FastAPI", "React"],
+            "current_role": "Principal Architect",
+        },
+        "ai_evaluation": {
+            "ai_technical_score": 88.0,
+        },
+    })
+
+    # 2. Seed Job Opening
+    await company_db[JOB_OPENINGS_COLLECTION].insert_one({
+        "id": "job-arch-01",
+        "company_id": "comp-alpha",
+        "title": "Principal Architect",
+        "vacancies": 2,
+    })
+
+    # 3. Seed real JobApplicationDocument with real fields
+    app_doc = JobApplicationDocument(
+        id="app-real-p5-01",
+        company_id="comp-alpha",
+        opening_id="job-arch-01",
+        opening_title="Principal Architect",
+        applicant_email="priya@example.com",
+        resume_id=resume_id,
+        candidate_id=cand_rec_id,
+        form={"personal": {"full_name": "Priya Lakshmi"}},
+        submitted_at="2026-11-20T10:00:00+00:00",
+        stage="APPLIED",
+        stage_id="applied",
+    ).to_dict()
+
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one(app_doc)
+
+    # 4. Fetch board and verify card fields and enrichment
+    board = await svc.get_kanban_board(recruiter_user, job_id="job-arch-01")
+    col_applied = next(c for c in board["columns"] if c["id"] == "applied")
+    assert len(col_applied["cards"]) == 1
+    card = col_applied["cards"][0]
+
+    assert card["candidate_name"] == "Priya Lakshmi"
+    assert card["candidate_email"] == "priya@example.com"
+    assert card["job_title"] == "Principal Architect"
+    assert card["candidate_code"] == cnd_code
+    assert card["skills"] == ["Python", "FastAPI", "React"]
+    assert card["rating"] == 4.4  # 88.0 / 20
+    assert card["applied_at"] == "2026-11-20T10:00:00+00:00"
+
+    # 5. Verify date filtering on submitted_at
+    board_in_range = await svc.get_kanban_board(
+        recruiter_user,
+        job_id="job-arch-01",
+        date_from="2026-11-19T00:00:00+00:00",
+        date_to="2026-11-21T00:00:00+00:00",
+    )
+    assert board_in_range["kpis"]["total_candidates"] == 1
+
+    board_out_of_range = await svc.get_kanban_board(
+        recruiter_user,
+        job_id="job-arch-01",
+        date_from="2026-11-22T00:00:00+00:00",
+    )
+    assert board_out_of_range["kpis"]["total_candidates"] == 0
+
+    # 6. Verify search filter on candidate name, email, opening title, and CND code
+    search_name = await svc.get_kanban_board(recruiter_user, job_id="job-arch-01", search="Priya")
+    assert search_name["kpis"]["total_candidates"] == 1
+
+    search_email = await svc.get_kanban_board(recruiter_user, job_id="job-arch-01", search="priya@example.com")
+    assert search_email["kpis"]["total_candidates"] == 1
+
+    search_title = await svc.get_kanban_board(recruiter_user, job_id="job-arch-01", search="Architect")
+    assert search_title["kpis"]["total_candidates"] == 1
+
+    search_cnd = await svc.get_kanban_board(recruiter_user, job_id="job-arch-01", search="CND0101")
+    assert search_cnd["kpis"]["total_candidates"] == 1
+
+    search_miss = await svc.get_kanban_board(recruiter_user, job_id="job-arch-01", search="Nonexistent")
+    assert search_miss["kpis"]["total_candidates"] == 0
+
+
+async def test_kanban_recruiter_id_filter(company_db, recruiter_user):
+    """Recruiter filter on /pipeline/kanban scopes cards by recruiter assignment."""
+    svc = PipelineService(company_db)
+
+    # Job opening managed by recruiter-99
+    await company_db[JOB_OPENINGS_COLLECTION].insert_one({
+        "id": "job-rec-99",
+        "company_id": "comp-alpha",
+        "title": "Fullstack Dev",
+        "hiring_manager": {"id": "rec-99", "name": "Manager 99"},
+    })
+
+    # Application for job-rec-99
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one(
+        JobApplicationDocument(
+            id="app-rec-99",
+            company_id="comp-alpha",
+            opening_id="job-rec-99",
+            opening_title="Fullstack Dev",
+            applicant_email="dev99@example.com",
+            resume_id="res-dev99",
+            form={"personal": {"full_name": "Dev NinetyNine"}},
+            submitted_at="2026-11-20T10:00:00+00:00",
+            stage="APPLIED",
+            stage_id="applied",
+        ).to_dict()
+    )
+
+    # Application assigned directly to recruiter-42
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one({
+        "id": "app-rec-42",
+        "company_id": "comp-alpha",
+        "opening_id": "job-other",
+        "opening_title": "Other Role",
+        "recruiter_id": "rec-42",
+        "applicant_email": "dev42@example.com",
+        "resume_id": "res-dev42",
+        "form": {"personal": {"full_name": "Dev FortyTwo"}},
+        "submitted_at": "2026-11-20T10:00:00+00:00",
+        "stage": "APPLIED",
+        "stage_id": "applied",
+    })
+
+    # Filter for recruiter-99: gets app-rec-99
+    board_99 = await svc.get_kanban_board(recruiter_user, recruiter_id="rec-99")
+    app_ids_99 = [card["id"] for col in board_99["columns"] for card in col["cards"]]
+    assert "app-rec-99" in app_ids_99
+    assert "app-rec-42" not in app_ids_99
+
+    # Filter for recruiter-42: gets app-rec-42
+    board_42 = await svc.get_kanban_board(recruiter_user, recruiter_id="rec-42")
+    app_ids_42 = [card["id"] for col in board_42["columns"] for card in col["cards"]]
+    assert "app-rec-42" in app_ids_42
+    assert "app-rec-99" not in app_ids_42
+
+
+async def test_stage_move_updates_application_stage_and_invalidates_cache(company_db, recruiter_user):
+    """
+    Moving stage must update both stage_id and stage (for Applications.tsx sync)
+    and invalidate caches.
+    """
+    svc = PipelineService(company_db)
+    app_id = "app-sync-stage"
+
+    await company_db[JOB_APPLICATIONS_COLLECTION].insert_one(
+        JobApplicationDocument(
+            id=app_id,
+            company_id="comp-alpha",
+            opening_id="job-sync-1",
+            opening_title="Frontend Lead",
+            applicant_email="lead@example.com",
+            resume_id="res-lead-1",
+            form={"personal": {"full_name": "Lead Candidate"}},
+            submitted_at="2026-11-20T10:00:00+00:00",
+            stage="APPLIED",
+            stage_id="applied",
+        ).to_dict()
+    )
+
+    moved = await svc.move_candidate_stage(recruiter_user, app_id, "screening")
+    assert moved["stage_id"] == "screening"
+    assert moved["stage"] == "Screening"
+    assert moved["stage_name"] == "Screening"
+
+    # Verify directly from database
+    db_app = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": app_id})
+    assert db_app["stage_id"] == "screening"
+    assert db_app["stage"] == "Screening"
+
 
 

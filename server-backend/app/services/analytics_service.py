@@ -408,16 +408,22 @@ class AnalyticsService:
         pct_cand, _ = self.calc_change_pct(total_cand_cur, total_cand_prev)
 
         # ── 3. New Applications in Range ─────────────────────────────────────
-        new_apps_cur = await db[JOB_APPLICATIONS_COLLECTION].count_documents(
-            {"applied_at": {"$gte": c_start_iso, "$lte": c_end_iso}}
-        )
+        new_apps_cur = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
+            "$or": [
+                {"submitted_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
+                {"applied_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
+            ]
+        })
         if new_apps_cur == 0:
             new_apps_cur = await db[RESUMES_COLLECTION].count_documents(
                 {"redirect_id": None, "upload_date": {"$gte": c_start_iso, "$lte": c_end_iso}}
             )
-        new_apps_prev = await db[JOB_APPLICATIONS_COLLECTION].count_documents(
-            {"applied_at": {"$gte": p_start_iso, "$lte": p_end_iso}}
-        )
+        new_apps_prev = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
+            "$or": [
+                {"submitted_at": {"$gte": p_start_iso, "$lte": p_end_iso}},
+                {"applied_at": {"$gte": p_start_iso, "$lte": p_end_iso}},
+            ]
+        })
         pct_apps, _ = self.calc_change_pct(new_apps_cur, new_apps_prev)
 
         # ── 4. Interviews in Range ───────────────────────────────────────────
@@ -462,13 +468,13 @@ class AnalyticsService:
         """
         hired_apps = await db[JOB_APPLICATIONS_COLLECTION].find(
             {"hired_at": {"$ne": None}},
-            {"applied_at": 1, "created_at": 1, "hired_at": 1}
+            {"submitted_at": 1, "applied_at": 1, "created_at": 1, "hired_at": 1}
         ).to_list(length=None)
 
         dwell_days = []
         for ha in hired_apps:
             h_dt = _parse_utc_dt(ha.get("hired_at"))
-            a_dt = _parse_utc_dt(ha.get("applied_at") or ha.get("created_at"))
+            a_dt = _parse_utc_dt(ha.get("submitted_at") or ha.get("applied_at") or ha.get("created_at"))
             if h_dt and a_dt and h_dt >= a_dt:
                 dwell_days.append((h_dt - a_dt).total_seconds() / 86400.0)
 
@@ -680,7 +686,10 @@ class AnalyticsService:
 
         # ── 2. Applications in Range ─────────────────────────────────────────
         apps_cur = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-            "applied_at": {"$gte": c_start_iso, "$lte": c_end_iso}
+            "$or": [
+                {"submitted_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
+                {"applied_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
+            ]
         })
         if apps_cur == 0:
             apps_cur = await db[RESUMES_COLLECTION].count_documents({"redirect_id": None})
@@ -728,13 +737,13 @@ class AnalyticsService:
         # ── 6. Time to Hire (in Days) ────────────────────────────────────────
         hired_apps = await db[JOB_APPLICATIONS_COLLECTION].find(
             {"hired_at": {"$ne": None}},
-            {"applied_at": 1, "created_at": 1, "hired_at": 1}
+            {"submitted_at": 1, "applied_at": 1, "created_at": 1, "hired_at": 1}
         ).to_list(length=None)
 
         dwell_days = []
         for ha in hired_apps:
             h_dt = _parse_utc_dt(ha.get("hired_at"))
-            a_dt = _parse_utc_dt(ha.get("applied_at") or ha.get("created_at"))
+            a_dt = _parse_utc_dt(ha.get("submitted_at") or ha.get("applied_at") or ha.get("created_at"))
             if h_dt and a_dt and h_dt >= a_dt:
                 dwell_days.append((h_dt - a_dt).total_seconds() / 86400.0)
 
@@ -841,10 +850,17 @@ class AnalyticsService:
             m_next = (m.replace(day=28) + timedelta(days=5)).replace(day=1)
             m_end = (m_next - timedelta(microseconds=1)).isoformat()
 
-            m_apps = await db[RESUMES_COLLECTION].count_documents({
-                "redirect_id": None,
-                "upload_date": {"$gte": m_start, "$lte": m_end},
+            m_apps = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
+                "$or": [
+                    {"submitted_at": {"$gte": m_start, "$lte": m_end}},
+                    {"applied_at": {"$gte": m_start, "$lte": m_end}},
+                ]
             })
+            if m_apps == 0:
+                m_apps = await db[RESUMES_COLLECTION].count_documents({
+                    "redirect_id": None,
+                    "upload_date": {"$gte": m_start, "$lte": m_end},
+                })
             m_hires = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
                 "hired_at": {"$gte": m_start, "$lte": m_end}
             })

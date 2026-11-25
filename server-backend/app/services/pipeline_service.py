@@ -7,7 +7,7 @@ and the Recruitment Pipeline Kanban board with stage metrics and vacancy trackin
 """
 
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 import re
 
 from app.models.workflow import (
@@ -89,10 +89,11 @@ class PipelineService:
     async def get_workflow(self, job_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Fetch the active workflow for a job opening or the company default.
-        Seeds a default 8-stage workflow if none exists for this company.
+        Returns the company workflow or standard 8-stage template if none has been saved.
+        Does NOT insert into database on read to avoid unwanted side effects.
         """
         # 1. If job_id provided, look for job-specific workflow override
-        if job_id:
+        if job_id and job_id != "all":
             job_wf = await self.db[WORKFLOWS_COLLECTION].find_one(
                 {"$or": [{"job_id": job_id}, {"job_opening_id": job_id}]}
             )
@@ -106,21 +107,18 @@ class PipelineService:
         if default_wf:
             return _clean_mongo_doc(default_wf)
 
-        # 3. Seed initial default workflow for this tenant
+        # 3. Return default template without writing to DB on read
         stages = default_workflow_stages()
         company_id = current_company_id() or ""
-        seeded = WorkflowDocument(
-            company_id=company_id,
-            job_id=None,
-            name="Standard Recruitment Workflow",
-            is_default=True,
-            stages=stages,
-        ).to_dict()
-        if not company_id:
-            seeded.pop("company_id", None)
-
-        await self.db[WORKFLOWS_COLLECTION].insert_one(seeded)
-        return _clean_mongo_doc(seeded)
+        template = {
+            "id": "default",
+            "company_id": company_id,
+            "job_id": None,
+            "name": "Standard Recruitment Workflow",
+            "is_default": True,
+            "stages": [s.to_dict() if hasattr(s, "to_dict") else dict(s) for s in stages],
+        }
+        return template
 
     async def save_workflow(self, user: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         """Create or update a workflow configuration."""
@@ -134,7 +132,7 @@ class PipelineService:
         if not raw_stages or len(raw_stages) == 0:
             raise ValueError("Workflow must have at least one stage.")
 
-        seen_stage_ids: Set[str] = set()
+        seen_stage_ids: set[str] = set()
         stages: List[Dict[str, Any]] = []
         for i, s in enumerate(raw_stages):
             st_id = (s.get("id") or "").strip()
@@ -205,6 +203,12 @@ class PipelineService:
         Applications are scoped to the workflow's job if job_id is set.
         """
         wf = await self.db[WORKFLOWS_COLLECTION].find_one({"id": workflow_id})
+        if not wf and workflow_id == "default":
+            # Materialize default workflow for this tenant upon first explicit modification
+            wf = await self.get_workflow()
+            company_id = current_company_id() or user.get("company_id", "")
+            wf["company_id"] = company_id
+            await self.db[WORKFLOWS_COLLECTION].insert_one(dict(wf))
         if not wf:
             raise ValueError("Workflow not found.")
 
@@ -237,7 +241,7 @@ class PipelineService:
             now_iso = utc_now().isoformat()
             await self.db[JOB_APPLICATIONS_COLLECTION].update_many(
                 app_filter,
-                {"$set": {"stage_id": reassign_to_stage_id, "stage_name": target_name, "stage_updated_at": now_iso}},
+                {"$set": {"stage": target_name, "stage_id": reassign_to_stage_id, "stage_name": target_name, "stage_updated_at": now_iso}},
             )
 
         # Remove stage from workflow
@@ -245,22 +249,6 @@ class PipelineService:
         # Re-index order
         for idx, s in enumerate(new_stages):
             s["order"] = idx + 1
-
-        await self.db[WORKFLOWS_COLLECTION].update_one(
-            {"id": workflow_id},
-            {"$set": {"stages": new_stages, "updated_at": utc_now().isoformat()}},
-        )
-
-        await record_audit(
-            self.db,
-            user,
-            action="pipeline.delete_stage",
-            entity_type="workflow_stage",
-            entity_id=stage_id,
-            entity_label=stage_id,
-            details=f"workflow_id={workflow_id}, reassigned_to={reassign_to_stage_id}, moved_candidates={apps_in_stage}",
-        )
-        return {"success": True, "reassigned_count": apps_in_stage}
 
         await self.db[WORKFLOWS_COLLECTION].update_one(
             {"id": workflow_id},
@@ -353,6 +341,7 @@ class PipelineService:
 
         # Update application doc
         update_fields: Dict[str, Any] = {
+            "stage": to_stage_name,
             "stage_id": to_stage_id,
             "stage_name": to_stage_name,
             "stage_updated_at": now_iso,
@@ -377,19 +366,29 @@ class PipelineService:
         )
 
         # Audit log
+        candidate_label = (
+            (app.get("form", {}).get("personal", {}).get("full_name") if isinstance(app.get("form"), dict) else None)
+            or app.get("candidate_name")
+            or "Candidate"
+        )
         await record_audit(
             self.db,
             user,
             action="pipeline.move_stage",
             entity_type="job_application",
             entity_id=application_id,
-            entity_label=app.get("candidate_name") or "Candidate",
+            entity_label=candidate_label,
             details=f"from={current_stage_id} to={to_stage_id} reason={reason or ''} job_id={job_id or ''}",
         )
 
-        # Invalidate DashboardService cache so dashboard stays completely in sync
+        # Invalidate DashboardService and AnalyticsService cache so dashboard stays completely in sync
         try:
             DashboardService.invalidate_cache()
+        except Exception:
+            pass
+        try:
+            from app.services.analytics_service import AnalyticsService
+            AnalyticsService.invalidate_cache(current_company_id() or app.get("company_id"))
         except Exception:
             pass
 
@@ -463,53 +462,101 @@ class PipelineService:
         stage_map = {s["id"]: s for s in stages}
 
         # Build application query
-        query: Dict[str, Any] = {}
-        if job_id and job_id != "all":
-            query["$or"] = [{"opening_id": job_id}, {"job_id": job_id}]
-        if source and source != "all":
-            query["source"] = source
+        and_conditions: List[Dict[str, Any]] = []
 
-        # Date range filter on applied_at
+        if job_id and job_id != "all":
+            and_conditions.append({"$or": [{"opening_id": job_id}, {"job_id": job_id}]})
+
+        if source and source != "all":
+            and_conditions.append({"source": source})
+
+        # Recruiter filter
+        if recruiter_id and recruiter_id != "all":
+            rec_jobs = await self.db[JOB_OPENINGS_COLLECTION].find({
+                "$or": [
+                    {"hiring_manager.id": recruiter_id},
+                    {"created_by.id": recruiter_id},
+                    {"recruiter_id": recruiter_id},
+                ]
+            }).to_list(length=500)
+            recruiter_job_ids = [j.get("id") for j in rec_jobs if j.get("id")]
+            rec_or: List[Dict[str, Any]] = [
+                {"recruiter_id": recruiter_id},
+                {"assigned_to": recruiter_id},
+                {"hiring_manager_id": recruiter_id},
+            ]
+            if recruiter_job_ids:
+                rec_or.append({"opening_id": {"$in": recruiter_job_ids}})
+                rec_or.append({"job_id": {"$in": recruiter_job_ids}})
+            and_conditions.append({"$or": rec_or})
+
+        # Date range filter on submitted_at / applied_at / created_at
         if date_from or date_to:
             date_filter: Dict[str, Any] = {}
             if date_from:
                 date_filter["$gte"] = date_from
             if date_to:
                 date_filter["$lte"] = date_to
-            query["applied_at"] = date_filter
+            and_conditions.append({
+                "$or": [
+                    {"submitted_at": date_filter},
+                    {"applied_at": date_filter},
+                    {"created_at": date_filter},
+                ]
+            })
+
+        query = {"$and": and_conditions} if len(and_conditions) > 1 else (and_conditions[0] if and_conditions else {})
 
         # Fetch real applications with a cap (no synthesized cards from whole resume db)
         board_limit = min(max(1, limit), 1000)
-        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(query).sort("applied_at", -1).to_list(length=board_limit)
+        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(query).to_list(length=board_limit)
 
-        # Collect candidate and application IDs for referenced lookups
-        cand_ids = list({str(a.get("candidate_id") or a.get("resume_id")) for a in apps if (a.get("candidate_id") or a.get("resume_id"))})
+        # Sort applications by date descending (checking submitted_at, applied_at, created_at)
+        def _app_date(a: Dict[str, Any]) -> str:
+            return a.get("submitted_at") or a.get("applied_at") or a.get("created_at") or ""
+        apps.sort(key=_app_date, reverse=True)
+
+        # Collect candidate, resume, and application IDs for referenced lookups
+        resume_ids = list({str(a["resume_id"]) for a in apps if a.get("resume_id")})
+        candidate_ids = list({str(a["candidate_id"]) for a in apps if a.get("candidate_id")})
         app_ids = list({str(a.get("id")) for a in apps if a.get("id")})
 
         # Load only resumes referenced by these applications
         resumes_by_id: Dict[str, Dict[str, Any]] = {}
-        if cand_ids:
+        resume_query_parts: List[Dict[str, Any]] = []
+        if resume_ids:
+            resume_query_parts.append({"id": {"$in": resume_ids}})
+            resume_query_parts.append({"resume_id": {"$in": resume_ids}})
+        if candidate_ids:
+            resume_query_parts.append({"candidate_ref": {"$in": candidate_ids}})
+            resume_query_parts.append({"candidate_id": {"$in": candidate_ids}})
+            resume_query_parts.append({"id": {"$in": candidate_ids}})
+
+        if resume_query_parts:
             resumes_list = await self.db[RESUMES_COLLECTION].find(
-                {"$or": [{"id": {"$in": cand_ids}}, {"resume_id": {"$in": cand_ids}}, {"candidate_id": {"$in": cand_ids}}]}
-            ).to_list(length=len(cand_ids) * 2)
+                {"$or": resume_query_parts}
+            ).to_list(length=max(len(apps) * 2, 100))
             for r in resumes_list:
                 if r.get("id"):
                     resumes_by_id[str(r["id"])] = r
                 if r.get("resume_id"):
                     resumes_by_id[str(r["resume_id"])] = r
+                if r.get("candidate_ref"):
+                    resumes_by_id[str(r["candidate_ref"])] = r
                 if r.get("candidate_id"):
                     resumes_by_id[str(r["candidate_id"])] = r
 
-        # Load only interviews referenced by these applications or candidates
+        # Load only interviews referenced by these applications, resumes, or candidates
+        all_ref_ids = list(set(app_ids + resume_ids + candidate_ids))
         interviews: List[Dict[str, Any]] = []
-        if app_ids or cand_ids:
-            inv_filter = []
-            if app_ids:
-                inv_filter.append({"application_id": {"$in": app_ids}})
-            if cand_ids:
-                inv_filter.append({"resume_id": {"$in": cand_ids}})
-                inv_filter.append({"candidate_id": {"$in": cand_ids}})
-            interviews = await self.db[INTERVIEWS_COLLECTION].find({"$or": inv_filter}).to_list(length=len(apps) * 5)
+        if all_ref_ids:
+            interviews = await self.db[INTERVIEWS_COLLECTION].find({
+                "$or": [
+                    {"application_id": {"$in": all_ref_ids}},
+                    {"resume_id": {"$in": all_ref_ids}},
+                    {"candidate_id": {"$in": all_ref_ids}},
+                ]
+            }).to_list(length=len(apps) * 5)
 
         inv_by_cand: Dict[str, List[Dict[str, Any]]] = {}
         for inv in interviews:
@@ -525,10 +572,41 @@ class PipelineService:
             term = search.strip().lower()
             filtered_apps = []
             for a in apps:
-                cname = (a.get("candidate_name") or "").lower()
-                cemail = (a.get("candidate_email") or "").lower()
-                jtitle = (a.get("job_title") or "").lower()
-                if term in cname or term in cemail or term in jtitle:
+                r_id = a.get("resume_id")
+                c_id = a.get("candidate_id")
+                res = (resumes_by_id.get(str(r_id)) if r_id else None) or (resumes_by_id.get(str(c_id)) if c_id else None) or {}
+                p_data = res.get("parsed_data", {})
+
+                cname = (
+                    (a.get("form", {}).get("personal", {}).get("full_name") if isinstance(a.get("form"), dict) else None)
+                    or a.get("candidate_name")
+                    or p_data.get("full_name")
+                    or p_data.get("name")
+                    or res.get("candidate_name")
+                    or ""
+                ).lower()
+                cemail = (
+                    a.get("applicant_email")
+                    or a.get("candidate_email")
+                    or p_data.get("email")
+                    or res.get("email")
+                    or a.get("email")
+                    or ""
+                ).lower()
+                jtitle = (
+                    a.get("opening_title")
+                    or a.get("job_title")
+                    or p_data.get("current_role")
+                    or res.get("current_role")
+                    or ""
+                ).lower()
+                ccode = (
+                    res.get("candidate_id")
+                    or a.get("candidate_code")
+                    or ""
+                ).lower()
+
+                if term in cname or term in cemail or term in jtitle or term in ccode:
                     filtered_apps.append(a)
             apps = filtered_apps
 
@@ -541,34 +619,38 @@ class PipelineService:
 
         for app in apps:
             app_id = app.get("id") or str(app.get("_id", ""))
-            c_id = app.get("candidate_id") or app.get("resume_id") or app_id
             r_id = app.get("resume_id")
-            resume = resumes_by_id.get(c_id) or (resumes_by_id.get(r_id) if r_id else {}) or {}
+            c_id = app.get("candidate_id") or app_id
+
+            # Look up resume by resume_id first, then candidate_ref / candidate_id
+            resume = (resumes_by_id.get(str(r_id)) if r_id else None) or (resumes_by_id.get(str(c_id)) if c_id else None) or {}
             parsed = resume.get("parsed_data", {})
             ai_eval = resume.get("ai_evaluation", {})
 
             cand_invs = (
                 inv_by_cand.get(app_id)
-                or inv_by_cand.get(c_id)
                 or (inv_by_cand.get(str(r_id)) if r_id else [])
+                or inv_by_cand.get(str(c_id))
                 or (inv_by_cand.get(str(resume.get("candidate_id"))) if resume.get("candidate_id") else [])
                 or []
             )
             active_inv = cand_invs[0] if cand_invs else None
 
             # Stage is strictly determined from the application; never leaks from resume or other jobs
-            raw_stage = normalize_stage_id(app.get("stage_id") or app.get("status"), default_stage=default_stage_id)
+            raw_stage = normalize_stage_id(app.get("stage_id") or app.get("stage") or app.get("status"), default_stage=default_stage_id)
             if raw_stage not in columns:
                 raw_stage = default_stage_id
 
             # Skills
-            skills = parsed.get("primary_skills") or parsed.get("skills") or []
+            skills = parsed.get("primary_skills") or parsed.get("skills") or resume.get("skills") or []
             if isinstance(skills, str):
                 skills = [s.strip() for s in skills.split(",") if s.strip()]
             skills = [str(s) for s in skills[:3]]
 
             # Star rating (1.0 to 5.0)
             score = ai_eval.get("ai_technical_score")
+            if score is None and resume.get("overall_score") is not None:
+                score = resume.get("overall_score")
             if score is not None:
                 rating = round(min(5.0, max(1.0, (float(score) / 20.0))), 1)
             elif active_inv and active_inv.get("rating") is not None:
@@ -577,13 +659,23 @@ class PipelineService:
                 rating = 4.0
 
             # Calculate days in stage
-            stage_updated = _parse_iso(app.get("stage_updated_at") or app.get("applied_at") or resume.get("upload_date"))
+            stage_updated = _parse_iso(
+                app.get("stage_updated_at")
+                or app.get("submitted_at")
+                or app.get("applied_at")
+                or resume.get("upload_date")
+                or app.get("created_at")
+            )
             days_in_stage = max(0, (now - stage_updated).days) if stage_updated else 0
             stage_days_accumulator[raw_stage].append(days_in_stage)
 
-            # Candidate Code (CAN-XXXX)
-            code_suffix = (resume.get("candidate_id") or c_id or app_id).replace("-", "")[:5].upper()
-            candidate_code = resume.get("candidate_id") or app.get("candidate_code") or f"CAN-{code_suffix}"
+            # Candidate Code (use the resume's CND code, e.g. CND0101)
+            cnd_code = resume.get("candidate_id") or app.get("candidate_code")
+            if cnd_code:
+                candidate_code = str(cnd_code)
+            else:
+                code_suffix = (str(r_id or c_id or app_id)).replace("-", "")[:5].upper()
+                candidate_code = f"CND-{code_suffix}"
 
             # Interview / rejection status pill matching mockup
             status_pill = None
@@ -606,19 +698,48 @@ class PipelineService:
                 else:
                     status_pill = f"{days_in_stage} days ago"
 
+            cand_name = (
+                (app.get("form", {}).get("personal", {}).get("full_name") if isinstance(app.get("form"), dict) else None)
+                or app.get("candidate_name")
+                or parsed.get("full_name")
+                or parsed.get("name")
+                or resume.get("candidate_name")
+                or "Candidate"
+            )
+            cand_email = (
+                app.get("applicant_email")
+                or app.get("candidate_email")
+                or parsed.get("email")
+                or resume.get("email")
+                or app.get("email")
+            )
+            cand_job_title = (
+                app.get("opening_title")
+                or app.get("job_title")
+                or parsed.get("current_role")
+                or resume.get("current_role")
+                or "Position"
+            )
+            app_applied_at = (
+                app.get("submitted_at")
+                or app.get("applied_at")
+                or resume.get("upload_date")
+                or app.get("created_at")
+            )
+
             card = {
                 "id": app_id,
                 "application_id": app_id,
                 "candidate_id": c_id,
-                "candidate_name": app.get("candidate_name") or parsed.get("full_name") or parsed.get("name") or resume.get("candidate_name") or "Candidate",
-                "candidate_email": app.get("candidate_email") or app.get("applicant_email") or parsed.get("email"),
+                "candidate_name": cand_name,
+                "candidate_email": cand_email,
                 "candidate_code": candidate_code,
                 "job_id": app.get("opening_id") or app.get("job_id"),
-                "job_title": app.get("job_title") or app.get("opening_title") or parsed.get("current_role") or "Position",
+                "job_title": cand_job_title,
                 "rating": rating,
                 "skills": skills,
                 "days_in_stage": days_in_stage,
-                "applied_at": app.get("applied_at") or resume.get("upload_date"),
+                "applied_at": app_applied_at,
                 "stage_id": raw_stage,
                 "stage_name": stage_map.get(raw_stage, {}).get("name", raw_stage.capitalize()),
                 "status_pill": status_pill,
@@ -643,7 +764,10 @@ class PipelineService:
 
         # 8 KPI Metrics Row
         total_candidates = len(apps)
-        applied_this_week = sum(1 for a in apps if (a.get("applied_at") or "") >= one_week_ago)
+        applied_this_week = sum(
+            1 for a in apps
+            if (a.get("submitted_at") or a.get("applied_at") or a.get("created_at") or "") >= one_week_ago
+        )
         screening_count = len(columns.get("screening", []))
         shortlisted_count = len(columns.get("shortlisted", []))
         interviewing_count = len(columns.get("interview", []))
