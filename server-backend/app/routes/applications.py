@@ -48,10 +48,11 @@ async def list_applications(
     q: str = Query("", max_length=100),
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=100),
+    stage: str = Query("", max_length=64, description="Pipeline stage id, e.g. screening"),
     _user: dict = Depends(get_current_active_user),
     service: ApplicationService = Depends(get_service),
 ):
-    return success_response(data=await service.list(job_id, review, q, page, limit), message="Applications retrieved.")
+    return success_response(data=await service.list(job_id, review, q, page, limit, stage), message="Applications retrieved.")
 
 
 @router.get("/{application_id}", summary="One application: entered details, AI-read details, consent and history")

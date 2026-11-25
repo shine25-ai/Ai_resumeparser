@@ -25,6 +25,9 @@ export interface ApplicationRow {
   notice_period: string;
   expected_ctc: number | null;
   stage: string;
+  /** Pipeline stage (Phase 7), e.g. "screening"; older applications are "applied". */
+  stage_id: string;
+  stage_name: string;
   source: string;
   heard_from: string | null;
   note: string | null;
@@ -55,13 +58,24 @@ export interface ApplicationDetail extends ApplicationRow {
   comparison: ComparisonRow[];
   consent: { accepted?: boolean; text?: string; version?: string; at?: string; ip?: string };
   review: { status: string; by?: string; at?: string; note?: string };
-  history: { at: string; action: string; by?: string; note?: string }[];
+  history: {
+    at: string;
+    action: string;
+    by?: string;
+    by_name?: string;
+    note?: string;
+    /** Set on pipeline moves (action "stage_moved"). */
+    from_stage_name?: string;
+    to_stage_name?: string;
+    reason?: string | null;
+    comment?: string | null;
+  }[];
   linked_existing_profile: boolean;
   resume: { id: string; status: string; s3_url: string | null; filename: string | null; candidate_id: string | null } | null;
 }
 
 export const fetchApplications = async (
-  f: { job_id?: string; review?: "" | "pending" | "reviewed"; q?: string; page?: number; limit?: number } = {}
+  f: { job_id?: string; review?: "" | "pending" | "reviewed"; q?: string; stage?: string; page?: number; limit?: number } = {}
 ): Promise<{ items: ApplicationRow[]; total: number; page: number; limit: number }> => {
   const p = new URLSearchParams();
   Object.entries(f).forEach(([k, v]) => v !== undefined && v !== "" && p.set(k, String(v)));

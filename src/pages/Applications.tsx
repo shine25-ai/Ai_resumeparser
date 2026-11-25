@@ -17,12 +17,13 @@ import {
   type ApplicationRow,
   type Confidence,
 } from "../utils/applicationsApi";
+import { getWorkflowApi, type WorkflowStage } from "../utils/pipelineApi";
 
 /**
  * Applications (SRS 4.8 / 4.9): everything sent from the careers page, newest first, and the review of one
  * application: what the candidate entered next to what the AI read from the resume (with how much it found),
  * mark reviewed, copy the candidate's corrections to the profile, and read the resume again.
- * The pipeline (moving candidates through stages) comes in Phase 7.
+ * Each application shows its pipeline stage (Phase 7); candidates are moved between stages on the Pipeline board.
  */
 
 const PAGE_SIZE = 20;
@@ -49,6 +50,20 @@ function canEdit() {
   }
 }
 
+/** The application's pipeline stage, in the workflow's colour when known. */
+export function StagePill({ name, colour }: { name: string; colour?: string }) {
+  const hex = colour && /^#[0-9a-f]{6}$/i.test(colour) ? colour : undefined;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${hex ? "" : "bg-slate-100 text-slate-700"}`}
+      style={hex ? { backgroundColor: `${hex}1f`, color: hex } : undefined}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: hex || "#94a3b8" }} />
+      {name}
+    </span>
+  );
+}
+
 export function ConfidenceBadge({ c }: { c?: Confidence }) {
   if (!c || c.score == null) return <span className="text-xs text-slate-400">—</span>;
   const tone = c.level === "high" ? "bg-emerald-50 text-emerald-700" : c.level === "medium" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700";
@@ -63,7 +78,7 @@ function ReviewPill({ status }: { status: string }) {
   );
 }
 
-function Detail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: (a: ApplicationDetail) => void }) {
+function Detail({ id, colours, onClose, onChanged }: { id: string; colours: Record<string, string>; onClose: () => void; onChanged: (a: ApplicationDetail) => void }) {
   const { toast } = useFeedback();
   const [a, setA] = useState<ApplicationDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -107,6 +122,7 @@ function Detail({ id, onClose, onChanged }: { id: string; onClose: () => void; o
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
+          <StagePill name={a.stage_name} colour={colours[a.stage_id]} />
           <ReviewPill status={a.review_status} />
           <ConfidenceBadge c={a.confidence} />
           {a.linked_existing_profile && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Existing profile</span>}
@@ -231,8 +247,15 @@ function Detail({ id, onClose, onChanged }: { id: string; onClose: () => void; o
             {[...a.history].reverse().map((h, i) => (
               <li key={i} className="relative text-xs">
                 <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-indigo-500" />
-                <p className="font-medium capitalize text-slate-800">{h.action}{h.note ? `: ${h.note}` : ""}</p>
-                <p className="text-slate-500">{h.by || "—"} · {fmt(h.at)}</p>
+                {h.action === "stage_moved" ? (
+                  <>
+                    <p className="font-medium text-slate-800">Moved to {h.to_stage_name}{h.from_stage_name ? ` from ${h.from_stage_name}` : ""}</p>
+                    {(h.reason || h.comment) && <p className="text-slate-600">{[h.reason, h.comment].filter(Boolean).join(" · ")}</p>}
+                  </>
+                ) : (
+                  <p className="font-medium capitalize text-slate-800">{h.action}{h.note ? `: ${h.note}` : ""}</p>
+                )}
+                <p className="text-slate-500">{h.by_name || h.by || "—"} · {fmt(h.at)}</p>
               </li>
             ))}
             {a.history.length === 0 && <li className="text-xs text-slate-400">Sent {fmt(a.submitted_at)}.</li>}
@@ -255,6 +278,9 @@ export default function Applications() {
   const [page, setPage] = useState(1);
   const jobId = params.get("job") || "";
   const review = (params.get("review") || "") as "" | "pending" | "reviewed";
+  const stage = params.get("stage") || "";
+  const [stages, setStages] = useState<WorkflowStage[]>([]);
+  const colours = useMemo(() => Object.fromEntries(stages.map((st) => [st.id, st.colour])), [stages]);
   const selected = params.get("id");
 
   const set = (k: string, v: string | null) => {
@@ -268,7 +294,7 @@ export default function Applications() {
     setLoading(true);
     try {
       const [list, all, pending] = await Promise.all([
-        fetchApplications({ job_id: jobId, review, q: q.trim(), page, limit: PAGE_SIZE }),
+        fetchApplications({ job_id: jobId, review, q: q.trim(), stage, page, limit: PAGE_SIZE }),
         fetchApplications({ job_id: jobId, limit: 1 }),
         fetchApplications({ job_id: jobId, review: "pending", limit: 1 }),
       ]);
@@ -280,13 +306,17 @@ export default function Applications() {
     } finally {
       setLoading(false);
     }
-  }, [jobId, review, q, page, toast]);
+  }, [jobId, review, q, stage, page, toast]);
 
   useEffect(() => {
     const t = setTimeout(load, q ? 300 : 0);
     return () => clearTimeout(t);
   }, [load, q]);
-  useEffect(() => setPage(1), [jobId, review, q]);
+  useEffect(() => setPage(1), [jobId, review, q, stage]);
+  // Stage names and colours come from the job's workflow (or the company default). Without pipeline access, names still show.
+  useEffect(() => {
+    getWorkflowApi(jobId || undefined).then((w) => setStages([...(w.stages || [])].sort((x, y) => x.order - y.order))).catch(() => setStages([]));
+  }, [jobId]);
   useEffect(() => {
     fetchJobOpenings(undefined, true).then(setJobs).catch(() => undefined);
   }, []);
@@ -322,6 +352,13 @@ export default function Applications() {
                 {jobs.map((j) => <option key={j.id} value={j.id}>{j.code} · {j.title}</option>)}
               </select>
             </label>
+            <label className="flex min-w-[150px] flex-1 flex-col gap-1 text-xs font-semibold text-slate-600">Stage
+              <select value={stage} onChange={(e) => set("stage", e.target.value || null)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                <option value="">All stages</option>
+                {stages.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+                {stage && !stages.some((st) => st.id === stage) && <option value={stage}>{stage}</option>}
+              </select>
+            </label>
             <div className="flex rounded-lg border border-slate-300 p-0.5 text-sm">
               {([["", "All"], ["pending", "To review"], ["reviewed", "Reviewed"]] as const).map(([k, label]) => (
                 <button key={k} onClick={() => set("review", k || null)} className={`rounded-md px-3 py-1.5 font-medium ${review === k ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>{label}</button>
@@ -331,11 +368,12 @@ export default function Applications() {
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
+              <table className="w-full min-w-[820px] text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-600">
                   <tr>
                     <th className="px-3 py-3">Candidate</th>
                     <th className="px-3 py-3">Job</th>
+                    <th className="px-3 py-3">Stage</th>
                     <th className="px-3 py-3">Experience</th>
                     <th className="px-3 py-3">Notice</th>
                     <th className="px-3 py-3">AI read</th>
@@ -345,9 +383,9 @@ export default function Applications() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
-                    <tr><td colSpan={7} className="px-4 py-6 text-slate-500"><Loader2 size={14} className="mr-2 inline animate-spin" />Loading…</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-6 text-slate-500"><Loader2 size={14} className="mr-2 inline animate-spin" />Loading…</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500"><FileText size={22} className="mx-auto mb-2 text-slate-300" />No applications {q || jobId || review ? "match these filters" : "yet. Share your careers page to start receiving them"}.</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500"><FileText size={22} className="mx-auto mb-2 text-slate-300" />No applications {q || jobId || review || stage ? "match these filters" : "yet. Share your careers page to start receiving them"}.</td></tr>
                   ) : (
                     rows.map((r) => (
                       <tr key={r.id} onClick={() => set("id", r.id)} className={`cursor-pointer ${r.id === selected ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
@@ -356,6 +394,7 @@ export default function Applications() {
                           <p className="text-xs text-slate-500">{r.applicant_email}{r.location ? ` · ${r.location}` : ""}</p>
                         </td>
                         <td className="px-3 py-3 text-slate-700">{r.opening_title}</td>
+                        <td className="px-3 py-3"><StagePill name={r.stage_name} colour={colours[r.stage_id]} /></td>
                         <td className="whitespace-nowrap px-3 py-3 text-slate-600">{r.total_experience_years != null ? `${r.total_experience_years} yrs` : "—"}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-slate-600">{r.notice_period || "—"}</td>
                         <td className="px-3 py-3"><ConfidenceBadge c={r.confidence} /></td>
@@ -377,12 +416,15 @@ export default function Applications() {
               </div>
             )}
           </section>
-          <p className="text-xs text-slate-400">Moving candidates through stages (screening, shortlist, interview…) comes with the recruitment pipeline.</p>
+          <p className="text-xs text-slate-400">
+            Move candidates between stages on the <Link to={jobId ? `/pipeline?job_id=${encodeURIComponent(jobId)}` : "/pipeline"} className="font-semibold text-indigo-600 hover:underline">Pipeline board</Link>.
+          </p>
         </div>
 
         {selected && (
           <Detail
             id={selected}
+            colours={colours}
             onClose={() => set("id", null)}
             onChanged={(a) => {
               setRows((list) => list.map((r) => (r.id === a.id ? { ...r, review_status: a.review_status as ApplicationRow["review_status"] } : r)));
