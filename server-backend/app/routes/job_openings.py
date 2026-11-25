@@ -624,7 +624,8 @@ async def company_summary(
     if not current_user.get("is_superadmin") and not (is_company_admin(current_user) and company_id == current_user.get("company_id")):
         raise AuthorizationError("You can only see your own company.")
     with system_scope():
-        company = await service.company_repo.get_by_id(company_id)
+        repo = service.company_repo or CompanyRepository(db)
+        company = await repo.get_by_id(company_id)
         if not company:
             raise NotFoundError("Company not found.")
         scope = {"company_id": company_id}
@@ -641,7 +642,9 @@ async def company_summary(
         )
         activity = await db[AUDIT_LOGS_COLLECTION].find(scope, {"_id": 0}).sort("created_at", -1).limit(10).to_list(length=10)
     from app.services.domain_service import DomainService
+    from app.services.limit_service import LimitService
     domains = DomainService(db).view(company)
+    usage = await LimitService(db).get_usage_meters(company_id)
     careers_url = (f"https://{domains['custom_domain']}" if domains["custom_status"] == "verified"
                    else f"https://{domains['subdomain']}" if domains["subdomain_enabled"] else f"/careers/{company['slug']}")
     return success_response(data={
@@ -656,9 +659,23 @@ async def company_summary(
             "interviews": interviews,
             "hires": hires,
         },
+        "usage_meters": usage,
         "admins": [u for u in users if u.get("role") in ("admin", "company_admin")],
         "recent_activity": activity,
     }, message="Company summary retrieved.")
+
+
+@companies_router.get("/{company_id}/usage", summary="Usage meters for a company (users, active jobs, storage MB, AI parses)")
+async def company_usage(
+    company_id: str,
+    current_user: dict = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    if not current_user.get("is_superadmin") and not (is_company_admin(current_user) and company_id == current_user.get("company_id")):
+        raise AuthorizationError("You can only see your own company usage.")
+    from app.services.limit_service import LimitService
+    usage = await LimitService(db).get_usage_meters(company_id)
+    return success_response(data=usage, message="Company usage retrieved.")
 
 
 @companies_router.post("", status_code=status.HTTP_201_CREATED, summary="Add a company (staff)")
@@ -709,7 +726,8 @@ async def update_company(
             raise AuthorizationError("You can only change your own company.")
         if SUPERADMIN_ONLY_FIELDS & set(changes):
             raise AuthorizationError("Only the platform super admin can change email domains, plans or limits, or turn a workspace off.")
-    before = await service.company_repo.get_by_id(company_id)
+    repo = service.company_repo or CompanyRepository(db)
+    before = await repo.get_by_id(company_id)
     changes = await _with_plan_limits(db, changes)
     data = await service.update_company(company_id, changes)
     changed = audit_diff(before, data, sorted(changes))

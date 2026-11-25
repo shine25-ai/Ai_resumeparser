@@ -34,6 +34,11 @@ class AuthorizationError(AppException):
         super().__init__(message=message, status_code=status.HTTP_403_FORBIDDEN, errors=errors)
 
 
+# Aliases for standard naming compatibility
+ForbiddenError = AuthorizationError
+UnauthorizedError = AuthenticationError
+
+
 class BadRequestError(AppException):
     """Raised when request payload or parameters are invalid."""
 

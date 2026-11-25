@@ -30,6 +30,7 @@ import CareerPageBuilder from "./pages/CareerPageBuilder";
 import CareerPagePreviewFrame from "./pages/CareerPagePreviewFrame";
 import CareerPageIntegrate, { PublicIntegrationGuide } from "./pages/CareerPageIntegrate";
 import Candidate360 from "./pages/Candidate360";
+import SkillIntelligencePage from "./pages/SkillIntelligence";
 import RecruitmentPipeline from "./pages/RecruitmentPipeline";
 
 // Role links are now /jobs?job=<id> (the careers page can be embedded in any site)
@@ -139,6 +140,7 @@ export default function App() {
                           <Route path="/evaluation/:id" element={<RedirectToCandidate />} />
                           <Route path="/evaluation" element={<Navigate to="/database" replace />} />
                           <Route path="/jd-match" element={<JDMatch />} />
+                          <Route path="/skills" element={<SkillIntelligencePage />} />
                           <Route path="/job-openings" element={<JobOpenings />} />
                           <Route path="/job-openings/new" element={<JobEditor />} />
                           <Route path="/job-openings/:id/edit" element={<JobEditor key="edit" />} />

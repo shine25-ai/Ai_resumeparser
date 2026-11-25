@@ -464,10 +464,12 @@ class JobManagementService:
             )
         if action == "reject" and not (note or "").strip():
             raise BadRequestError("Say why the job is sent back, so its author can fix it.")
-        if target == JOB_STATUS_OPEN:
+        if target == JOB_STATUS_OPEN and current != JOB_STATUS_OPEN:
             missing = [label for key, label in (("description", "a description"), ("primary_skills", "primary skills")) if not job.get(key)]
             if missing:
                 raise BadRequestError(f"Add {' and '.join(missing)} before publishing.")
+            from app.services.limit_service import LimitService
+            await LimitService(self.db).check_active_jobs_limit(job.get("company_id"), extra=1)
 
         now = utc_now().isoformat()
         entry = {"from": current, "to": target, "action": action, "at": now, "by": _actor(user), "note": (note or "").strip()[:500]}

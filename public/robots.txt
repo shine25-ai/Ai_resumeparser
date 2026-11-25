@@ -1,0 +1,26 @@
+# robots.txt for HireLogics Recruitment & Careers Portal
+User-agent: *
+Allow: /careers/
+Allow: /api/v1/jobs/public/
+Allow: /api/v1/career-page/public/
+Allow: /assets/
+Allow: /favicon.svg
+
+# Disallow internal platform and tenant management routes
+Disallow: /api/v1/auth/
+Disallow: /api/v1/admin/
+Disallow: /api/v1/candidates/
+Disallow: /api/v1/interviews/
+Disallow: /dashboard
+Disallow: /candidates
+Disallow: /pipeline
+Disallow: /interviews
+Disallow: /skills
+Disallow: /settings
+Disallow: /roles
+Disallow: /companies
+Disallow: /users
+Disallow: /audit
+
+# No Sitemap line: a sitemap must use full URLs, and each company's careers site lives on its own domain.
+
