@@ -223,6 +223,7 @@ class InterviewService:
             meeting_link=payload.meeting_link,
             meeting_platform=payload.meeting_platform,
             interview_mode=getattr(payload, 'interview_mode', None),
+            application_id=getattr(payload, 'application_id', None),
             location=payload.location or payload.interview_location,
             interview_location=payload.interview_location or payload.location,
             hr_call_verification=payload.hr_call_verification,

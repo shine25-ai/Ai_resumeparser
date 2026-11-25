@@ -82,6 +82,7 @@ class InterviewCreateRequest(BaseModel):
 
     # Email the candidate and interviewers a calendar invite (.ics) on creation. Off by default.
     send_invite: bool = False
+    application_id: Optional[str] = None
 
     candidate_id: str
     candidate_name: str

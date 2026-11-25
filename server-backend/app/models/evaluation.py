@@ -77,6 +77,7 @@ class InterviewEvaluationDocument(BaseModel):
 
     id: str = Field(default_factory=generate_uuid)
     interview_id: str
+    candidate_id: Optional[str] = None  # copied from the interview
     interviewer_user_id: str
     interviewer_name: str
     form_id: str

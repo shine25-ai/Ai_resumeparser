@@ -430,3 +430,17 @@ def test_panel_create_accepts_weekly_windows():
         weekly_availability=[{"weekday": 1, "start": "10:00", "end": "13:00"}],
     )
     assert panel.weekly_availability[0].start == "10:00"
+
+
+@pytest.mark.asyncio
+async def test_evaluation_records_the_interviews_candidate():
+    service = _service(interviews=[_interview("iv-1", candidate_id="cand-42")])
+    saved = await service.save_evaluation("iv-1", ALICE, {"ratings": {"tech": 4}})
+    assert saved["candidate_id"] == "cand-42"
+
+
+def test_interview_create_accepts_an_application_link():
+    from app.schemas.interview import InterviewCreateRequest
+
+    fields = InterviewCreateRequest.model_fields
+    assert "application_id" in fields and fields["application_id"].default is None

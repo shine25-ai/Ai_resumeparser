@@ -261,6 +261,7 @@ class EvaluationService:
         doc = InterviewEvaluationDocument(
             id=existing["id"] if existing else generate_uuid(),
             interview_id=interview_id,
+            candidate_id=interview.get("candidate_id"),
             interviewer_user_id=actor["id"],
             interviewer_name=_actor_name(actor),
             form_id=form_id,

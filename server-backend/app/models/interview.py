@@ -16,6 +16,8 @@ class InterviewDocument(BaseModel):
 
     # Candidate Information
     candidate_id: str
+    # The job application this interview belongs to (optional; older interviews have none)
+    application_id: Optional[str] = None
     candidate_name: str
     candidate_email: Optional[str] = None
     resume_id: Optional[str] = None
