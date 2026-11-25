@@ -13,8 +13,9 @@ The form itself is kept on the candidate's device until they submit ("Save as dr
 Staff side: the list of applications, one application with what the candidate entered next to what the AI read
 (and how sure it was), "mark reviewed", "use the candidate's corrections on the profile" and "read the resume again".
 
-Applications live in `job_applications` (one per candidate and job). The candidate profile is still the resume
-record (`resumes`); the separate `candidates` collection arrives with candidate management (Phase 6).
+Applications live in `job_applications` (one per candidate and job). Each carries `candidate_id`, the ID of the
+record in `candidates` (Phase 6); the resume keeps its CND code in `candidate_id` and points at the candidate
+with `candidate_ref`.
 """
 
 import hashlib
@@ -38,6 +39,7 @@ from app.models.job_opening import (
     REVIEW_PENDING,
     JobApplicationDocument,
 )
+from app.services.candidate_service import link_resume_to_candidate
 from app.utils.constants import JOB_APPLICATIONS_COLLECTION, RESUMES_COLLECTION
 from app.utils.helpers import sanitize_filename, utc_now
 
@@ -355,9 +357,17 @@ async def parser_status(job_id: str) -> Tuple[str, Dict[str, Any], str]:
 
 
 class ApplicationService:
-    def __init__(self, db: AsyncIOMotorDatabase, resume_service=None, upload_dir: Optional[str] = None,
+    def __init__(self, db: AsyncIOMotorDatabase, resume_service: Any = None, upload_dir: Optional[str] = None,
                  parse=send_to_parser, status=parser_status):
         self.db = db
+        if resume_service is None:
+            try:
+                from app.repositories.resume_log_repository import ResumeLogRepository
+                from app.repositories.resume_repository import ResumeRepository
+                from app.services.resume_service import ResumeService
+                resume_service = ResumeService(ResumeRepository(db), resume_log_repo=ResumeLogRepository(db))
+            except Exception:
+                resume_service = None
         self.resume_service = resume_service
         self.upload_dir = upload_dir or str(getattr(resume_service, "upload_dir", "") or "uploads")
         self.parse = parse
@@ -480,19 +490,37 @@ class ApplicationService:
                 parser_job_id=draft.get("parser_job_id") or None,
             )
             resume_id = resume.id
+        now = utc_now().isoformat()
         await self.db[RESUMES_COLLECTION].update_one(
             {"id": resume_id},
             {"$set": {"applicant_email": email, "applicant_heard_from": form["heard_from"] or None,
                       "applicant_note": form["cover_note"] or None}},
         )
+        # Phase 6: the application belongs to a candidate (same email in this company, else a new one).
+        personal = form.get("personal") or {}
+        first_job = (form.get("experience") or [{}])[0] or {}
+        candidate_id = await link_resume_to_candidate(
+            self.db, resume_id, source="Careers page", uploaded_by="public-applicant",
+            details={
+                "email": email,
+                "full_name": personal.get("full_name"),
+                "phone": personal.get("phone"),
+                "location": personal.get("location"),
+                "linkedin": personal.get("linkedin"),
+                "portfolio": personal.get("portfolio"),
+                "total_experience_years": form.get("total_experience_years"),
+                "current_role": first_job.get("designation"),
+                "skills": form.get("skills"),
+            },
+        )
 
-        now = utc_now().isoformat()
         application = JobApplicationDocument(
             **ref,
             opening_id=opening["id"],
             opening_title=opening["title"],
             applicant_email=email,
             resume_id=resume_id,
+            candidate_id=candidate_id,
             heard_from=form["heard_from"] or None,
             note=form["cover_note"] or None,
             form=form,
@@ -557,7 +585,8 @@ class ApplicationService:
             "review_status": (a.get("review") or {}).get("status", REVIEW_PENDING),
             "confidence": a.get("confidence") or {},
             "resume_id": a["resume_id"],
-            "candidate_id": (resume or {}).get("candidate_id"),
+            "candidate_id": a.get("candidate_id"),                  # the candidate record (Phase 6)
+            "candidate_code": (resume or {}).get("candidate_id"),   # the resume's CND code, for display
             "resume_status": (resume or {}).get("status", "MERGED"),
             "full_form": bool(form),
         }

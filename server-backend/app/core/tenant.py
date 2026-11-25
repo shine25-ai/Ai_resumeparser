@@ -12,7 +12,7 @@ data. Startup jobs, sign-in and the super admin's own screens run in `system_sco
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, Generator, List, Optional
 
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
@@ -43,6 +43,8 @@ TENANT_COLLECTIONS = frozenset({
     "job_templates",
     "career_pages",
     "application_drafts",
+    "candidates",
+    "candidate_documents",
     "workflows",
     "application_history",
     # ATS hub (pipeline, offers, onboarding, scorecards, automation templates, its audit trail)

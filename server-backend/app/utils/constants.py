@@ -26,6 +26,8 @@ JOB_OPENINGS_COLLECTION = "job_openings"
 CAREERS_PAGE_SETTINGS_COLLECTION = "careers_page_settings"
 JOB_APPLICATIONS_COLLECTION = "job_applications"
 APPLICANT_VERIFICATIONS_COLLECTION = "applicant_verifications"
+CANDIDATES_COLLECTION = "candidates"
+CANDIDATE_DOCUMENTS_COLLECTION = "candidate_documents"
 WORKFLOWS_COLLECTION = "workflows"
 APPLICATION_HISTORY_COLLECTION = "application_history"
 

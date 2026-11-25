@@ -125,6 +125,7 @@ class JobApplicationDocument(BaseModel):
     company_name: Optional[str] = None
     applicant_email: str
     resume_id: str
+    candidate_id: Optional[str] = None
     heard_from: Optional[str] = None
     note: Optional[str] = None
     submitted_at: str = Field(default_factory=lambda: utc_now().isoformat())

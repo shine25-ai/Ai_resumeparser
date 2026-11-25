@@ -119,7 +119,7 @@ function Detail({ id, onClose, onChanged }: { id: string; onClose: () => void; o
           ) : (
             <button disabled={!!busy} onClick={() => run("review", () => setApplicationReview(a.id, "reviewed"), "Marked as reviewed.")} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white"><ClipboardCheck size={13} /> Mark reviewed</button>
           ))}
-          {a.resume && <Link to={`/candidates/${a.resume.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"><ExternalLink size={13} /> Profile {a.candidate_id}</Link>}
+          {a.resume && <Link to={`/candidates/${a.candidate_id || a.resume.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"><ExternalLink size={13} /> Profile {a.candidate_code}</Link>}
           {a.resume?.s3_url && <a href={a.resume.s3_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"><Download size={13} /> Resume</a>}
           {editable && a.resume && (
             <button disabled={!!busy} onClick={() => run("reprocess", () => reprocessApplication(a.id), "The resume is being read again. Refresh in a minute.")} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
