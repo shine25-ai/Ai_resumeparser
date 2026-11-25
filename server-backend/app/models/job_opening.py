@@ -130,6 +130,11 @@ class JobApplicationDocument(BaseModel):
     submitted_at: str = Field(default_factory=lambda: utc_now().isoformat())
     # ── Phase 5 (SRS 4.8, Screen 18): the 5-step application ──
     stage: str = APPLICATION_STAGE_APPLIED     # the pipeline (Phase 7) moves it on
+    stage_id: Optional[str] = "applied"
+    stage_updated_at: Optional[str] = None
+    hired_at: Optional[str] = None             # set once when moving to Hired
+    rejection_reason: Optional[str] = None
+    rejection_comment: Optional[str] = None
     source: str = "Careers page"
     form: Dict[str, Any] = Field(default_factory=dict)        # what the candidate entered (app.services.application_service)
     extracted: Dict[str, Any] = Field(default_factory=dict)   # what the AI read from the resume, in the same shape

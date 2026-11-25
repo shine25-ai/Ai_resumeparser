@@ -12,7 +12,7 @@ data. Startup jobs, sign-in and the super admin's own screens run in `system_sco
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
@@ -43,6 +43,8 @@ TENANT_COLLECTIONS = frozenset({
     "job_templates",
     "career_pages",
     "application_drafts",
+    "workflows",
+    "application_history",
     # ATS hub (pipeline, offers, onboarding, scorecards, automation templates, its audit trail)
     "ats_audit_logs",
     "ats_automation_templates",
@@ -81,7 +83,7 @@ def in_system_scope() -> bool:
 
 
 @contextmanager
-def system_scope() -> Iterator[None]:
+def system_scope() -> Generator[None, None, None]:
     """See and change every company's data. For startup jobs, sign-in and super admin screens only."""
     token = _scope.set(_SYSTEM)
     try:
@@ -91,7 +93,7 @@ def system_scope() -> Iterator[None]:
 
 
 @contextmanager
-def company_scope(company_id: str) -> Iterator[None]:
+def company_scope(company_id: str) -> Generator[None, None, None]:
     """Run a block for one company, then return to the previous scope."""
     if not company_id:
         raise TenantScopeError("A company is required.")
@@ -125,9 +127,9 @@ def _and(query: Optional[Dict[str, Any]], condition: Dict[str, Any]) -> Dict[str
 class ScopedCollection:
     """A Motor collection limited to the request's company. Unknown attributes pass through (name, indexes)."""
 
-    def __init__(self, collection: AsyncIOMotorCollection):
+    def __init__(self, collection: Any):
         self._c = collection
-        self._name = collection.name
+        self._name = getattr(collection, "name", "")
         self._shared_read = self._name in SHARED_READ_COLLECTIONS
 
     # ── filters ──
@@ -240,11 +242,12 @@ class ScopedCollection:
 class ScopedDatabase:
     """A Motor database whose company collections are ScopedCollections."""
 
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db: Any):
         self._db = db
 
-    def _wrap(self, collection: AsyncIOMotorCollection):
-        return ScopedCollection(collection) if collection.name in TENANT_COLLECTIONS else collection
+    def _wrap(self, collection: Any):
+        name = getattr(collection, "name", "")
+        return ScopedCollection(collection) if name in TENANT_COLLECTIONS else collection
 
     def __getitem__(self, name: str):
         return self._wrap(self._db[name])

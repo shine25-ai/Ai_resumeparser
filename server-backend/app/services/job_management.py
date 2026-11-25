@@ -14,7 +14,7 @@ Every change is kept in the job's status_history.
 import csv
 import io
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -55,6 +55,20 @@ def _fmt(n: Any) -> str:
     if n is None:
         return ""
     return str(int(n)) if float(n).is_integer() else str(n)
+
+
+def _parse_iso(val: Any) -> Optional[datetime]:
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+    if isinstance(val, str):
+        try:
+            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return None
 
 LIST_FIELDS = (
     "responsibilities", "qualifications", "certifications", "primary_skills", "secondary_skills",
@@ -286,6 +300,18 @@ class JobManagementService:
         for j in jobs:
             by_status[j.get("status") or JOB_STATUS_OPEN] = by_status.get(j.get("status") or JOB_STATUS_OPEN, 0) + 1
         applications = await self.db[JOB_APPLICATIONS_COLLECTION].count_documents({})
+        # Phase 7 (SRS 4.11): Average time-to-hire in days across hired applications
+        hired_apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(
+            {"hired_at": {"$ne": None}}, {"_id": 0, "applied_at": 1, "created_at": 1, "hired_at": 1}
+        ).to_list(length=None)
+        dwell_days = []
+        for ha in hired_apps:
+            h_dt = _parse_iso(ha.get("hired_at"))
+            a_dt = _parse_iso(ha.get("applied_at") or ha.get("created_at"))
+            if h_dt and a_dt and h_dt >= a_dt:
+                dwell_days.append((h_dt - a_dt).total_seconds() / 86400.0)
+        avg_days_to_hire = round(sum(dwell_days) / len(dwell_days), 1) if dwell_days else None
+
         return {
             "total": sum(v for k, v in by_status.items() if k != JOB_STATUS_ARCHIVED),
             "active": by_status[JOB_STATUS_OPEN],
@@ -294,8 +320,7 @@ class JobManagementService:
             "closed": by_status[JOB_STATUS_CLOSED],
             "archived": by_status[JOB_STATUS_ARCHIVED],
             "applications": applications,
-            # Needs hire dates, which the pipeline (Phase 7) records. None until then.
-            "avg_days_to_hire": None,
+            "avg_days_to_hire": avg_days_to_hire,
         }
 
     async def export_csv(self, include_archived: bool = False) -> str:
@@ -339,24 +364,39 @@ class JobManagementService:
         return {"created": created, "errors": errors}
 
     async def _progress(self, job_ids: List[str]) -> Dict[str, Dict[str, int]]:
-        """Applications, interviews and selected candidates per job."""
+        """Applications, interviews, selected and hired candidates per job."""
         if not job_ids:
             return {}
-        out: Dict[str, Dict[str, int]] = {j: {"applications_count": 0, "interviews_count": 0, "selected_count": 0} for j in job_ids}
-        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find({"opening_id": {"$in": job_ids}}, {"opening_id": 1}).to_list(length=None)
+        out: Dict[str, Dict[str, int]] = {
+            j: {"applications_count": 0, "interviews_count": 0, "selected_count": 0, "hired_count": 0}
+            for j in job_ids
+        }
+        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(
+            {"$or": [{"opening_id": {"$in": job_ids}}, {"job_id": {"$in": job_ids}}]},
+            {"opening_id": 1, "job_id": 1, "stage_id": 1, "hired_at": 1}
+        ).to_list(length=None)
         for a in apps:
-            out[a["opening_id"]]["applications_count"] += 1
+            jid = a.get("opening_id") or a.get("job_id")
+            if jid in out:
+                out[jid]["applications_count"] += 1
+                if a.get("stage_id") in ("selected", "hired") or a.get("hired_at"):
+                    out[jid]["selected_count"] += 1
+                if a.get("stage_id") == "hired" or a.get("hired_at"):
+                    out[jid]["hired_count"] += 1
         interviews = await self.db[INTERVIEWS_COLLECTION].find(
             {"job_id": {"$in": job_ids}}, {"job_id": 1, "candidate_id": 1, "recommendation": 1, "outcome": 1, "status": 1}
         ).to_list(length=None)
         selected: Dict[str, set] = {}
         for i in interviews:
-            out[i["job_id"]]["interviews_count"] += 1
-            verdict = f"{i.get('recommendation') or ''} {i.get('outcome') or ''}".lower()
-            if "select" in verdict or "hire" in verdict:
-                selected.setdefault(i["job_id"], set()).add(i.get("candidate_id"))
+            jid = i.get("job_id")
+            if jid in out:
+                out[jid]["interviews_count"] += 1
+                verdict = f"{i.get('recommendation') or ''} {i.get('outcome') or ''}".lower()
+                if "select" in verdict or "hire" in verdict:
+                    selected.setdefault(jid, set()).add(i.get("candidate_id"))
         for job_id, people in selected.items():
-            out[job_id]["selected_count"] = len(people)
+            if job_id in out:
+                out[job_id]["selected_count"] = max(out[job_id]["selected_count"], len(people))
         return out
 
     # ── Create / edit ────────────────────────────────────────────────────────
