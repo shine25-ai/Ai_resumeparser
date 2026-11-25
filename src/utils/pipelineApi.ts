@@ -42,7 +42,7 @@ export interface PipelineCard {
   candidate_code: string;
   job_id?: string;
   job_title?: string;
-  rating: number;
+  rating?: number | null;
   skills: string[];
   days_in_stage: number;
   applied_at?: string;

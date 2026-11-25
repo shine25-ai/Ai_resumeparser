@@ -428,6 +428,7 @@ async def test_kanban_board_loads_applications_with_enrichment(company_db, recru
 
     assert len(col_map["applied"]["cards"]) == 1
     assert col_map["applied"]["cards"][0]["candidate_name"] == "Karthik S"
+    assert col_map["applied"]["cards"][0]["rating"] is None  # Unrated candidate shows None instead of 4.0
 
     # Verify that unapplied candidate resume is NOT on the board
     all_cand_names = [card["candidate_name"] for col in board["columns"] for card in col["cards"]]
@@ -1134,6 +1135,44 @@ async def test_stage_move_updates_application_stage_and_invalidates_cache(compan
     db_app = await company_db[JOB_APPLICATIONS_COLLECTION].find_one({"id": app_id})
     assert db_app["stage_id"] == "screening"
     assert db_app["stage"] == "Screening"
+
+
+async def test_kanban_cap_sorts_by_submitted_at_in_query_and_unrated_shows_none(company_db, recruiter_user):
+    """
+    Kanban cap: find(query).sort('submitted_at', -1).to_list(limit) ensures that
+    the newest applications are returned when count exceeds the limit.
+    Cards with no AI score and no interview rating have rating=None ('no rating').
+    """
+    svc = PipelineService(company_db)
+
+    # Insert 5 applications with increasing submitted_at dates
+    for i in range(1, 6):
+        await company_db[JOB_APPLICATIONS_COLLECTION].insert_one(
+            JobApplicationDocument(
+                id=f"app-order-{i}",
+                company_id="comp-alpha",
+                opening_id="job-cap-test",
+                opening_title="Software Engineer",
+                applicant_email=f"user{i}@example.com",
+                resume_id=f"res-cap-{i}",
+                form={"personal": {"full_name": f"Candidate {i}"}},
+                submitted_at=f"2026-11-2{i}T10:00:00+00:00",
+                stage="APPLIED",
+                stage_id="applied",
+            ).to_dict()
+        )
+
+    # Query with limit=3: must return the 3 newest (Candidate 5, 4, 3), not the oldest (1, 2, 3)
+    board = await svc.get_kanban_board(recruiter_user, job_id="job-cap-test", limit=3)
+    cards = board["columns"][0]["cards"]
+    assert len(cards) == 3
+    card_names = [c["candidate_name"] for c in cards]
+    assert card_names == ["Candidate 5", "Candidate 4", "Candidate 3"]
+
+    # Verify that cards have rating=None (no rating)
+    for c in cards:
+        assert c["rating"] is None
+
 
 
 

@@ -776,10 +776,16 @@ export default function RecruitmentPipeline() {
                                 </div>
 
                                 {/* Star Rating Pill */}
-                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-xs font-semibold shrink-0">
-                                  <span>★</span>
-                                  <span>{card.rating.toFixed(1)}</span>
-                                </div>
+                                {card.rating != null ? (
+                                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-xs font-semibold shrink-0">
+                                    <span>★</span>
+                                    <span>{card.rating.toFixed(1)}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400 font-medium italic shrink-0">
+                                    No rating
+                                  </span>
+                                )}
                               </div>
 
                               {/* Status Pill (if interview or rejected) */}
@@ -1195,9 +1201,13 @@ export default function RecruitmentPipeline() {
                             </span>
                           </td>
                           <td className="py-3.5 px-4">
-                            <span className="font-semibold text-amber-700 text-xs">
-                              ★ {card.rating.toFixed(1)}
-                            </span>
+                            {card.rating != null ? (
+                              <span className="font-semibold text-amber-700 text-xs">
+                                ★ {card.rating.toFixed(1)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic">No rating</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 text-xs text-slate-500 font-medium">
                             {card.days_in_stage} days

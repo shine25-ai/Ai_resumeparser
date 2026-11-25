@@ -508,8 +508,9 @@ class PipelineService:
         query = {"$and": and_conditions} if len(and_conditions) > 1 else (and_conditions[0] if and_conditions else {})
 
         # Fetch real applications with a cap (no synthesized cards from whole resume db)
+        # Sort in the query by submitted_at descending before the limit so newest applications are never left off
         board_limit = min(max(1, limit), 1000)
-        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(query).to_list(length=board_limit)
+        apps = await self.db[JOB_APPLICATIONS_COLLECTION].find(query).sort("submitted_at", -1).to_list(length=board_limit)
 
         # Sort applications by date descending (checking submitted_at, applied_at, created_at)
         def _app_date(a: Dict[str, Any]) -> str:
@@ -647,16 +648,16 @@ class PipelineService:
                 skills = [s.strip() for s in skills.split(",") if s.strip()]
             skills = [str(s) for s in skills[:3]]
 
-            # Star rating (1.0 to 5.0)
+            # Star rating (1.0 to 5.0) - None if unrated (no AI score and no interview rating)
             score = ai_eval.get("ai_technical_score")
             if score is None and resume.get("overall_score") is not None:
                 score = resume.get("overall_score")
             if score is not None:
-                rating = round(min(5.0, max(1.0, (float(score) / 20.0))), 1)
+                rating: Optional[float] = round(min(5.0, max(1.0, (float(score) / 20.0))), 1)
             elif active_inv and active_inv.get("rating") is not None:
                 rating = round(float(active_inv.get("rating")), 1)
             else:
-                rating = 4.0
+                rating = None
 
             # Calculate days in stage
             stage_updated = _parse_iso(
@@ -754,7 +755,7 @@ class PipelineService:
         # Sort cards in each column
         for sid in columns:
             if sort_by == "rating":
-                columns[sid].sort(key=lambda c: c.get("rating", 0), reverse=True)
+                columns[sid].sort(key=lambda c: c.get("rating") if c.get("rating") is not None else -1.0, reverse=True)
             elif sort_by == "days":
                 columns[sid].sort(key=lambda c: c.get("days_in_stage", 0), reverse=True)
             elif sort_by == "name":
