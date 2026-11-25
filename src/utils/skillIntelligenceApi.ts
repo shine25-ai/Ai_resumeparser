@@ -29,9 +29,10 @@ export interface JobSkillMatch {
   candidate_id: string;
   job_id: string;
   job_title: string;
-  overall_match_pct: number;
-  primary_match_pct: number;
-  secondary_match_pct: number;
+  /** null when the job lists no skills */
+  overall_match_pct: number | null;
+  primary_match_pct: number | null;
+  secondary_match_pct: number | null;
   matched_primary: CandidateSkill[];
   missing_primary: string[];
   matched_secondary: CandidateSkill[];

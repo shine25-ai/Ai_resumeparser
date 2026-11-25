@@ -752,9 +752,20 @@ class PipelineService:
             }
             columns[raw_stage].append(card)
 
+        # Job match % (Phase 9) on every card: the candidate's saved skills against the job's skills
+        from app.services.skill_intelligence_service import job_matches
+        all_cards = [c for cards in columns.values() for c in cards]
+        found = await job_matches(self.db, [(c.get("candidate_id"), c.get("job_id")) for c in all_cards])
+        for c in all_cards:
+            m = found.get((str(c.get("candidate_id")), str(c.get("job_id"))))
+            c["match_pct"] = m["pct"] if m else None
+            c["match_gaps"] = m["gaps"] if m else []
+
         # Sort cards in each column
         for sid in columns:
-            if sort_by == "rating":
+            if sort_by == "match":
+                columns[sid].sort(key=lambda c: c.get("match_pct") if c.get("match_pct") is not None else -1.0, reverse=True)
+            elif sort_by == "rating":
                 columns[sid].sort(key=lambda c: c.get("rating") if c.get("rating") is not None else -1.0, reverse=True)
             elif sort_by == "days":
                 columns[sid].sort(key=lambda c: c.get("days_in_stage", 0), reverse=True)

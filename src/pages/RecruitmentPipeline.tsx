@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import JobMatchBadge from "../components/JobMatchBadge";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import {
   Users,
@@ -654,6 +655,7 @@ export default function RecruitmentPipeline() {
               className="h-9 pl-3 pr-7 bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden cursor-pointer appearance-none font-medium"
             >
               <option value="applied_date">Sort: Applied Date ↓</option>
+              <option value="match">Sort: Job Match %</option>
               <option value="rating">Sort: Star Rating ★</option>
               <option value="days">Sort: Days in Stage</option>
               <option value="name">Sort: Candidate Name</option>
@@ -807,6 +809,13 @@ export default function RecruitmentPipeline() {
                                       <span className="truncate">{card.status_pill}</span>
                                     </div>
                                   )}
+                                </div>
+                              )}
+
+                              {/* Job match % (Phase 9) */}
+                              {card.match_pct != null && (
+                                <div className="mb-2">
+                                  <JobMatchBadge pct={card.match_pct} gaps={card.match_gaps} />
                                 </div>
                               )}
 
@@ -1115,6 +1124,7 @@ export default function RecruitmentPipeline() {
                   <th className="py-3.5 px-4">Candidate</th>
                   <th className="py-3.5 px-4">Job Opening</th>
                   <th className="py-3.5 px-4">Stage</th>
+                  <th className="py-3.5 px-4">Match</th>
                   <th className="py-3.5 px-4">Rating</th>
                   <th className="py-3.5 px-4">Days in Stage</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
@@ -1123,7 +1133,7 @@ export default function RecruitmentPipeline() {
               <tbody className="divide-y divide-slate-100">
                 {boardData?.columns.flatMap((col) => col.cards).length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <td colSpan={8} className="py-12 text-center text-slate-400">
                       No candidates found matching the selected filters.
                     </td>
                   </tr>
@@ -1199,6 +1209,9 @@ export default function RecruitmentPipeline() {
                               />
                               {card.stage_name}
                             </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <JobMatchBadge pct={card.match_pct} gaps={card.match_gaps} compact />
                           </td>
                           <td className="py-3.5 px-4">
                             {card.rating != null ? (

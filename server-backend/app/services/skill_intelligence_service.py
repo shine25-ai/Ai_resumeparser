@@ -471,71 +471,14 @@ class SkillIntelligenceService:
         if not job:
             raise NotFoundError(f"Job opening '{job_id}' not found.")
 
-        raw_primary_skills = job.get("primary_skills") or job.get("required_skills") or []
-        raw_secondary_skills = job.get("secondary_skills") or job.get("preferred_skills") or []
-
-        # Normalize job skills
-        job_primary = [SkillNormalizationEngine.normalize_skill(s)[0] for s in raw_primary_skills if s and s.strip()]
-        job_secondary = [SkillNormalizationEngine.normalize_skill(s)[0] for s in raw_secondary_skills if s and s.strip()]
-
         # Fetch candidate skills
         candidate_skills = await self.list_candidate_skills(candidate_id)
         if not candidate_skills:
             # Try on-the-fly recalculate
             candidate_skills = await self.recalculate_candidate_skills(candidate_id)
 
-        cand_skill_map = {cs["skill_name"].lower(): cs for cs in candidate_skills}
-
-        matched_primary: List[Dict[str, Any]] = []
-        missing_primary: List[str] = []
-        for s in job_primary:
-            s_lower = s.lower()
-            if s_lower in cand_skill_map:
-                matched_primary.append(cand_skill_map[s_lower])
-            else:
-                missing_primary.append(s)
-
-        matched_secondary: List[Dict[str, Any]] = []
-        missing_secondary: List[str] = []
-        for s in job_secondary:
-            s_lower = s.lower()
-            if s_lower in cand_skill_map:
-                matched_secondary.append(cand_skill_map[s_lower])
-            else:
-                missing_secondary.append(s)
-
-        total_primary = len(job_primary)
-        total_secondary = len(job_secondary)
-
-        primary_pct = round((len(matched_primary) / total_primary * 100.0), 1) if total_primary > 0 else 100.0
-        secondary_pct = round((len(matched_secondary) / total_secondary * 100.0), 1) if total_secondary > 0 else 100.0
-
-        # Weighted overall match %
-        if total_primary > 0 and total_secondary > 0:
-            overall_match_pct = round((0.70 * primary_pct) + (0.30 * secondary_pct), 1)
-        elif total_primary > 0:
-            overall_match_pct = primary_pct
-        elif total_secondary > 0:
-            overall_match_pct = secondary_pct
-        else:
-            overall_match_pct = 100.0
-
-        all_gaps = missing_primary + missing_secondary
-
-        return {
-            "candidate_id": candidate_id,
-            "job_id": job_id,
-            "job_title": job.get("title", ""),
-            "overall_match_pct": overall_match_pct,
-            "primary_match_pct": primary_pct,
-            "secondary_match_pct": secondary_pct,
-            "matched_primary": matched_primary,
-            "missing_primary": missing_primary,
-            "matched_secondary": matched_secondary,
-            "missing_secondary": missing_secondary,
-            "gaps": all_gaps,
-            "summary_label": f"{overall_match_pct}% match ({len(all_gaps)} gap{'s' if len(all_gaps) != 1 else ''})",
-        }
+        return {"candidate_id": candidate_id, "job_id": job_id, "job_title": job.get("title", ""),
+                **score_job_match(job, candidate_skills)}
 
     # ── Screen 13 Skill Matrix & Demand Analytics ───────────────────────────
 
@@ -679,3 +622,86 @@ async def recalculate_skills_for(db: Any, any_id: Optional[str], resume_id: Opti
     except Exception as e:  # never block the save that triggered it
         logging.getLogger(__name__).warning("Skill recalculation failed for %s: %s", any_id or resume_id, e)
 
+
+
+
+def _job_skill_names(job: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """The job's primary and secondary skills, normalised to the skill master (aliases folded)."""
+    def norm(values: Any) -> List[str]:
+        out: List[str] = []
+        for v in values or []:
+            if isinstance(v, str) and v.strip():
+                name = SkillNormalizationEngine.normalize_skill(v)[0]
+                if name and name not in out:
+                    out.append(name)
+        return out
+
+    return (norm(job.get("primary_skills") or job.get("required_skills")),
+            norm(job.get("secondary_skills") or job.get("preferred_skills")))
+
+
+def score_job_match(job: Dict[str, Any], candidate_skills: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Job match (SRS 4.13): % of the job's primary skills the candidate has (70%) and of its secondary skills (30%).
+    With only one list on the job, that list counts 100%. A job with no skills listed has no match score (None).
+    Gaps are the job's skills the candidate does not have, primary first.
+    """
+    primary, secondary = _job_skill_names(job)
+    have = {str(cs.get("skill_name") or "").lower(): cs for cs in candidate_skills or []}
+    matched_primary = [have[s.lower()] for s in primary if s.lower() in have]
+    missing_primary = [s for s in primary if s.lower() not in have]
+    matched_secondary = [have[s.lower()] for s in secondary if s.lower() in have]
+    missing_secondary = [s for s in secondary if s.lower() not in have]
+
+    primary_pct = round(len(matched_primary) / len(primary) * 100.0, 1) if primary else None
+    secondary_pct = round(len(matched_secondary) / len(secondary) * 100.0, 1) if secondary else None
+    if primary_pct is not None and secondary_pct is not None:
+        overall: Optional[float] = round(0.70 * primary_pct + 0.30 * secondary_pct, 1)
+    else:
+        overall = primary_pct if primary_pct is not None else secondary_pct
+
+    gaps = missing_primary + missing_secondary
+    label = "No skills listed on the job" if overall is None else (
+        f"{overall:g}% match ({len(gaps)} gap{'s' if len(gaps) != 1 else ''})")
+    return {
+        "overall_match_pct": overall,
+        "primary_match_pct": primary_pct,
+        "secondary_match_pct": secondary_pct,
+        "matched_primary": matched_primary,
+        "missing_primary": missing_primary,
+        "matched_secondary": matched_secondary,
+        "missing_secondary": missing_secondary,
+        "gaps": gaps,
+        "summary_label": label,
+    }
+
+
+async def job_matches(db: Any, pairs: List[Tuple[Optional[str], Optional[str]]]) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """
+    Match % for many (candidate id, job id) pairs at once, for lists and boards: two queries in all.
+    Pairs with no candidate, no job, no saved skills or a job without skills are left out (shown as "no score").
+    Returns {(candidate_id, job_id): {"pct", "gaps", "primary_pct", "label"}}.
+    """
+    pairs = [(str(c), str(j)) for c, j in pairs if c and j]
+    if not pairs:
+        return {}
+    cand_ids = list({c for c, _ in pairs})
+    job_ids = list({j for _, j in pairs})
+    jobs = {j["id"]: j for j in await db[JOB_OPENINGS_COLLECTION].find(
+        {"id": {"$in": job_ids}}, {"_id": 0, "id": 1, "primary_skills": 1, "secondary_skills": 1,
+                                   "required_skills": 1, "preferred_skills": 1}).to_list(length=len(job_ids))}
+    skills: Dict[str, List[Dict[str, Any]]] = {}
+    for cs in await db[CANDIDATE_SKILLS_COLLECTION].find(
+            {"candidate_id": {"$in": cand_ids}}, {"_id": 0, "candidate_id": 1, "skill_name": 1}).to_list(length=len(cand_ids) * 200):
+        skills.setdefault(str(cs["candidate_id"]), []).append(cs)
+
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for c, j in pairs:
+        if j not in jobs or c not in skills:
+            continue
+        m = score_job_match(jobs[j], skills[c])
+        if m["overall_match_pct"] is None:
+            continue
+        out[(c, j)] = {"pct": m["overall_match_pct"], "primary_pct": m["primary_match_pct"],
+                       "gaps": m["gaps"][:8], "label": m["summary_label"]}
+    return out

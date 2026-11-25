@@ -452,6 +452,13 @@ class CandidateService:
             {"$or": [{"candidate_id": candidate_id}, {"applicant_email": norm_email}]},
             {"_id": 0},
         ).sort("submitted_at", -1).to_list(length=100)
+        # Pipeline stage (Phase 7) and job match % (Phase 9) for each application
+        from app.services.application_service import stage_of
+        from app.services.skill_intelligence_service import job_matches
+        found = await job_matches(self.db, [(candidate_id, a.get("opening_id")) for a in apps])
+        for a in apps:
+            a.update(stage_of(a))
+            a["match"] = found.get((str(candidate_id), str(a.get("opening_id"))))
 
         # Interviews (by candidate_id or resume_id)
         resume_ids = [d["id"] for d in docs if "id" in d]

@@ -1,6 +1,7 @@
 import { BASE_URL, apiFetch } from "./Api";
 import { readJson } from "../careers/api";
 import type { Confidence } from "./applicationsApi";
+import type { JobMatch } from "../components/JobMatchBadge";
 
 const URL_ = `${BASE_URL}/candidates`;
 
@@ -78,6 +79,9 @@ export interface Candidate360Data extends CandidateItem {
     opening_title: string;
     applicant_email: string;
     stage: string;
+    stage_id?: string;
+    stage_name?: string;
+    match?: JobMatch | null;
     source: string;
     submitted_at: string;
     form?: Record<string, any>;

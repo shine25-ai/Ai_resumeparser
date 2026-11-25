@@ -18,6 +18,7 @@ import {
   type Confidence,
 } from "../utils/applicationsApi";
 import { getWorkflowApi, type WorkflowStage } from "../utils/pipelineApi";
+import JobMatchBadge from "../components/JobMatchBadge";
 
 /**
  * Applications (SRS 4.8 / 4.9): everything sent from the careers page, newest first, and the review of one
@@ -123,6 +124,7 @@ function Detail({ id, colours, onClose, onChanged }: { id: string; colours: Reco
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <StagePill name={a.stage_name} colour={colours[a.stage_id]} />
+          <JobMatchBadge match={a.match} />
           <ReviewPill status={a.review_status} />
           <ConfidenceBadge c={a.confidence} />
           {a.linked_existing_profile && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Existing profile</span>}
@@ -232,6 +234,22 @@ function Detail({ id, colours, onClose, onChanged }: { id: string; colours: Reco
             {f.cover_note && <section><h3 className="mb-1 font-bold text-slate-900">Note from the candidate</h3><p className="whitespace-pre-line text-slate-700">{f.cover_note}</p></section>}
           </>
         )}
+
+        <section>
+          <h3 className="mb-1 flex items-center gap-2 font-bold text-slate-900">Job match <JobMatchBadge match={a.match} /></h3>
+          {a.match ? (
+            a.match.gaps.length ? (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-slate-500">Missing for this job:</span>
+                {a.match.gaps.map((g) => <span key={g} className="rounded-full bg-rose-50 px-2 py-0.5 font-medium text-rose-700">{g}</span>)}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Has every skill the job lists.</p>
+            )
+          ) : (
+            <p className="text-xs text-slate-500">No score yet: the candidate's skills are read after the resume is processed, and the job needs skills listed.</p>
+          )}
+        </section>
 
         {a.consent?.accepted && (
           <section className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
@@ -368,12 +386,13 @@ export default function Applications() {
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-sm">
+              <table className="w-full min-w-[880px] text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-600">
                   <tr>
                     <th className="px-3 py-3">Candidate</th>
                     <th className="px-3 py-3">Job</th>
                     <th className="px-3 py-3">Stage</th>
+                    <th className="px-3 py-3">Match</th>
                     <th className="px-3 py-3">Experience</th>
                     <th className="px-3 py-3">Notice</th>
                     <th className="px-3 py-3">AI read</th>
@@ -383,9 +402,9 @@ export default function Applications() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
-                    <tr><td colSpan={8} className="px-4 py-6 text-slate-500"><Loader2 size={14} className="mr-2 inline animate-spin" />Loading…</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-6 text-slate-500"><Loader2 size={14} className="mr-2 inline animate-spin" />Loading…</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500"><FileText size={22} className="mx-auto mb-2 text-slate-300" />No applications {q || jobId || review || stage ? "match these filters" : "yet. Share your careers page to start receiving them"}.</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500"><FileText size={22} className="mx-auto mb-2 text-slate-300" />No applications {q || jobId || review || stage ? "match these filters" : "yet. Share your careers page to start receiving them"}.</td></tr>
                   ) : (
                     rows.map((r) => (
                       <tr key={r.id} onClick={() => set("id", r.id)} className={`cursor-pointer ${r.id === selected ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
@@ -395,6 +414,7 @@ export default function Applications() {
                         </td>
                         <td className="px-3 py-3 text-slate-700">{r.opening_title}</td>
                         <td className="px-3 py-3"><StagePill name={r.stage_name} colour={colours[r.stage_id]} /></td>
+                        <td className="px-3 py-3"><JobMatchBadge match={r.match} compact /></td>
                         <td className="whitespace-nowrap px-3 py-3 text-slate-600">{r.total_experience_years != null ? `${r.total_experience_years} yrs` : "—"}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-slate-600">{r.notice_period || "—"}</td>
                         <td className="px-3 py-3"><ConfidenceBadge c={r.confidence} /></td>
