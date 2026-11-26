@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import type { SkillWeights, SkillMatrixAnalytics } from "../utils/skillIntelligenceApi";
 import {
-  fetchSkillWeights, updateSkillWeights, fetchSkillMatrixAnalytics, mergeDuplicateSkills
+  fetchSkillWeights, updateSkillWeights, fetchSkillMatrixAnalytics, mergeDuplicateSkills, downloadSkillMatrixCsv
 } from "../utils/skillIntelligenceApi";
 import { useFeedback } from "../components/ui/Feedback";
 
@@ -98,7 +98,7 @@ export default function SkillIntelligencePage() {
   };
 
   const handleExportCSV = () => {
-    window.location.href = "/api/v1/skills/export";
+    downloadSkillMatrixCsv().catch((e) => toast(e instanceof Error ? e.message : "Could not export.", "error"));
   };
 
   // Distinct skills for matrix table headers

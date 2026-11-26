@@ -97,6 +97,16 @@ class _Cursor:
     async def to_list(self, length: Optional[int] = None):
         return [copy.deepcopy(d) for d in (self._docs if length is None else self._docs[:length])]
 
+    def __aiter__(self):
+        self._iter = iter([copy.deepcopy(d) for d in self._docs])
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
+
 
 class _Result:
     def __init__(self, **kw: Any):
@@ -107,6 +117,16 @@ class FakeCollection:
     def __init__(self, name: str):
         self.name = name
         self.docs: List[Dict[str, Any]] = []
+
+    async def distinct(self, key: str, query: Optional[Dict[str, Any]] = None, *a: Any, **k: Any):
+        out: List[Any] = []
+        for d in self.docs:
+            if matches(d, query):
+                v = _get(d, key)
+                for x in (v if isinstance(v, list) else [v]):
+                    if x is not _MISSING and x not in out:
+                        out.append(x)
+        return out
 
     def find(self, query: Optional[Dict[str, Any]] = None, projection: Any = None, *a: Any, **k: Any):
         found = [d for d in self.docs if matches(d, query)]

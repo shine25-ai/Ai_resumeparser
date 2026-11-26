@@ -188,7 +188,8 @@ class SkillIntelligenceService:
 
     async def list_candidate_skills(self, candidate_id: str) -> List[Dict[str, Any]]:
         """Retrieve all skills for a candidate sorted by proficiency descending."""
-        docs = await self.col.find({"candidate_id": candidate_id}).sort("proficiency", -1).to_list(length=200)
+        # No "_id": MongoDB's ObjectId can't be sent as JSON (this route failed on every real database)
+        docs = await self.col.find({"candidate_id": candidate_id}, {"_id": 0}).sort("proficiency", -1).to_list(length=200)
         return [with_candidate_skill_defaults(d) for d in docs]
 
     async def update_candidate_skill_hr(
@@ -521,13 +522,21 @@ class SkillIntelligenceService:
         ]
 
         # 3. Candidate skill matrix / heatmap rows
-        candidates_cursor = self.db[CANDIDATES_COLLECTION].find({}).limit(50)
+        candidates_cursor = self.db[CANDIDATES_COLLECTION].find(
+            {}, {"_id": 0, "id": 1, "full_name": 1, "name": 1, "current_role": 1, "total_experience_years": 1}).limit(50)
         candidates = await candidates_cursor.to_list(length=50)
+
+        # One query for all 50 candidates' skills (it was one query per candidate)
+        ids = [c.get("id") for c in candidates if c.get("id")]
+        by_candidate: Dict[str, List[Dict[str, Any]]] = {}
+        if ids:
+            for d in await self.col.find({"candidate_id": {"$in": ids}}, {"_id": 0}).to_list(length=len(ids) * 200):
+                by_candidate.setdefault(d["candidate_id"], []).append(with_candidate_skill_defaults(d))
 
         matrix_rows = []
         for c in candidates:
             c_id = c.get("id")
-            c_skills = await self.list_candidate_skills(c_id)
+            c_skills = sorted(by_candidate.get(c_id, []), key=lambda s: -(s.get("proficiency") or 0))
             matrix_rows.append({
                 "candidate_id": c_id,
                 "candidate_name": c.get("full_name") or c.get("name") or "Candidate",

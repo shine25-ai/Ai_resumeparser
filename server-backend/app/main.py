@@ -29,6 +29,7 @@ from app.routes import branding as branding_routes
 from app.routes import plans as plan_routes
 from app.routes import applications as application_routes
 from app.routes import career_page as career_page_routes
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.file_links import FileLinkMiddleware
 from app.routes import audit as audit_routes
 from app.routes import candidates as candidates_routes
@@ -62,7 +63,9 @@ def create_application() -> FastAPI:
             "http://127.0.0.1:8000",
         ],
         allow_origin_regex=r"https?://.*",
-        allow_credentials=True,
+        # Sign-in uses a bearer token, never cookies, so browsers never send credentials cross-site.
+        # (Any origin may call the API, but only with a token it already holds.)
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["Content-Disposition"],
@@ -79,6 +82,8 @@ def create_application() -> FastAPI:
     app.add_middleware(IntegrationLoggerMiddleware)
     # File URLs leave the API as signed, expiring links and come back as stored URLs.
     app.add_middleware(FileLinkMiddleware)
+    # Security headers on every /api response (app.middleware.security_headers)
+    app.add_middleware(SecurityHeadersMiddleware)
     # Outermost: the public careers endpoints allow any origin (the page can be opened from a file).
     app.add_middleware(PublicCorsMiddleware)
 

@@ -45,9 +45,37 @@ async def validate_uploaded_file(file: UploadFile) -> bytes:
     if len(content) > MAX_FILE_SIZE_BYTES:
         raise FileUploadError("Uploaded file size exceeds the 10 MB limit.")
 
+    ext = validate_file_extension(file.filename)
+    if not content_matches_extension(content, ext):
+        raise FileUploadError(f"This file isn't a real .{ext} document. Please upload a PDF or Word resume.")
+
     # Reset file seek cursor for subsequent operations if needed
     await file.seek(0)
     return content
+
+
+def content_matches_extension(content: bytes, ext: str) -> bool:
+    """
+    The file's own bytes agree with its extension (Phase 12): a renamed executable or script is refused.
+    PDF has %PDF in its first 1 KB (where readers look for it); .docx is a ZIP holding word/;
+    .doc is an OLE2 compound file.
+    """
+    head = content[:1024]
+    if ext == "pdf":
+        return b"%PDF" in head
+    if ext == "docx":
+        if not content.startswith(b"PK\x03\x04"):
+            return False
+        import io
+        import zipfile
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as z:
+                return any(n.startswith("word/") for n in z.namelist())
+        except zipfile.BadZipFile:
+            return False
+    if ext == "doc":
+        return content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    return False
 
 
 def _detect_image_type(content: bytes) -> str:

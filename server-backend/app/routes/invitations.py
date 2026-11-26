@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.core.database import get_database
 from app.core.dependencies import require_company_admin
+from app.core.rate_limit import hit_ip
 from app.services.audit_service import record_audit
 from app.services.invitation_service import InvitationService
 from app.utils.response import success_response
@@ -105,6 +106,7 @@ async def accept(
     service: InvitationService = Depends(get_service),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    await hit_ip(db, "invitation_accept:ip", request)
     data = await service.accept(token, body.full_name, body.password)
     await record_audit(db, {"full_name": body.full_name, "email": data["email"]}, "user.invitation_accepted", "user",
                        "", data["email"], request=request, target_company_id=await _company_of(db, data["email"]))

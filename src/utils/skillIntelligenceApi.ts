@@ -1,4 +1,4 @@
-import { apiFetch } from "./Api";
+import { BASE_URL, apiFetch } from "./Api";
 import { readJson } from "../careers/api";
 
 const read = async <T,>(res: Response): Promise<T> => (await readJson(res)) as T;
@@ -57,12 +57,12 @@ export interface SkillMatrixAnalytics {
 // ── API Functions ───────────────────────────────────────────────────────────
 
 export async function fetchSkillWeights(): Promise<SkillWeights> {
-  const res = await apiFetch("/api/v1/skills/weights");
+  const res = await apiFetch(`${BASE_URL}/skills/weights`);
   return read<SkillWeights>(res);
 }
 
 export async function updateSkillWeights(weights: SkillWeights): Promise<SkillWeights> {
-  const res = await apiFetch("/api/v1/skills/weights", {
+  const res = await apiFetch(`${BASE_URL}/skills/weights`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(weights),
@@ -71,12 +71,12 @@ export async function updateSkillWeights(weights: SkillWeights): Promise<SkillWe
 }
 
 export async function fetchCandidateSkills(candidateId: string): Promise<CandidateSkill[]> {
-  const res = await apiFetch(`/api/v1/skills/candidate/${candidateId}`);
+  const res = await apiFetch(`${BASE_URL}/skills/candidate/${candidateId}`);
   return read<CandidateSkill[]>(res);
 }
 
 export async function recalculateCandidateSkills(candidateId: string): Promise<CandidateSkill[]> {
-  const res = await apiFetch(`/api/v1/skills/candidate/${candidateId}/recalculate`, {
+  const res = await apiFetch(`${BASE_URL}/skills/candidate/${candidateId}/recalculate`, {
     method: "POST",
   });
   return read<CandidateSkill[]>(res);
@@ -87,7 +87,7 @@ export async function editCandidateSkill(
   skillName: string,
   payload: { proficiency: number; skill_class?: string; years_experience?: number; last_used?: string }
 ): Promise<CandidateSkill> {
-  const res = await apiFetch(`/api/v1/skills/candidate/${candidateId}/${encodeURIComponent(skillName)}`, {
+  const res = await apiFetch(`${BASE_URL}/skills/candidate/${candidateId}/${encodeURIComponent(skillName)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -96,21 +96,33 @@ export async function editCandidateSkill(
 }
 
 export async function fetchJobSkillMatch(candidateId: string, jobId: string): Promise<JobSkillMatch> {
-  const res = await apiFetch(`/api/v1/skills/match?candidate_id=${encodeURIComponent(candidateId)}&job_id=${encodeURIComponent(jobId)}`);
+  const res = await apiFetch(`${BASE_URL}/skills/match?candidate_id=${encodeURIComponent(candidateId)}&job_id=${encodeURIComponent(jobId)}`);
   return read<JobSkillMatch>(res);
 }
 
 export async function fetchSkillMatrixAnalytics(jobId?: string): Promise<SkillMatrixAnalytics> {
   const qs = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
-  const res = await apiFetch(`/api/v1/skills/matrix${qs}`);
+  const res = await apiFetch(`${BASE_URL}/skills/matrix${qs}`);
   return read<SkillMatrixAnalytics>(res);
 }
 
 export async function mergeDuplicateSkills(sourceSkill: string, targetSkill: string): Promise<{ status: string; updated_candidate_skills: number }> {
-  const res = await apiFetch("/api/v1/skills/merge", {
+  const res = await apiFetch(`${BASE_URL}/skills/merge`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source_skill: sourceSkill, target_skill: targetSkill }),
   });
   return read<{ status: string; updated_candidate_skills: number }>(res);
+}
+
+/** Download the skill matrix as CSV (signed in, so it can't be a plain link). */
+export async function downloadSkillMatrixCsv(): Promise<void> {
+  const res = await apiFetch(`${BASE_URL}/skills/export`);
+  if (!res.ok) throw new Error("Could not export the skill matrix.");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "skill_matrix.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }

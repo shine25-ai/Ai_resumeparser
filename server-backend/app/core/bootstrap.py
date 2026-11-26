@@ -123,6 +123,22 @@ async def bootstrap_default_skills(db: AsyncIOMotorDatabase, company_id: str = D
 BUILT_IN_ADMIN_PASSWORD = "Admin@123"
 
 
+BUILT_IN_SECRET_KEY = "super-secret-key-change-in-production-ai-resume-parser-2026"
+
+
+def check_secret_key() -> None:
+    """
+    Refuse to run a shared (non-local) database with the SECRET_KEY published in this repository: anyone could
+    sign tokens for any user, file links and applicant tokens. Set SECRET_KEY in the server's .env.
+    """
+    if settings.SECRET_KEY == BUILT_IN_SECRET_KEY and not _is_local_database():
+        raise RuntimeError(
+            "SECRET_KEY is the built-in default. Set a long random SECRET_KEY in the server's .env "
+            "(for example: python -c 'import secrets; print(secrets.token_urlsafe(48))'). "
+            "Changing it signs everyone out once; stored passwords are not affected (they use ENCRYPTION_KEY)."
+        )
+
+
 def _uses_public_default_password() -> bool:
     return settings.DEFAULT_ADMIN_PASSWORD == BUILT_IN_ADMIN_PASSWORD
 
