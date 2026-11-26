@@ -441,18 +441,13 @@ export default function CompanyDashboard() {
               </button>
             </div>
 
-            {data?.recent_candidates?.length === 0 ? (
+            {(!data?.recent_candidates || data.recent_candidates.length === 0) ? (
               <div className="py-8 text-center text-xs text-slate-400">
                 No candidate applications recorded yet.
               </div>
             ) : (
               <div className="space-y-3">
-                {(data?.recent_candidates || [
-                  { id: "1", name: "Rakesh Kumar", role_experience: "Java Developer • 6.2 Yrs", rating: 4.3, stage: "Shortlisted" },
-                  { id: "2", name: "Priya S", role_experience: "React Developer • 4.8 Yrs", rating: 4.1, stage: "Interview" },
-                  { id: "3", name: "Aravind K", role_experience: "Databricks Engineer • 8.5 Yrs", rating: 4.6, stage: "Screening" },
-                  { id: "4", name: "Kirthika R", role_experience: "Python Developer • 3.9 Yrs", rating: 4.0, stage: "Shortlisted" },
-                ]).map((c) => {
+                {data.recent_candidates.map((c) => {
                   const stageColors: Record<string, string> = {
                     Shortlisted: "bg-emerald-50 text-emerald-700 border-emerald-200",
                     Interview: "bg-blue-50 text-blue-700 border-blue-200",

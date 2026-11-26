@@ -660,104 +660,240 @@ class AnalyticsService:
             return self._cache[cache_key]
 
         db = get_database()
-        now_utc = datetime.now(timezone.utc)
         c_start_iso = c_start.isoformat()
         c_end_iso = c_end.isoformat()
         p_start_iso = p_start.isoformat()
         p_end_iso = p_end.isoformat()
 
-        # Build query scopes
-        job_filter: Dict[str, Any] = {}
-        if job_id and job_id != "all":
-            job_filter["$or"] = [{"id": job_id}, {"opening_id": job_id}, {"job_id": job_id}]
-        if department and department != "all":
-            job_filter["department"] = department
+        job_id_filter = job_id if (job_id and job_id != "all") else None
+        dept_filter = department if (department and department != "all") else None
+        rec_filter = recruiter_id if (recruiter_id and recruiter_id != "all") else None
+        has_job_filter = bool(job_id_filter or dept_filter or rec_filter)
+
+        def _job_uid(job_doc: Dict[str, Any]) -> str:
+            return str(job_doc.get("id") or job_doc.get("opening_id") or "")
+
+        def _job_dept(job_doc: Dict[str, Any]) -> str:
+            return (job_doc.get("department") or "").strip() or "Other"
+
+        def _job_recruiter(job_doc: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+            cb = job_doc.get("created_by") or {}
+            if isinstance(cb, dict):
+                rid = cb.get("id")
+                if rid:
+                    return str(rid), str(cb.get("name") or cb.get("email") or rid)
+            return None, None
+
+        all_jobs = await db[JOB_OPENINGS_COLLECTION].find(
+            {},
+            {
+                "_id": 0,
+                "id": 1,
+                "opening_id": 1,
+                "title": 1,
+                "department": 1,
+                "open_positions": 1,
+                "status": 1,
+                "created_at": 1,
+                "created_by": 1,
+                "hiring_manager": 1,
+            },
+        ).to_list(length=None)
+
+        filtered_jobs: List[Dict[str, Any]] = []
+        for j in all_jobs:
+            jid = _job_uid(j)
+            if job_id_filter and jid != job_id_filter:
+                continue
+            if dept_filter and _job_dept(j) != dept_filter:
+                continue
+            if rec_filter:
+                rid, _ = _job_recruiter(j)
+                if rid != rec_filter:
+                    continue
+            filtered_jobs.append(j)
+
+        filtered_job_ids = {_job_uid(j) for j in filtered_jobs if _job_uid(j)}
+
+        app_projection = {
+            "_id": 0,
+            "id": 1,
+            "opening_id": 1,
+            "job_id": 1,
+            "submitted_at": 1,
+            "applied_at": 1,
+            "created_at": 1,
+            "heard_from": 1,
+            "source": 1,
+            "stage_id": 1,
+            "stage": 1,
+            "stage_updated_at": 1,
+            "hired_at": 1,
+            "history": 1,
+        }
+        int_projection = {
+            "_id": 0,
+            "id": 1,
+            "job_id": 1,
+            "opening_id": 1,
+            "interviewer_id": 1,
+            "status": 1,
+            "scheduled_date": 1,
+            "created_at": 1,
+        }
+
+        # Only what the report can show: from the start of the comparison period or of the 6-month trend,
+        # whichever is earlier (a company's full history is never loaded).
+        trend_y, trend_m = c_end.year, c_end.month - 5
+        while trend_m <= 0:
+            trend_m += 12
+            trend_y -= 1
+        earliest = min(p_start, datetime(trend_y, trend_m, 1, tzinfo=timezone.utc))
+        earliest_iso, earliest_day = earliest.isoformat(), earliest.strftime("%Y-%m-%d")
+
+        if has_job_filter and not filtered_job_ids:
+            all_apps: List[Dict[str, Any]] = []
+            all_interviews: List[Dict[str, Any]] = []
+        else:
+            app_and: List[Dict[str, Any]] = [{"$or": [
+                {"submitted_at": {"$gte": earliest_iso}},
+                {"applied_at": {"$gte": earliest_iso}},
+                {"hired_at": {"$gte": earliest_iso}},
+            ]}]
+            int_and: List[Dict[str, Any]] = [{"status": {"$ne": "CANCELLED"}}, {"$or": [
+                {"scheduled_date": {"$gte": earliest_day}},
+                {"created_at": {"$gte": earliest_iso}},
+            ]}]
+            if has_job_filter:
+                job_id_list = list(filtered_job_ids)
+                app_and.append({"$or": [
+                    {"opening_id": {"$in": job_id_list}},
+                    {"job_id": {"$in": job_id_list}},
+                ]})
+                int_and.append({"$or": [
+                    {"job_id": {"$in": job_id_list}},
+                    {"opening_id": {"$in": job_id_list}},
+                ]})
+            all_apps = await db[JOB_APPLICATIONS_COLLECTION].find({"$and": app_and}, app_projection).to_list(length=None)
+            all_interviews = await db[INTERVIEWS_COLLECTION].find({"$and": int_and}, int_projection).to_list(length=None)
 
         # ── 1. Jobs Opened ───────────────────────────────────────────────────
-        jobs_opened_cur = await db[JOB_OPENINGS_COLLECTION].count_documents({
-            "created_at": {"$gte": c_start_iso, "$lte": c_end_iso}
-        })
-        if jobs_opened_cur == 0:
-            jobs_opened_cur = await db[JOB_OPENINGS_COLLECTION].count_documents({})
-        jobs_opened_prev = await db[JOB_OPENINGS_COLLECTION].count_documents({
-            "created_at": {"$gte": p_start_iso, "$lte": p_end_iso}
-        })
+        jobs_opened_cur = 0
+        jobs_opened_prev = 0
+        for j in filtered_jobs:
+            cdt = _parse_utc_dt(j.get("created_at"))
+            if cdt:
+                if c_start <= cdt <= c_end:
+                    jobs_opened_cur += 1
+                elif p_start <= cdt <= p_end:
+                    jobs_opened_prev += 1
         pct_jobs, _ = self.calc_change_pct(jobs_opened_cur, jobs_opened_prev)
 
         # ── 2. Applications in Range ─────────────────────────────────────────
-        apps_cur = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-            "$or": [
-                {"submitted_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
-                {"applied_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
-            ]
-        })
-        if apps_cur == 0:
-            apps_cur = await db[RESUMES_COLLECTION].count_documents({"redirect_id": None})
-        apps_prev = max(1, int(apps_cur * 0.74))  # ~36% increase as in mockup
+        apps_in_range: List[Dict[str, Any]] = []
+        apps_in_prev: List[Dict[str, Any]] = []
+        for app in all_apps:
+            sdt = _parse_utc_dt(app.get("submitted_at") or app.get("applied_at"))
+            if sdt:
+                if c_start <= sdt <= c_end:
+                    apps_in_range.append(app)
+                elif p_start <= sdt <= p_end:
+                    apps_in_prev.append(app)
+
+        apps_cur = len(apps_in_range)
+        apps_prev = len(apps_in_prev)
         pct_apps, _ = self.calc_change_pct(apps_cur, apps_prev)
 
-        # ── 3. Shortlisted in Range ──────────────────────────────────────────
-        shortlisted_cur = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-            "stage_id": "shortlisted",
-            "stage_updated_at": {"$gte": c_start_iso, "$lte": c_end_iso},
-        })
-        if shortlisted_cur == 0:
-            shortlisted_cur = int(apps_cur * 0.332)
-        shortlisted_prev = max(1, int(shortlisted_cur * 0.76))
+        # ── 3. Funnel Stage Progression & Shortlisted ────────────────────────
+        stage_order = {
+            "applied": 1,
+            "screening": 2,
+            "shortlisted": 3,
+            "interview": 4,
+            "interviewing": 4,
+            "selected": 5,
+            "hired": 6,
+        }
+
+        def _highest_stage_order(app: Dict[str, Any]) -> int:
+            sid = str(app.get("stage_id") or app.get("stage") or "applied").strip().lower()
+            order = stage_order.get(sid, 0)
+            for h in app.get("history") or []:
+                if isinstance(h, dict):
+                    to_st = str(h.get("to_stage") or h.get("to") or "").strip().lower()
+                    order = max(order, stage_order.get(to_st, 0))
+            return max(order, 1)
+
+        shortlisted_cur = sum(1 for a in apps_in_range if _highest_stage_order(a) >= 3)
+        shortlisted_prev = sum(1 for a in apps_in_prev if _highest_stage_order(a) >= 3)
         pct_short, _ = self.calc_change_pct(shortlisted_cur, shortlisted_prev)
 
         # ── 4. Interviews in Range ───────────────────────────────────────────
-        int_query = {
-            "status": {"$ne": "CANCELLED"},
-            "$or": [
-                {"scheduled_date": {"$gte": c_start.strftime("%Y-%m-%d"), "$lte": c_end.strftime("%Y-%m-%d")}},
-                {"created_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
-            ],
-        }
-        interviews_cur = await db[INTERVIEWS_COLLECTION].count_documents(int_query)
-        if interviews_cur == 0:
-            interviews_cur = int(apps_cur * 0.232)
-        interviews_prev = max(1, int(interviews_cur * 0.78))
+        c_start_d = c_start.strftime("%Y-%m-%d")
+        c_end_d = c_end.strftime("%Y-%m-%d")
+        p_start_d = p_start.strftime("%Y-%m-%d")
+        p_end_d = p_end.strftime("%Y-%m-%d")
+
+        def _int_in_bounds(inv: Dict[str, Any], s_date: str, e_date: str, s_dt: datetime, e_dt: datetime) -> bool:
+            sd = inv.get("scheduled_date")
+            if isinstance(sd, str) and len(sd) >= 10:
+                return s_date <= sd[:10] <= e_date
+            cdt = _parse_utc_dt(inv.get("created_at"))
+            return bool(cdt and s_dt <= cdt <= e_dt)
+
+        interviews_in_range = [inv for inv in all_interviews if _int_in_bounds(inv, c_start_d, c_end_d, c_start, c_end)]
+        interviews_in_prev = [inv for inv in all_interviews if _int_in_bounds(inv, p_start_d, p_end_d, p_start, p_end)]
+        interviews_cur = len(interviews_in_range)
+        interviews_prev = len(interviews_in_prev)
         pct_int, _ = self.calc_change_pct(interviews_cur, interviews_prev)
 
         # ── 5. Hired in Range ────────────────────────────────────────────────
-        hires_cur = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-            "$or": [
-                {"stage_id": "hired"},
-                {"hired_at": {"$gte": c_start_iso, "$lte": c_end_iso}},
-            ]
-        })
-        if hires_cur == 0:
-            hires_cur = await db[RESUMES_COLLECTION].count_documents(
-                {"redirect_id": None, "manual_stage": "Selected"}
-            )
-        hires_prev = max(1, int(hires_cur * 0.75))
+        def _is_hired_in_range(app: Dict[str, Any], s_dt: datetime, e_dt: datetime) -> bool:
+            sid = str(app.get("stage_id") or "").strip().lower()
+            h_dt = _parse_utc_dt(app.get("hired_at"))
+            if h_dt is not None:
+                if sid and sid != "hired":
+                    return False
+                return s_dt <= h_dt <= e_dt
+            if sid == "hired":
+                fallback_dt = _parse_utc_dt(app.get("stage_updated_at") or app.get("submitted_at") or app.get("applied_at"))
+                return bool(fallback_dt and s_dt <= fallback_dt <= e_dt)
+            return False
+
+        hires_in_range = [app for app in all_apps if _is_hired_in_range(app, c_start, c_end)]
+        hires_in_prev = [app for app in all_apps if _is_hired_in_range(app, p_start, p_end)]
+        hires_cur = len(hires_in_range)
+        hires_prev = len(hires_in_prev)
         pct_hires, _ = self.calc_change_pct(hires_cur, hires_prev)
 
         # ── 6. Time to Hire (in Days) ────────────────────────────────────────
-        hired_apps = await db[JOB_APPLICATIONS_COLLECTION].find(
-            {"hired_at": {"$ne": None}},
-            {"submitted_at": 1, "applied_at": 1, "created_at": 1, "hired_at": 1}
-        ).to_list(length=None)
-
-        dwell_days = []
-        for ha in hired_apps:
+        dwell_days: List[float] = []
+        for ha in hires_in_range:
             h_dt = _parse_utc_dt(ha.get("hired_at"))
             a_dt = _parse_utc_dt(ha.get("submitted_at") or ha.get("applied_at") or ha.get("created_at"))
             if h_dt and a_dt and h_dt >= a_dt:
                 dwell_days.append((h_dt - a_dt).total_seconds() / 86400.0)
 
+        prev_dwell_days: List[float] = []
+        for ha in hires_in_prev:
+            h_dt = _parse_utc_dt(ha.get("hired_at"))
+            a_dt = _parse_utc_dt(ha.get("submitted_at") or ha.get("applied_at") or ha.get("created_at"))
+            if h_dt and a_dt and h_dt >= a_dt:
+                prev_dwell_days.append((h_dt - a_dt).total_seconds() / 86400.0)
+
         if dwell_days:
             time_to_hire_days = round(sum(dwell_days) / len(dwell_days), 1)
             median_time_to_hire_days = round(float(statistics.median(dwell_days)), 1)
-        elif hires_cur == 0:
+        else:
             time_to_hire_days = 0.0
             median_time_to_hire_days = 0.0
+
+        if prev_dwell_days:
+            prev_time_to_hire_days = round(sum(prev_dwell_days) / len(prev_dwell_days), 1)
+            pct_time_to_hire, _ = self.calc_change_pct(time_to_hire_days, prev_time_to_hire_days)
         else:
-            time_to_hire_days = 24.0
-            median_time_to_hire_days = 22.0
-        prev_time_to_hire_days = 29.0
-        pct_time_to_hire = -18.0
+            prev_time_to_hire_days = 0.0
+            pct_time_to_hire = 0.0
 
         kpis = {
             "jobs_opened": {"value": jobs_opened_cur, "change_pct": pct_jobs},
@@ -774,217 +910,268 @@ class AnalyticsService:
         }
 
         # ── 7. Recruitment Funnel & Conversion Rates ─────────────────────────
-        if apps_cur > 0:
-            screened_count = int(apps_cur * 0.638)
-            shortlisted_count = shortlisted_cur
-            interviewed_count = interviews_cur
-            selected_count = max(hires_cur, int(apps_cur * 0.07))
-            hired_count = hires_cur
+        def _pct(num: int, den: int) -> float:
+            return round((num / den) * 100.0, 1) if den > 0 else 0.0
 
-            funnel = [
-                {
-                    "stage": "Applications",
-                    "count": apps_cur,
-                    "percentage": 100.0,
-                    "conversion_label": "Screening Rate",
-                    "conversion_rate": 63.8,
-                },
-                {
-                    "stage": "Screened",
-                    "count": screened_count,
-                    "percentage": round((screened_count / max(apps_cur, 1)) * 100, 1),
-                    "conversion_label": "Shortlist Rate",
-                    "conversion_rate": 52.0,
-                },
-                {
-                    "stage": "Shortlisted",
-                    "count": shortlisted_count,
-                    "percentage": round((shortlisted_count / max(apps_cur, 1)) * 100, 1),
-                    "conversion_label": "Interview Rate",
-                    "conversion_rate": 69.9,
-                },
-                {
-                    "stage": "Interviewed",
-                    "count": interviewed_count,
-                    "percentage": round((interviewed_count / max(apps_cur, 1)) * 100, 1),
-                    "conversion_label": "Selection Rate",
-                    "conversion_rate": 29.9,
-                },
-                {
-                    "stage": "Selected",
-                    "count": selected_count,
-                    "percentage": round((selected_count / max(apps_cur, 1)) * 100, 1),
-                    "conversion_label": "Hiring Rate",
-                    "conversion_rate": 75.0,
-                },
-                {
-                    "stage": "Hired",
-                    "count": hired_count,
-                    "percentage": round((hired_count / max(apps_cur, 1)) * 100, 1),
-                    "conversion_label": None,
-                    "conversion_rate": None,
-                },
-            ]
-        else:
-            funnel = [
-                {"stage": "Applications", "count": 0, "percentage": 0.0, "conversion_label": "Screening Rate", "conversion_rate": 0.0},
-                {"stage": "Screened", "count": 0, "percentage": 0.0, "conversion_label": "Shortlist Rate", "conversion_rate": 0.0},
-                {"stage": "Shortlisted", "count": 0, "percentage": 0.0, "conversion_label": "Interview Rate", "conversion_rate": 0.0},
-                {"stage": "Interviewed", "count": 0, "percentage": 0.0, "conversion_label": "Selection Rate", "conversion_rate": 0.0},
-                {"stage": "Selected", "count": 0, "percentage": 0.0, "conversion_label": "Hiring Rate", "conversion_rate": 0.0},
-                {"stage": "Hired", "count": 0, "percentage": 0.0, "conversion_label": None, "conversion_rate": None},
-            ]
+        screened_count = sum(1 for a in apps_in_range if _highest_stage_order(a) >= 2)
+        shortlisted_count = shortlisted_cur
+        interviewed_count = sum(1 for a in apps_in_range if _highest_stage_order(a) >= 4)
+        selected_count = sum(1 for a in apps_in_range if _highest_stage_order(a) >= 5)
+        hired_count = sum(1 for a in apps_in_range if _highest_stage_order(a) >= 6)
+
+        funnel = [
+            {
+                "stage": "Applications",
+                "count": apps_cur,
+                "percentage": 100.0 if apps_cur > 0 else 0.0,
+                "conversion_label": "Screening Rate",
+                "conversion_rate": _pct(screened_count, apps_cur),
+            },
+            {
+                "stage": "Screened",
+                "count": screened_count,
+                "percentage": _pct(screened_count, apps_cur),
+                "conversion_label": "Shortlist Rate",
+                "conversion_rate": _pct(shortlisted_count, screened_count),
+            },
+            {
+                "stage": "Shortlisted",
+                "count": shortlisted_count,
+                "percentage": _pct(shortlisted_count, apps_cur),
+                "conversion_label": "Interview Rate",
+                "conversion_rate": _pct(interviewed_count, shortlisted_count),
+            },
+            {
+                "stage": "Interviewed",
+                "count": interviewed_count,
+                "percentage": _pct(interviewed_count, apps_cur),
+                "conversion_label": "Selection Rate",
+                "conversion_rate": _pct(selected_count, interviewed_count),
+            },
+            {
+                "stage": "Selected",
+                "count": selected_count,
+                "percentage": _pct(selected_count, apps_cur),
+                "conversion_label": "Hiring Rate",
+                "conversion_rate": _pct(hired_count, selected_count),
+            },
+            {
+                "stage": "Hired",
+                "count": hired_count,
+                "percentage": _pct(hired_count, apps_cur),
+                "conversion_label": None,
+                "conversion_rate": None,
+            },
+        ]
 
         # ── 8. Hiring Trend (Last 6 Months: Applications bar + Hired line) ────
-        months_order = []
-        cur_m = (now_utc.replace(day=1) - timedelta(days=150)).replace(day=1)
-        for _ in range(6):
-            months_order.append(cur_m)
-            # increment month
-            cur_m = (cur_m.replace(day=28) + timedelta(days=5)).replace(day=1)
+        ref_dt = c_end
+        year, month = ref_dt.year, ref_dt.month
+        months_order: List[datetime] = []
+        for offset in range(5, -1, -1):
+            m = month - offset
+            y = year
+            while m <= 0:
+                m += 12
+                y -= 1
+            months_order.append(datetime(y, m, 1, tzinfo=timezone.utc))
 
         hiring_trend = []
-        for m in months_order:
-            m_label = m.strftime("%b")
-            m_start = m.isoformat()
-            m_next = (m.replace(day=28) + timedelta(days=5)).replace(day=1)
-            m_end = (m_next - timedelta(microseconds=1)).isoformat()
+        for m_dt in months_order:
+            next_y = m_dt.year + (1 if m_dt.month == 12 else 0)
+            next_m = 1 if m_dt.month == 12 else m_dt.month + 1
+            m_next = datetime(next_y, next_m, 1, tzinfo=timezone.utc)
 
-            m_apps = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-                "$or": [
-                    {"submitted_at": {"$gte": m_start, "$lte": m_end}},
-                    {"applied_at": {"$gte": m_start, "$lte": m_end}},
-                ]
-            })
-            if m_apps == 0:
-                m_apps = await db[RESUMES_COLLECTION].count_documents({
-                    "redirect_id": None,
-                    "upload_date": {"$gte": m_start, "$lte": m_end},
-                })
-            m_hires = await db[JOB_APPLICATIONS_COLLECTION].count_documents({
-                "hired_at": {"$gte": m_start, "$lte": m_end}
-            })
+            m_apps = 0
+            m_hires = 0
+            for app in all_apps:
+                sdt = _parse_utc_dt(app.get("submitted_at") or app.get("applied_at"))
+                if sdt and m_dt <= sdt < m_next:
+                    m_apps += 1
+                hdt = _parse_utc_dt(app.get("hired_at"))
+                if hdt and m_dt <= hdt < m_next:
+                    m_hires += 1
 
             hiring_trend.append({
-                "month": m_label,
-                "applications": m_apps if m_apps > 0 else 140,
-                "hired": m_hires if m_hires > 0 else 10,
+                "month": m_dt.strftime("%b"),
+                "applications": m_apps,
+                "hired": m_hires,
             })
 
         # ── 9. Applications by Source (Donut Chart) ──────────────────────────
-        source_pipeline = [
-            {"$match": {"redirect_id": None}},
-            {"$group": {"_id": "$resume_source", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-        ]
-        raw_sources = await db[RESUMES_COLLECTION].aggregate(source_pipeline).to_list(length=10)
-        source_colors = {
-            "career_page": "#3b82f6",
-            "linkedin": "#0ea5e9",
-            "naukri": "#8b5cf6",
-            "referral": "#f59e0b",
-            "others": "#ec4899",
-        }
+        def _source_color(name: str) -> str:
+            lower = name.strip().lower()
+            if "linkedin" in lower:
+                return "#0ea5e9"
+            if "naukri" in lower:
+                return "#8b5cf6"
+            if "referral" in lower:
+                return "#f59e0b"
+            if "career" in lower or "website" in lower:
+                return "#3b82f6"
+            return "#64748b"
 
-        applications_by_source = []
-        if raw_sources:
-            for s in raw_sources:
-                src_raw = str(s.get("_id") or "others").lower().replace(" ", "_")
-                src_name = "Company Career Page" if src_raw in ("career_page", "careers", "website") else (
-                    "LinkedIn" if "linkedin" in src_raw else (
-                        "Naukri.com" if "naukri" in src_raw else (
-                            "Employee Referral" if "referral" in src_raw else "Others (Indeed, etc.)"
-                        )
-                    )
-                )
-                c_cnt = s.get("count", 0)
-                applications_by_source.append({
-                    "source": src_name,
-                    "count": c_cnt,
-                    "percentage": round((c_cnt / max(apps_cur, 1)) * 100, 1),
-                    "color": source_colors.get(src_raw, "#64748b"),
-                })
-        elif apps_cur > 0:
-            applications_by_source = [
-                {"source": "Company Career Page", "count": int(apps_cur * 0.348), "percentage": 34.8, "color": "#3b82f6"},
-                {"source": "LinkedIn", "count": int(apps_cur * 0.226), "percentage": 22.6, "color": "#0ea5e9"},
-                {"source": "Naukri.com", "count": int(apps_cur * 0.145), "percentage": 14.5, "color": "#8b5cf6"},
-                {"source": "Employee Referral", "count": int(apps_cur * 0.121), "percentage": 12.1, "color": "#f59e0b"},
-                {"source": "Others (Indeed, etc.)", "count": int(apps_cur * 0.160), "percentage": 16.0, "color": "#ec4899"},
-            ]
-        else:
-            applications_by_source = []
+        source_counts: Dict[str, int] = {}
+        for app in apps_in_range:
+            src = (app.get("heard_from") or "").strip() or (app.get("source") or "").strip() or "Other"
+            source_counts[src] = source_counts.get(src, 0) + 1
+
+        applications_by_source = [
+            {
+                "source": src,
+                "count": cnt,
+                "percentage": round((cnt / apps_cur) * 100.0, 1) if apps_cur > 0 else 0.0,
+                "color": _source_color(src),
+            }
+            for src, cnt in sorted(source_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
 
         # ── 10. Hiring by Department ─────────────────────────────────────────
-        if jobs_opened_cur > 0 or hires_cur > 0:
-            departments = [
-                ("Engineering", 38, 50, 76.0),
-                ("Data & Analytics", 14, 18, 77.8),
-                ("Product", 12, 15, 80.0),
-                ("QA & Testing", 10, 12, 83.3),
-                ("UI / UX", 6, 8, 75.0),
-                ("Others", 16, 20, 80.0),
-            ]
-            hiring_by_department = [
-                {"department": name, "hired": h, "openings": o, "fill_rate": fill}
-                for name, h, o, fill in departments
-            ]
-        else:
-            hiring_by_department = []
+        dept_openings: Dict[str, int] = {}
+        dept_hired: Dict[str, int] = {}
+        job_to_dept: Dict[str, str] = {}
+
+        for j in filtered_jobs:
+            jid = _job_uid(j)
+            dept = _job_dept(j)
+            pos_raw = j.get("open_positions")
+            openings = max(0, int(pos_raw)) if pos_raw is not None and pos_raw != "" else 1
+            dept_openings[dept] = dept_openings.get(dept, 0) + openings
+            dept_hired.setdefault(dept, 0)
+            if jid:
+                job_to_dept[jid] = dept
+
+        for app in hires_in_range:
+            jid = str(app.get("opening_id") or app.get("job_id") or "")
+            dept = job_to_dept.get(jid)
+            if dept is not None:
+                dept_hired[dept] = dept_hired.get(dept, 0) + 1
+
+        hiring_by_department = [
+            {
+                "department": dept,
+                "hired": dept_hired.get(dept, 0),
+                "openings": openings,
+                "fill_rate": round((dept_hired.get(dept, 0) / openings) * 100.0, 1) if openings > 0 else 0.0,
+            }
+            for dept, openings in sorted(
+                dept_openings.items(),
+                key=lambda kv: (-dept_hired.get(kv[0], 0), -kv[1], kv[0]),
+            )
+        ]
 
         # ── 11. Recruiter Performance Table ──────────────────────────────────
-        if apps_cur > 0 or hires_cur > 0:
-            recruiters = [
-                ("Jennifer P", 412, 96, 28, 29.2),
-                ("Bharath K", 356, 84, 20, 23.8),
-                ("Kirthika R", 280, 66, 18, 27.3),
-                ("Gokul S", 268, 58, 16, 27.6),
-                ("Meena K", 210, 50, 14, 28.0),
-            ]
-            recruiter_performance = [
-                {
-                    "recruiter_id": f"rec-{i}",
-                    "recruiter_name": name,
-                    "applications": a,
-                    "interviews": invs,
-                    "hired": h,
-                    "hire_rate": rate,
-                }
-                for i, (name, a, invs, h, rate) in enumerate(recruiters, start=1)
-            ]
-        else:
-            recruiter_performance = []
+        rec_names: Dict[str, str] = {}
+        rec_apps: Dict[str, int] = {}
+        rec_ints: Dict[str, int] = {}
+        rec_hired: Dict[str, int] = {}
+        job_to_rec: Dict[str, str] = {}
+
+        for j in filtered_jobs:
+            jid = _job_uid(j)
+            rid, rname = _job_recruiter(j)
+            if not rid:
+                continue
+            rec_names[rid] = rname or rid
+            rec_apps.setdefault(rid, 0)
+            rec_ints.setdefault(rid, 0)
+            rec_hired.setdefault(rid, 0)
+            if jid:
+                job_to_rec[jid] = rid
+
+        for app in apps_in_range:
+            jid = str(app.get("opening_id") or app.get("job_id") or "")
+            rid = job_to_rec.get(jid)
+            if rid is not None:
+                rec_apps[rid] = rec_apps.get(rid, 0) + 1
+
+        for inv in interviews_in_range:
+            jid = str(inv.get("job_id") or inv.get("opening_id") or "")
+            rid = job_to_rec.get(jid)
+            if rid is not None:
+                rec_ints[rid] = rec_ints.get(rid, 0) + 1
+
+        for app in hires_in_range:
+            jid = str(app.get("opening_id") or app.get("job_id") or "")
+            rid = job_to_rec.get(jid)
+            if rid is not None:
+                rec_hired[rid] = rec_hired.get(rid, 0) + 1
+
+        recruiter_performance = [
+            {
+                "recruiter_id": rid,
+                "recruiter_name": rec_names[rid],
+                "applications": rec_apps[rid],
+                "interviews": rec_ints[rid],
+                "hired": rec_hired[rid],
+                "hire_rate": round((rec_hired[rid] / rec_apps[rid]) * 100.0, 1) if rec_apps[rid] > 0 else 0.0,
+            }
+            for rid in sorted(
+                rec_names.keys(),
+                key=lambda r: (-rec_hired[r], -rec_apps[r], rec_names[r]),
+            )
+        ]
 
         # ── 12. Automated AI Key Insights ────────────────────────────────────
-        if apps_cur > 0 or hires_cur > 0:
-            key_insights = [
-                {
-                    "id": "ins-1",
-                    "text": f"Hiring increased by {pct_hires}% ({hires_cur} hires) compared to previous {days} days ({hires_prev} hires).",
-                    "category": "performance",
-                },
-                {
-                    "id": "ins-2",
-                    "text": f"Time to hire reduced by {abs(pct_time_to_hire)}% ({time_to_hire_days} days vs {prev_time_to_hire_days} days).",
-                    "category": "velocity",
-                },
-                {
-                    "id": "ins-3",
-                    "text": "Company Career Page is the top source (34.8%) with highest hire conversion (8.9%).",
-                    "category": "source",
-                },
-                {
-                    "id": "ins-4",
-                    "text": "Engineering has the highest hiring (38), followed by Data & Analytics (14).",
-                    "category": "department",
-                },
-                {
-                    "id": "ins-5",
-                    "text": "Jennifer P has the highest hire rate (29.2%).",
-                    "category": "recruiter",
-                },
-            ]
-        else:
+        key_insights: List[Dict[str, str]] = []
+        period_label = f"{days} days" if days else "period"
+
+        if hires_cur > 0 or hires_prev > 0:
+            if pct_hires > 0:
+                hire_text = f"Hiring increased by {pct_hires}% ({hires_cur} hires) compared to previous {period_label} ({hires_prev} hires)."
+            elif pct_hires < 0:
+                hire_text = f"Hiring decreased by {abs(pct_hires)}% ({hires_cur} hires) compared to previous {period_label} ({hires_prev} hires)."
+            else:
+                hire_text = f"Hiring remained steady at {hires_cur} hires compared to previous {period_label} ({hires_prev} hires)."
+            key_insights.append({"id": "ins-1", "text": hire_text, "category": "performance"})
+
+        if time_to_hire_days > 0:
+            if prev_time_to_hire_days > 0:
+                if pct_time_to_hire < 0:
+                    tth_text = f"Time to hire reduced by {abs(pct_time_to_hire)}% ({time_to_hire_days} days vs {prev_time_to_hire_days} days)."
+                elif pct_time_to_hire > 0:
+                    tth_text = f"Time to hire increased by {pct_time_to_hire}% ({time_to_hire_days} days vs {prev_time_to_hire_days} days)."
+                else:
+                    tth_text = f"Time to hire remained at {time_to_hire_days} days (vs {prev_time_to_hire_days} days)."
+            else:
+                tth_text = f"Average time to hire is {time_to_hire_days} days (median {median_time_to_hire_days} days)."
+            key_insights.append({"id": "ins-2", "text": tth_text, "category": "velocity"})
+
+        if applications_by_source:
+            top_src = applications_by_source[0]
+            key_insights.append({
+                "id": "ins-3",
+                "text": f"{top_src['source']} is the top source ({top_src['percentage']}%, {top_src['count']} applications).",
+                "category": "source",
+            })
+
+        depts_with_hires = [d for d in hiring_by_department if d["hired"] > 0]
+        if depts_with_hires:
+            top_dept = depts_with_hires[0]
+            if len(depts_with_hires) > 1:
+                sec_dept = depts_with_hires[1]
+                dept_text = f"{top_dept['department']} has the highest hiring ({top_dept['hired']}), followed by {sec_dept['department']} ({sec_dept['hired']})."
+            else:
+                dept_text = f"{top_dept['department']} leads hiring with {top_dept['hired']} hires ({top_dept['fill_rate']}% fill rate)."
+            key_insights.append({"id": "ins-4", "text": dept_text, "category": "department"})
+
+        recs_with_hires = [r for r in recruiter_performance if r["hired"] > 0]
+        if recs_with_hires:
+            top_rec = max(recs_with_hires, key=lambda r: (r["hire_rate"], r["hired"], r["applications"]))
+            key_insights.append({
+                "id": "ins-5",
+                "text": f"{top_rec['recruiter_name']} has the highest hire rate ({top_rec['hire_rate']}%).",
+                "category": "recruiter",
+            })
+        elif recruiter_performance and any(r["applications"] > 0 for r in recruiter_performance):
+            top_rec = recruiter_performance[0]
+            key_insights.append({
+                "id": "ins-5",
+                "text": f"{top_rec['recruiter_name']} handled the most applications ({top_rec['applications']}).",
+                "category": "recruiter",
+            })
+
+        if not key_insights:
             key_insights = [
                 {
                     "id": "ins-empty",
