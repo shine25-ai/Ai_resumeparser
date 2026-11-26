@@ -184,3 +184,23 @@ async def test_ensure_indexes_creates_each_index_once():
 
     assert await ensure_indexes(Db()) == len(INDEXES)
     assert len(set(made)) == len(made)
+
+
+# ── Frontend API paths ──────────────────────────────────────────────────────
+
+
+def test_frontend_never_calls_a_relative_api_path():
+    """
+    The frontend and the API are deployed on different hosts, so every call needs BASE_URL. A relative
+    "/api/v1/..." call reaches the frontend server instead: the Phase 11 bell and the skill pages broke this way.
+    """
+    import pathlib
+    import re
+
+    src = pathlib.Path(__file__).resolve().parents[2] / "src"
+    if not src.exists():
+        pytest.skip("frontend sources not present")
+    pattern = re.compile(r"""(?:fetch|apiFetch)\(\s*[`'"]/api/|location\.href\s*=\s*[`'"]/api/""")
+    hits = [f"{p.relative_to(src)}:{i}" for p in src.rglob("*.ts*") for i, line in enumerate(p.read_text().splitlines(), 1)
+            if pattern.search(line)]
+    assert hits == []
