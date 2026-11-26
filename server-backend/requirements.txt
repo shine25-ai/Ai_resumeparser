@@ -18,6 +18,11 @@ faster-whisper>=1.0.0
 cryptography>=50.0.0  # 50 fixes GHSA-g6cj-pr64-35w5
 boto3>=1.34.0
 segno>=1.6.0
+# Resume templates (app/controllers/resume_template_controller.py): jinja2 is imported at startup;
+# docxtpl renders DOCX templates. PDF export also needs weasyprint plus system libraries (pango); without
+# it the app still runs and only PDF template export is unavailable.
+jinja2>=3.1.4
+docxtpl>=0.18.0
 
 # Dev & Testing Dependencies
 pytest>=8.0.0
