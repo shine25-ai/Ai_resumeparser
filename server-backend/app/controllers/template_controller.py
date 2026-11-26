@@ -7,6 +7,8 @@ from app.utils.encryption import decrypt_password
 import smtplib
 from email.message import EmailMessage
 import os
+from app.core.database import get_database
+from app.services.mailer import address, branded_html, email_context
 
 class TemplateController:
     def __init__(self):
@@ -50,9 +52,10 @@ class TemplateController:
 
         try:
             password = decrypt_password(config_model.smtp_password)
+            mail_ctx = await email_context(get_database())
             msg = EmailMessage()
             msg["Subject"] = template.subject
-            msg["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+            address(msg, config_model, mail_ctx)
             msg["To"] = ", ".join(to_emails)
             
             if cc_emails:
@@ -63,7 +66,8 @@ class TemplateController:
             
             # The HTML body
             msg.set_content("Please enable HTML to view this email.")
-            msg.add_alternative(template.body, subtype='html')
+            # The company's branded layout around the template text (logo, colour, footer).
+            msg.add_alternative(branded_html(mail_ctx, template.body), subtype='html')
 
             if attachments:
                 for file in attachments:

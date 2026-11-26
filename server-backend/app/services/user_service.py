@@ -11,7 +11,7 @@ from app.models.user import UserDocument
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
-from app.utils.constants import COMPANIES_COLLECTION
+from app.utils.constants import COMPANIES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import utc_now
 
 SUPERADMIN = "superadmin"
@@ -44,8 +44,11 @@ class UserService:
         if not permissions and user_dict.get("permissions"):
             permissions = user_dict.get("permissions", [])
 
+        from app.core.permissions import expand_permissions
+
         user_dict_copy = dict(user_dict)
-        user_dict_copy["permissions"] = permissions
+        # Module permissions plus the page names the screens check (old roles keep their access).
+        user_dict_copy["permissions"] = expand_permissions(permissions)
         return user_dict_copy
 
 
@@ -59,6 +62,11 @@ class UserService:
         if not email_allowed(company, email):
             domains = ", ".join("@" + d for d in company.get("email_domains") or [])
             raise BadRequestError(f"{company.get('name', 'This company')} only allows email addresses at {domains}.")
+
+    async def check_user_limit(self, extra: int = 0) -> None:
+        """The company's plan may limit its users (limits.users, 0 = no limit). `extra` counts pending invitations."""
+        from app.services.limit_service import LimitService
+        await LimitService(self.user_repo.db).check_users_limit(extra=extra)
 
     @staticmethod
     def _check_role_change(actor: Optional[Dict[str, Any]], role: Optional[str]) -> None:
@@ -78,6 +86,7 @@ class UserService:
             raise ConflictError(f"User with email '{payload.email}' already exists.")
         self._check_role_change(actor, payload.role)
         await self._check_email(email)
+        await self.check_user_limit()
 
         user_doc = UserDocument(
             full_name=payload.full_name.strip(),
@@ -85,6 +94,7 @@ class UserService:
             password=hash_password(payload.password),
             role=payload.role or "user",
             is_active=payload.is_active,
+            department=(payload.department or "").strip(),
         )
 
         created = await self.user_repo.create(user_doc.to_dict())
@@ -109,13 +119,14 @@ class UserService:
         enriched.update(
             company_id=current_user.get("company_id"),
             company_name=current_user.get("company_name"),
+            company_slug=current_user.get("company_slug"),
             is_superadmin=_is_super(user),
         )
         return UserResponse.model_validate(enriched)
 
     async def update_me(self, current_user: Dict[str, Any], payload: UserUpdate) -> UserResponse:
         """Users can change their own name, email and password, not their role or status."""
-        update_dict = payload.model_dump(exclude_unset=True, include={"full_name", "email", "password"})
+        update_dict = payload.model_dump(exclude_unset=True, include={"full_name", "email", "password", "ui_theme", "phone", "avatar_url"})
         with system_scope():
             user = await self.user_repo.get_by_id(current_user["id"])
             if not user:

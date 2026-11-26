@@ -2,13 +2,15 @@
 Role management service handling role CRUD operations and access privileges.
 """
 
-from typing import List
+from typing import Dict, List
+from app.utils.constants import USERS_COLLECTION
 import re
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.role import RoleDocument
 from app.repositories.role_repository import RoleRepository
 from app.schemas.role import RoleCreate, RoleResponse, RoleUpdate
 from app.utils.helpers import utc_now
+from app.core.permissions import clean_permissions
 
 
 
@@ -42,7 +44,7 @@ class RoleService:
             name=payload.name.strip(),
             slug=slug,
             description=payload.description or "",
-            permissions=payload.permissions,
+            permissions=clean_permissions(payload.permissions),
             is_system=False,
         )
 
@@ -62,7 +64,17 @@ class RoleService:
         super admin, so company admins never see it as an option.
         """
         roles = await self.role_repo.find_active_roles(skip=skip, limit=limit)
-        return [RoleResponse.model_validate(r) for r in roles if include_superadmin or not _is_superadmin_role(r)]
+        counts: Dict[str, int] = {}
+        try:
+            rows = await self.role_repo.db[USERS_COLLECTION].aggregate([
+                {"$match": {"is_deleted": {"$ne": True}}},
+                {"$group": {"_id": "$role", "n": {"$sum": 1}}},
+            ]).to_list(length=None)
+            counts = {r["_id"]: r["n"] for r in rows}
+        except Exception:
+            counts = {}
+        return [RoleResponse.model_validate({**r, "users_count": counts.get(r.get("slug"), 0)})
+                for r in roles if include_superadmin or not _is_superadmin_role(r)]
 
     async def update_role(self, role_id: str, payload: RoleUpdate) -> RoleResponse:
         """Update fields for specified role."""
@@ -79,6 +91,8 @@ class RoleService:
 
         if "name" in update_dict and update_dict["name"]:
             update_dict["name"] = update_dict["name"].strip()
+        if "permissions" in update_dict and update_dict["permissions"] is not None:
+            update_dict["permissions"] = clean_permissions(update_dict["permissions"])
 
         update_dict["updated_at"] = utc_now().isoformat()
         updated_role = await self.role_repo.update(role_id, update_dict)

@@ -27,16 +27,18 @@ class S3Service:
 
     def upload_file(self, file_content: bytes, filename: str, content_type: str = "application/octet-stream", folder: str = "resumes") -> str:
         """
-        Upload file content to S3 bucket and return public/access URL.
+        Upload file content to S3 and return its URL. Objects are private unless S3_OBJECT_ACL is "public-read";
+        the API turns this URL into a signed, expiring link (app.core.file_access).
         """
         try:
             object_name = f"{folder}/{filename}"
+            extra = {"ACL": "public-read"} if settings.S3_OBJECT_ACL == "public-read" else {}
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=object_name,
                 Body=file_content,
                 ContentType=content_type,
-                ACL="public-read",
+                **extra,
             )
             
             s3_url = f"{self.base_url}{object_name}"
@@ -50,3 +52,27 @@ class S3Service:
         except Exception as e:
             logger.error(f"Unexpected error uploading to S3: {e}")
             return f"{self.base_url}{folder}/{filename}"
+
+    def download_file(self, url: str) -> bytes:
+        """The bytes of a file this service uploaded (by its URL). Raises when it can't be read."""
+        from app.core.file_access import key_of
+
+        key = key_of(url)
+        if not key:
+            raise ValueError("Not a file in this bucket.")
+        obj = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
+        return obj["Body"].read()
+
+    def delete_file(self, url: str) -> bool:
+        """Delete a file this service uploaded (by its URL). Returns False when it isn't one of ours or fails."""
+        from app.core.file_access import key_of
+
+        key = key_of(url)
+        if not key:
+            return False
+        try:
+            self.s3_client.delete_object(Bucket=self.bucket_name, Key=key)
+            return True
+        except (BotoCoreError, ClientError) as e:
+            logger.error(f"Failed to delete '{key}' from S3: {e}")
+            return False

@@ -1,16 +1,16 @@
 # Careers page (embeddable)
 
-The public careers page: the open roles list, the **View Details** pop-up and the apply flow
-(email code, then resume upload with "How did you hear about this role?" and an optional note).
-Staff see the answer and note on the candidate profile and in the Job openings applications list. It builds into **one JavaScript file** that can be added to
+The public careers page (SRS Screens 16 and 17): the company's branded header, hero and sections from the
+**Career Page builder**, the open jobs with search and filters, a full job page (`?job=<id>`) with sharing,
+and the apply flow (email code, then resume upload). It builds into **one JavaScript file** that can be added to
 any website or project, or into **one HTML file** that can be hosted on its own.
 
-- **Fixed parts:** the Shinelogics header (logo, Careers, About Us) and footer. Both can be hidden.
-- **Everything else comes from the resume portal** (Job openings page):
-  - each role: title, department, location, type, experience, open positions, About the role,
-    Key responsibilities, Required skills, Qualifications, Preferred skills;
-  - the page text, under **Careers page text**: headings, search hint, the "no open roles"
-    message and the message shown after applying.
+- **Everything comes from the resume portal:** the published career page (Career Page builder), the company's
+  branding (Settings → Branding: colours, logo, font) and its published jobs.
+- **Header and footer** are the company's own (logo, links); hide them with `data-header="false"` /
+  `data-footer="false"` when the host site has its own.
+- Companies find ready-to-copy code, website-builder steps and a connection check in the portal under
+  **Career Page → Add to your website** (public copy for web agencies: `/careers/<company>/integrate`).
 
 ## Build
 
@@ -47,8 +47,8 @@ For local work: `npm run dev:careers` (http://localhost:5190).
 ## Add it to any site
 
 ```html
-<div data-shinelogics-careers data-api="https://api.example.com/api/v1"></div>
-<script src="https://your-cdn.example.com/shinelogics-careers.js"></script>
+<div data-careers data-company="acme" data-api="https://api.example.com/api/v1"></div>
+<script src="https://api.example.com/api/v1/public/career-page/embed.js" defer></script>
 ```
 
 | Attribute | Default | Meaning |
@@ -62,7 +62,7 @@ For local work: `npm run dev:careers` (http://localhost:5190).
 From JavaScript (for example in a React, Angular or Vue app, after the script has loaded):
 
 ```js
-const careers = window.ShinelogicsCareers.mount(document.getElementById("careers"), {
+const careers = window.CareersWidget.mount(document.getElementById("careers"), {
   apiBaseUrl: "https://api.example.com/api/v1",
   showHeader: false,
 });
@@ -109,3 +109,34 @@ Pick a company, or add one, in the bar at the top of **Job openings**; it shows 
 - An unknown address, or a company whose page is turned off, shows "This careers page was not found."
 - An application records the company and role on the candidate's resume (`company_id`, `company_name`, `job_title`,
   and every application in `applied_jobs`). Candidate lists can be filtered by company and show a company pill.
+
+
+## Names
+
+`data-careers` and `window.CareersWidget` are the names to use. The older `data-shinelogics-careers` and
+`window.ShinelogicsCareers` keep working for pages that already use them.
+
+## Serving the script
+
+The API serves the built script at `/api/v1/public/career-page/embed.js` (the file set by `CAREERS_EMBED_FILE`,
+default `dist-careers/shinelogics-careers.js`), so companies don't need a CDN. Run `npm run build:careers` on
+deploy. Requests from the embed carry `X-Careers-Embed: 1`, which lets the portal show where the page is embedded.
+
+## Own domains
+
+A company can serve its careers page at `<slug>.<CAREERS_DOMAIN>` or its own `careers.company.com`
+(CNAME + TXT verification in the portal). The app shows that company's careers page on those hosts
+(`/api/v1/public/career-page/resolve-host`). For HTTPS, a web server with on-demand TLS should ask
+`/api/v1/public/career-page/tls-allowed?domain=<host>` before issuing a certificate, e.g. Caddy:
+
+```
+{
+  on_demand_tls {
+    ask https://api.example.com/api/v1/public/career-page/tls-allowed
+  }
+}
+https:// {
+  tls { on_demand }
+  reverse_proxy app:80
+}
+```

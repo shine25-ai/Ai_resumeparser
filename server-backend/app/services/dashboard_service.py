@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from loguru import logger
 
 from app.utils.hiring_stage import STAGES, stage_of, verdict_of
+from app.core.tenant import TenantScopeError, current_company_id, in_system_scope
 from app.core.database import get_database
 from app.utils.constants import RESUMES_COLLECTION, INTERVIEWS_COLLECTION, RESUME_LOGS_COLLECTION
 from app.utils.enums import InterviewStatus
@@ -170,6 +171,14 @@ class DashboardService:
         self._cache[key] = value
         self._cache_timestamps[key] = time.time()
 
+    @staticmethod
+    def _company_key(key: str) -> str:
+        """Cache entries belong to one company: the cache is shared by every request."""
+        company = current_company_id() or ("__system__" if in_system_scope() else None)
+        if company is None:
+            raise TenantScopeError("The dashboard was asked for before the company was known.")
+        return f"{company}::{key}"
+
     async def _swr_fetch(self, key: str, fetch_coroutine) -> Any:
         """
         High-performance Stale-While-Revalidate with concurrent in-flight deduplication:
@@ -179,6 +188,7 @@ class DashboardService:
         3. If no cache exists: deduplicate concurrent callers so multiple simultaneous
            requests await the exact same database task instead of hammering Atlas.
         """
+        key = self._company_key(key)
         if self._is_cache_fresh(key):
             return self._cache[key]
 
@@ -1543,8 +1553,10 @@ class DashboardService:
     def invalidate_cache(cls, key: Optional[str] = None) -> None:
         """Invalidate all or a specific cache key."""
         if key:
-            cls._cache.pop(key, None)
-            cls._cache_timestamps.pop(key, None)
+            # Keys are stored per company ("<company>::<key>").
+            for k in [k for k in cls._cache if k == key or k.endswith(f"::{key}")]:
+                cls._cache.pop(k, None)
+                cls._cache_timestamps.pop(k, None)
         else:
             cls._cache.clear()
             cls._cache_timestamps.clear()

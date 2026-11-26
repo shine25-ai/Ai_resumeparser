@@ -45,12 +45,20 @@ async def lifespan(app: FastAPI):
     """
     setup_logging()
     logger.info("Initializing FastAPI Application Startup Lifespan...")
+    from app.core.bootstrap import check_secret_key
+    check_secret_key()
 
     await db_manager.connect_to_database()
     # Startup jobs see every company's data (app.core.tenant); requests never inherit this.
     db = db_manager.get_raw_db()
 
     await bootstrap_default_admin(db)
+
+    try:
+        from app.core.indexes import ensure_indexes
+        logger.info(f"Ensured {await ensure_indexes(db)} database indexes.")
+    except Exception as e:
+        logger.warning(f"Could not create database indexes: {e}")
 
     try:
         await IntegrationRepository(db).ensure_indexes()
@@ -69,6 +77,20 @@ async def lifespan(app: FastAPI):
         logger.error(f"Could not move older data into company workspaces: {e}")
 
     try:
+        from app.services.master_service import bootstrap_masters
+        added = await bootstrap_masters(db)
+        if added:
+            logger.info(f"Master data: added {added} default platform entries")
+    except Exception as e:
+        logger.warning(f"Could not set up master data: {e}")
+
+    try:
+        from app.services.audit_service import ensure_audit_indexes
+        await ensure_audit_indexes(db)
+    except Exception as e:
+        logger.warning(f"Could not create audit log indexes: {e}")
+
+    try:
         await fail_interrupted_parses(db)
     except Exception as e:
         logger.warning(f"Could not check for interrupted resume parses: {e}")
@@ -77,14 +99,35 @@ async def lifespan(app: FastAPI):
     try:
         import asyncio
         from app.services.dashboard_service import DashboardService
-        asyncio.create_task(DashboardService().get_dashboard_metrics())
+        # Warm the platform company's dashboard only: every cache entry belongs to one company.
+        from app.core.tenant import company_scope
+        from app.models.company import DEFAULT_COMPANY_ID
+
+        async def _warm() -> None:
+            with company_scope(DEFAULT_COMPANY_ID):
+                await DashboardService().get_dashboard_metrics()
+
+        asyncio.create_task(_warm())
     except Exception as e:
         logger.warning(f"Could not warm dashboard cache: {e}")
+
+    # Interview reminders (24h and 1h before). Each pass checks every company's upcoming interviews.
+    reminder_task = None
+    if settings.INTERVIEW_REMINDERS_ENABLED:
+        try:
+            from app.services.interview_reminders import start_reminder_loop
+            reminder_task = start_reminder_loop(db)
+        except Exception as e:
+            logger.warning(f"Could not start interview reminders: {e}")
+    else:
+        logger.info("Interview reminders are disabled (INTERVIEW_REMINDERS_ENABLED=false).")
 
     logger.info("Application startup completed successfully.")
 
     yield
 
     logger.info("Initiating FastAPI Application Shutdown Lifespan...")
+    if reminder_task is not None:
+        reminder_task.cancel()
     await db_manager.close_database_connection()
     logger.info("Application shutdown complete.")

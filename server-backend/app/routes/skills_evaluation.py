@@ -6,14 +6,16 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import require_access, get_current_active_user
 from app.repositories.skills_evaluation_repository import SkillsEvaluationRepository
 from app.services.skills_evaluation_service import SkillsEvaluationService
 from app.controllers.skills_evaluation_controller import SkillsEvaluationController
 from app.schemas.skills_evaluation import SkillsEvaluationCreate
 
 
-router = APIRouter(prefix="/api/v1/skills-evaluations", tags=["Skills Evaluations"])
+
+_SKILLS_ACCESS = require_access("skills", {})
+router = APIRouter(prefix="/api/v1/skills-evaluations", tags=["Skills Evaluations"], dependencies=[Depends(_SKILLS_ACCESS)])
 
 
 def get_skills_evaluation_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -> SkillsEvaluationController:

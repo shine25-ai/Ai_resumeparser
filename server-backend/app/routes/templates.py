@@ -1,3 +1,4 @@
+from app.core.dependencies import require_access
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Form, UploadFile, File
 from app.schemas.mail_template import MailTemplateCreate, MailTemplateUpdate, MailTemplateResponse
@@ -7,7 +8,13 @@ import json
 from app.core.dependencies import get_current_active_user
 
 # Logged-in users only (this router can also send test emails)
-router = APIRouter(prefix="/api/v1/templates", tags=["mail_templates"], dependencies=[Depends(get_current_active_user)])
+
+_SETTINGS_ACCESS = require_access("settings", {
+    ("POST", "/api/v1/templates"): "settings:edit",
+    ("DELETE", "/api/v1/templates/{template_id}"): "settings:edit",
+    ("POST", "/api/v1/templates/{template_id}/send-test"): "settings:edit",
+})
+router = APIRouter(prefix="/api/v1/templates", tags=["mail_templates"], dependencies=[Depends(_SETTINGS_ACCESS), Depends(get_current_active_user)])
 
 def get_controller():
     return TemplateController()

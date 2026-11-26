@@ -4,7 +4,7 @@ from app.schemas.settings import EmailConfigCreate, EmailConfigResponse
 from app.controllers.settings_controller import SettingsController
 from pydantic import BaseModel, EmailStr
 
-from app.core.dependencies import get_current_active_user, require_company_admin, require_superadmin
+from app.core.dependencies import get_current_active_user, require_can, require_company_admin, require_superadmin
 
 # Logged-in users only: these hold SMTP and AI provider settings
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"], dependencies=[Depends(get_current_active_user)])
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/v1/settings", tags=["settings"], dependencies=[D
 def get_controller():
     return SettingsController()
 
-@router.get("/email", response_model=EmailConfigResponse)
+@router.get("/email", response_model=EmailConfigResponse, dependencies=[Depends(require_can("settings:view"))])
 async def get_email_config(controller: SettingsController = Depends(get_controller)):
     return await controller.get_email_config()
 
@@ -30,13 +30,14 @@ class TestEmailRequest(BaseModel):
 @router.post("/email/test")
 async def test_email_config(
     request: TestEmailRequest,
+    _admin: dict = Depends(require_company_admin),  # sends mail through the company's server: same rule as saving it
     controller: SettingsController = Depends(get_controller)
 ):
     return await controller.test_email_config(request.email)
 
 from app.schemas.settings import AIConfigCreate, AIConfigResponse
 
-@router.get("/ai", response_model=AIConfigResponse)
+@router.get("/ai", response_model=AIConfigResponse, dependencies=[Depends(require_can("settings:view"))])
 async def get_ai_config(controller: SettingsController = Depends(get_controller)):
     return await controller.get_ai_config()
 
@@ -48,7 +49,7 @@ async def update_ai_config(
 ):
     return await controller.update_ai_config(config)
 
-@router.get("/ai/usage")
+@router.get("/ai/usage", dependencies=[Depends(require_can("settings:view"))])
 async def get_ai_usage(controller: SettingsController = Depends(get_controller)):
     return await controller.get_ai_usage()
 

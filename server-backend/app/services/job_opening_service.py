@@ -22,13 +22,20 @@ from app.core.exceptions import AuthenticationError, BadRequestError, ConflictEr
 from app.core.security import decode_jwt_token
 from app.core.tenant import company_scope, current_company_id, set_company, system_scope
 from app.models.company import (
+    DATA_RETENTION_CHOICES,
+    TenantSettings,
     clean_domains,
     email_domain,
     COMPANY_STATUS_ACTIVE,
     COMPANY_STATUS_INACTIVE,
     DEFAULT_COMPANY_ID,
+    COMPANY_PROFILE_FIELDS,
+    CompanyAddress,
+    CompanyContact,
     CompanyDocument,
+    CompanyLimits,
     company_ref,
+    with_profile_defaults,
     default_company_doc,
     slugify,
 )
@@ -51,13 +58,14 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.settings_repository import SettingsRepository
 from app.services.resume_service import ResumeService
 from app.utils.encryption import decrypt_password
-from app.utils.constants import RESUMES_COLLECTION, USERS_COLLECTION
+from app.utils.constants import INTERVIEWS_COLLECTION, RESUMES_COLLECTION, USERS_COLLECTION
 from app.utils.helpers import utc_now
+from app.services.mailer import email_context
 
 CODE_TTL_MINUTES = 10
 CODE_RESEND_COOLDOWN_SECONDS = 60
 CODE_MAX_ATTEMPTS = 5
-APPLICANT_TOKEN_MINUTES = 30
+APPLICANT_TOKEN_MINUTES = 120  # long enough to fill in the 5-step form
 PUBLIC_APPLICANT_USER_ID = "public-applicant"
 EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 # Role detail sections shown on the careers page; each is a list of short lines.
@@ -91,9 +99,16 @@ class JobOpeningService:
         self.verification_repo = verification_repo
         self.resume_repo = resume_repo
         self.resume_service = resume_service
-        self.settings_repo = SettingsRepository()
+        try:
+            self.settings_repo = SettingsRepository()
+        except Exception:
+            self.settings_repo = None
         self.page_settings_repo = page_settings_repo
-        self.company_repo = company_repo
+        self.company_repo = company_repo or (
+            CompanyRepository(opening_repo.collection.database)
+            if hasattr(opening_repo, "collection") and hasattr(opening_repo.collection, "database")
+            else None
+        )
 
     # ── Companies ─────────────────────────────────────────────────────────────
 
@@ -104,9 +119,9 @@ class JobOpeningService:
         repo = getattr(self, "company_repo", None)
         company = await repo.get_by_id(company_id) if repo else None
         if company:
-            return company
+            return with_profile_defaults(company)
         if company_id == DEFAULT_COMPANY_ID:
-            return default_company_doc()
+            return with_profile_defaults(default_company_doc())
         raise NotFoundError("Company not found.")
 
     async def public_company(self, slug: Optional[str]) -> Dict[str, Any]:
@@ -117,7 +132,12 @@ class JobOpeningService:
             return await self.company_by_id(DEFAULT_COMPANY_ID)
         repo = getattr(self, "company_repo", None)
         company = await repo.get_by_slug(slug) if repo else None
-        if not company or company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:
+        if (
+            not company
+            or company.get("status") == COMPANY_STATUS_INACTIVE
+            or company.get("is_active") is False
+            or company.get("archived_at")
+        ):
             raise NotFoundError("This careers page was not found.")
         set_company(company["id"])
         return company
@@ -129,12 +149,17 @@ class JobOpeningService:
             return {"$or": [{"company_id": company_id}, {"company_id": {"$exists": False}}]}
         return {"company_id": company_id}
 
-    async def list_companies(self, all_companies: bool = False) -> List[Dict[str, Any]]:
-        """The request's own company, or every company for the super admin (all_companies)."""
-        await self.company_repo.ensure_default()
+    async def list_companies(self, all_companies: bool = False, include_archived: bool = False) -> List[Dict[str, Any]]:
+        """The request's own company, or every company for the super admin (all_companies).
+        Archived companies are left out unless include_archived."""
+        if self.company_repo:
+            await self.company_repo.ensure_default()
+        interview_counts: Dict[str, int] = {}
         if all_companies:
             with system_scope():
-                companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500)
+                companies = await self.company_repo.find_many(sort_by="created_at", descending=False, limit=500) if self.company_repo else []
+                if not include_archived:
+                    companies = [c for c in companies if not c.get("archived_at")]
                 roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=100000)
                 users = await self.resume_repo.db[USERS_COLLECTION].aggregate([
                     {"$match": {"is_deleted": {"$ne": True}}},
@@ -144,18 +169,22 @@ class JobOpeningService:
                     {"$match": {"$or": [{"redirect_id": None}, {"redirect_id": {"$exists": False}}]}},
                     {"$group": {"_id": "$company_id", "n": {"$sum": 1}}},
                 ]).to_list(length=None)
+                interviews = await self.resume_repo.db[INTERVIEWS_COLLECTION].aggregate([
+                    {"$group": {"_id": "$company_id", "n": {"$sum": 1}}},
+                ]).to_list(length=None)
+            interview_counts = {i["_id"]: i["n"] for i in interviews}
             user_counts = {u["_id"]: u["n"] for u in users}
             resume_counts = {r["_id"]: r["n"] for r in resumes}
         else:
             companies = [await self.company_by_id(None)]
             roles = await self.opening_repo.find_many(projection={"company_id": 1, "status": 1}, limit=10000)
             user_counts, resume_counts = {}, {}
+        companies = [with_profile_defaults(c) for c in companies]
         for c in companies:
-            c.setdefault("email_domains", [])
-            c.setdefault("is_active", True)
             if all_companies:
                 c["users_count"] = user_counts.get(c["id"], 0)
                 c["resumes_count"] = resume_counts.get(c["id"], 0)
+                c["interviews_count"] = interview_counts.get(c["id"], 0)
             mine = [r for r in roles if (r.get("company_id") or DEFAULT_COMPANY_ID) == c["id"]]
             c["roles_count"] = len(mine)
             c["open_roles_count"] = sum(1 for r in mine if r.get("status") == JOB_STATUS_OPEN)
@@ -198,7 +227,13 @@ class JobOpeningService:
             if await users.get_by_email(admin_email):
                 raise ConflictError(f"User with email '{admin_email}' already exists.")
 
-        doc = CompanyDocument(name=name, slug=await self._clean_slug(data.get("slug") or name), email_domains=domains)
+        doc = CompanyDocument(
+            name=name,
+            slug=await self._clean_slug(data.get("slug") or name),
+            email_domains=domains,
+            **self._clean_profile(data),
+            **self._clean_plan(data),
+        )
         created = await self.company_repo.create(doc.to_dict())
         created_admin = None
         with company_scope(created["id"]):
@@ -210,8 +245,8 @@ class JobOpeningService:
                     actor={"role": "superadmin"},
                 )
         return {
-            **created, "roles_count": 0, "open_roles_count": 0, "is_default": False,
-            "users_count": 1 if created_admin else 0, "resumes_count": 0,
+            **with_profile_defaults(created), "roles_count": 0, "open_roles_count": 0, "is_default": False,
+            "users_count": 1 if created_admin else 0, "resumes_count": 0, "interviews_count": 0,
             "admin": created_admin.model_dump() if created_admin else None,
         }
 
@@ -241,14 +276,83 @@ class JobOpeningService:
             if company_id == DEFAULT_COMPANY_ID and changes["is_active"] is False:
                 raise BadRequestError("The platform's own company cannot be turned off.")
             clean["is_active"] = bool(changes["is_active"])
+        clean.update(self._clean_profile({k: v for k, v in changes.items() if k != "name"}))
+        clean.update(self._clean_plan(changes))
+        if "plan" in clean and clean["plan"] != existing.get("plan"):
+            history = list(existing.get("plan_history") or [])
+            history.append({
+                "from_plan": existing.get("plan"),
+                "to_plan": clean["plan"],
+                "limits": clean.get("limits") or existing.get("limits"),
+                "changed_at": utc_now().isoformat(),
+            })
+            clean["plan_history"] = history
         if not clean:
-            return existing
+            return with_profile_defaults(existing)
         clean["updated_at"] = utc_now().isoformat()
         updated = await self.company_repo.update(company_id, clean)
         if clean.get("name") and clean["name"] != existing["name"]:
             with company_scope(company_id):
                 await self._rename_company_everywhere(company_id, clean["name"])
-        return updated
+        return with_profile_defaults(updated)
+
+    @staticmethod
+    def _clean_profile(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Profile fields from a create/update body, trimmed; only the ones given."""
+        out: Dict[str, Any] = {}
+        for key in COMPANY_PROFILE_FIELDS - {"name", "address", "contact", "tenant_settings"}:
+            if key in data and data[key] is not None:
+                out[key] = str(data[key]).strip()
+        if out.get("website") and not re.match(r"^https?://", out["website"], re.I):
+            out["website"] = "https://" + out["website"]
+        if data.get("address") is not None:
+            out["address"] = CompanyAddress(**{k: str(v or "").strip() for k, v in dict(data["address"]).items()}).model_dump()
+        if data.get("contact") is not None:
+            contact = {k: str(v or "").strip() for k, v in dict(data["contact"]).items()}
+            contact["email"] = contact.get("email", "").lower()
+            if contact["email"] and not EMAIL_PATTERN.fullmatch(contact["email"]):
+                raise BadRequestError("Contact email is not a valid email address.")
+            out["contact"] = CompanyContact(**contact).model_dump()
+        if data.get("tenant_settings") is not None:
+            ts = dict(data["tenant_settings"])
+            months = int(ts.get("data_retention_months", 24) or 0)
+            if months not in DATA_RETENTION_CHOICES:
+                raise BadRequestError(f"Data retention must be one of {', '.join(map(str, DATA_RETENTION_CHOICES))} months (0 = keep).")
+            ts["data_retention_months"] = months
+            out["tenant_settings"] = TenantSettings(**ts).model_dump()
+        return out
+
+    @staticmethod
+    def _clean_plan(data: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if data.get("plan") is not None:
+            out["plan"] = str(data["plan"]).strip()
+        if "plan_valid_until" in data:
+            until = str(data.get("plan_valid_until") or "").strip()
+            if until and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", until):
+                raise BadRequestError("Plan valid until must be a date like 2026-03-30.")
+            out["plan_valid_until"] = until or None
+        if data.get("limits") is not None:
+            limits = dict(data["limits"])
+            if any(int(v or 0) < 0 for v in limits.values()):
+                raise BadRequestError("Limits cannot be negative (0 means no limit).")
+            out["limits"] = CompanyLimits(**{k: int(v or 0) for k, v in limits.items()}).model_dump()
+        return out
+
+    async def set_archived(self, company_id: str, archived: bool) -> Dict[str, Any]:
+        """Super admin: archive a company (workspace off, careers page gone, hidden from the list) or restore it.
+        Nothing is deleted. Restoring keeps the workspace off until it is turned on again."""
+        existing = await self.company_repo.get_by_id(company_id)
+        if not existing:
+            raise NotFoundError("Company not found.")
+        if company_id == DEFAULT_COMPANY_ID and archived:
+            raise BadRequestError("The platform's own company cannot be archived.")
+        now = utc_now().isoformat()
+        changes: Dict[str, Any] = {"archived_at": now if archived else None, "updated_at": now}
+        if archived:
+            changes["is_active"] = False
+        updated = await self.company_repo.update(company_id, changes)
+        return with_profile_defaults(updated)
 
     async def _rename_company_everywhere(self, company_id: str, name: str) -> None:
         """Roles, applications and resumes keep a copy of the company name for lists and filters."""
@@ -295,7 +399,10 @@ class JobOpeningService:
     # ── Public: listing ───────────────────────────────────────────────────────
 
     async def list_public_openings(self, slug: Optional[str] = None) -> List[Dict[str, Any]]:
-        """A company's roles that are open and still have positions left."""
+        """A company's published roles that are taking applications (positions left, not past the closing date)."""
+        from app.models.job_opening import with_job_defaults
+        from app.services.job_management import is_accepting
+
         company = await self.public_company(slug)
         openings = await self.opening_repo.find_many(
             query={"status": JOB_STATUS_OPEN, "open_positions": {"$gt": 0}, **self._company_query(company["id"])},
@@ -303,21 +410,41 @@ class JobOpeningService:
             descending=False,
             limit=500,
         )
-        return [
-            {
+        out = []
+        for raw in openings:
+            o = with_job_defaults(raw)
+            if not is_accepting(o):
+                continue
+            out.append({
                 "id": o["id"],
                 "title": o["title"],
+                "code": o.get("code", ""),
                 "department": o.get("department", ""),
+                "category": o.get("category", ""),
                 "location": o.get("location", ""),
                 "employment_type": o.get("employment_type", ""),
+                "work_mode": o.get("work_mode", ""),
                 "experience": o.get("experience", ""),
                 "description": o.get("description", ""),
                 **{field: o.get(field) or [] for field in LIST_FIELDS},
+                "certifications": o.get("certifications") or [],
+                "what_we_offer": o.get("what_we_offer") or [],
+                "tags": o.get("tags") or [],
+                "tagline": o.get("tagline", ""),
+                "requirements": o.get("requirements") or [],
+                "nice_to_have": o.get("nice_to_have") or [],
+                # Salary only when the company chose to show it.
+                "salary": (
+                    {"min": o.get("salary_min"), "max": o.get("salary_max"), "currency": o.get("salary_currency") or "INR",
+                     "period": o.get("salary_period") or "year"}
+                    if o.get("show_salary") and (o.get("salary_min") or o.get("salary_max")) else None
+                ),
+                "closing_date": o.get("closing_date"),
                 "open_positions": o.get("open_positions", 0),
                 "created_at": o.get("created_at", ""),
-            }
-            for o in openings
-        ]
+                "posted_at": o.get("published_at") or o.get("created_at", ""),
+            })
+        return out
 
     # ── Public: email verification ────────────────────────────────────────────
 
@@ -333,17 +460,25 @@ class JobOpeningService:
         return hmac.new(settings.SECRET_KEY.encode(), f"{email}:{code}".encode(), hashlib.sha256).hexdigest()
 
     @staticmethod
-    def _send_code_email(config: Any, to_email: str, code: str) -> None:
+    def _send_code_email(config: Any, to_email: str, code: str, ctx: Optional[Dict[str, Any]] = None) -> None:
         """Blocking SMTP send, run in a worker thread. Uses the SMTP settings from the Settings page."""
+        from app.services.mailer import DEFAULT_CONTEXT, address, branded_html
+
+        ctx = ctx or dict(DEFAULT_CONTEXT)
         password = decrypt_password(config.smtp_password)
         msg = EmailMessage()
-        msg["Subject"] = "Your verification code"
-        msg["From"] = f"{config.sender_name} <{config.sender_email}>"
+        msg["Subject"] = f"Your verification code for {ctx.get('company_name') or ctx.get('app_name')}"
+        address(msg, config, ctx)
         msg["To"] = to_email
         msg.set_content(
             f"Your verification code is {code}.\n\n"
             f"It expires in {CODE_TTL_MINUTES} minutes. If you did not ask to apply for a job, ignore this email."
         )
+        msg.add_alternative(branded_html(ctx, (
+            "<p>Your verification code is</p>"
+            f'<p style="font-size:28px;font-weight:800;letter-spacing:6px;color:{ctx["primary"]};margin:8px 0 16px;">{code}</p>'
+            f"<p>It expires in {CODE_TTL_MINUTES} minutes. If you did not ask to apply for a job, ignore this email.</p>"
+        )), subtype="html")
         if config.use_ssl:
             server = smtplib.SMTP_SSL(config.smtp_server, config.smtp_port, timeout=30)
         else:
@@ -393,7 +528,9 @@ class JobOpeningService:
         await self.verification_repo.save_code(clean_email, doc.to_dict())
 
         try:
-            await asyncio.to_thread(self._send_code_email, config, clean_email, code)
+            repo = getattr(self, "opening_repo", None)
+            ctx = await email_context(repo.db if repo is not None else None)
+            await asyncio.to_thread(self._send_code_email, config, clean_email, code, ctx)
         except Exception as e:
             logger.error(f"Could not send applicant verification code to '{clean_email}': {e}")
             await self.verification_repo.delete(clean_email)
@@ -457,7 +594,9 @@ class JobOpeningService:
 
         # The opening decides the company: the resume goes to that company's workspace only.
         opening = await self._enter_opening_company(opening_id)
-        if not opening or opening.get("status") != JOB_STATUS_OPEN or opening.get("open_positions", 0) <= 0:
+        from app.services.job_management import is_accepting
+
+        if not opening or not is_accepting(opening):
             raise BadRequestError("This role is no longer accepting applications.")
         company = await self.company_by_id(opening.get("company_id"))
         if company.get("status") == COMPANY_STATUS_INACTIVE or company.get("is_active") is False:

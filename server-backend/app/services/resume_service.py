@@ -83,6 +83,7 @@ class ResumeService:
         resume_source_informer_name: Optional[str] = None,
         uploaded_by_name: Optional[str] = None,
         uploaded_by_email: Optional[str] = None,
+        parser_job_id: Optional[str] = None,
     ) -> ResumeResponse:
         """
         Validate file, save to disk, upload to AWS S3, parse resume using resume-parser-pro, and save document in MongoDB with uploader user info.
@@ -171,13 +172,17 @@ class ResumeService:
             user_id=user_id,
             file_path=file_path,
             original_filename=original_filename,
-            content_type=file.content_type or "application/pdf"
+            content_type=file.content_type or "application/pdf",
+            parser_job_id=parser_job_id,
         )
 
         return ResumeResponse.model_validate(created)
 
-    async def _process_ai_parsing_async(self, resume_id: str, user_id: str, file_path: str, original_filename: str, content_type: str):
-        """Background task to run AI parsing via httpx and update MongoDB."""
+    async def _process_ai_parsing_async(self, resume_id: str, user_id: str, file_path: str, original_filename: str, content_type: str,
+                                        parser_job_id: Optional[str] = None):
+        """Background task to run AI parsing via httpx and update MongoDB.
+        parser_job_id: the parser already has this file (the careers apply form sent it for pre-fill), so its
+        result is used instead of parsing the file again."""
         try:
             import httpx
             import asyncio
@@ -201,15 +206,18 @@ class ResumeService:
             else:
                 logger.warning("No AI Configuration found in DB, relying on ai-parser defaults")
                 
-            with open(file_path, "rb") as f:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.post(
-                        settings.AI_PARSER_URL,
-                        files={"file": (original_filename, f, content_type)},
-                        data={"ai_config": json.dumps(config_payload)}
-                    )
-                    response.raise_for_status()
-                    ai_result = response.json()
+            if parser_job_id:
+                ai_result = {"job_id": parser_job_id}
+            else:
+                with open(file_path, "rb") as f:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        response = await client.post(
+                            settings.AI_PARSER_URL,
+                            files={"file": (original_filename, f, content_type)},
+                            data={"ai_config": json.dumps(config_payload)}
+                        )
+                        response.raise_for_status()
+                        ai_result = response.json()
                     
             parsed_data = {}
             ai_evaluation = {}
@@ -334,6 +342,7 @@ class ResumeService:
                 # 3. Clean up temporary upload document so resumes collection ONLY contains the updated existing candidate profile
                 await self.resume_repo.delete(resume_id)
                 logger.info(f"[EXISTING_EMAIL_FLOW] Step 3/3: Deleted temporary upload record '{resume_id}' from 'resumes' collection so ONLY updated candidate profile '{existing_doc['id']}' remains!")
+                await self._link_candidate(existing_doc["id"], dropped_resume_id=resume_id)
                 logger.info(f"=========================================================")
             else:
                 await self.resume_repo.update(resume_id, {
@@ -344,12 +353,31 @@ class ResumeService:
                     "existing_resume_id": None,
                 })
                 logger.info(f"[NEW_CANDIDATE_FLOW] No existing email conflict. Completed AI Parsing for new candidate resume ID '{resume_id}'")
+                await self._link_candidate(resume_id)
         except Exception as e:
             logger.error(f"Background AI Parsing failed for '{resume_id}': {e}")
             await self.resume_repo.update(resume_id, {
                 "status": ResumeStatus.FAILED.value,
                 "parse_error": str(e)[:1000],
             })
+
+    async def _link_candidate(self, resume_id: str, dropped_resume_id: Optional[str] = None) -> None:
+        """Phase 6: every parsed resume belongs to a candidate, so portal uploads (single and bulk) show in the
+        Candidate Database too. A failure here is logged and never fails the parse."""
+        try:
+            from app.services.candidate_service import link_resume_to_candidate
+            from app.utils.constants import CANDIDATE_DOCUMENTS_COLLECTION
+
+            db = self.resume_repo.db
+            if dropped_resume_id:
+                await db[CANDIDATE_DOCUMENTS_COLLECTION].delete_one({"id": dropped_resume_id})
+            candidate_id = await link_resume_to_candidate(db, resume_id)
+        except Exception as e:
+            logger.error(f"Could not link resume '{resume_id}' to a candidate: {e}")
+            return
+        # Phase 9: resume skills feed the candidate's skill matrix
+        from app.services.skill_intelligence_service import recalculate_skills_for
+        await recalculate_skills_for(db, candidate_id)
 
     async def _poll_parser_job(self, status_url: str):
         """Wait for an AI parser job and return (parsed_data, evaluation, resume_text); raises on failure or timeout."""

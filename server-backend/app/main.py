@@ -21,6 +21,22 @@ from app.routes import transcription, skills_evaluation, resume_templates, inter
 from app.routes import integration, integration_settings
 from app.routes import job_openings
 from app.routes import ats_operations
+from app.routes import evaluation as evaluation_routes
+from app.routes import masters as masters_routes
+from app.routes import files as files_routes
+from app.routes import invitations as invitation_routes
+from app.routes import branding as branding_routes
+from app.routes import plans as plan_routes
+from app.routes import applications as application_routes
+from app.routes import career_page as career_page_routes
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.file_links import FileLinkMiddleware
+from app.routes import audit as audit_routes
+from app.routes import candidates as candidates_routes
+from app.routes import skill_intelligence as skill_intelligence_routes
+from app.routes import notifications as notifications_routes
+from app.routes import operations as operations_routes
+from app.routes import pipeline as pipeline_routes
 
 
 def create_application() -> FastAPI:
@@ -47,7 +63,9 @@ def create_application() -> FastAPI:
             "http://127.0.0.1:8000",
         ],
         allow_origin_regex=r"https?://.*",
-        allow_credentials=True,
+        # Sign-in uses a bearer token, never cookies, so browsers never send credentials cross-site.
+        # (Any origin may call the API, but only with a token it already holds.)
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["Content-Disposition"],
@@ -62,6 +80,10 @@ def create_application() -> FastAPI:
     # Enable Request Duration Logger Middleware
     app.add_middleware(RequestLoggerMiddleware)
     app.add_middleware(IntegrationLoggerMiddleware)
+    # File URLs leave the API as signed, expiring links and come back as stored URLs.
+    app.add_middleware(FileLinkMiddleware)
+    # Security headers on every /api response (app.middleware.security_headers)
+    app.add_middleware(SecurityHeadersMiddleware)
     # Outermost: the public careers endpoints allow any origin (the page can be opened from a file).
     app.add_middleware(PublicCorsMiddleware)
 
@@ -95,6 +117,28 @@ def create_application() -> FastAPI:
     app.include_router(job_openings.companies_router)
     app.include_router(ats_operations.router)
     app.include_router(ats_operations.public_track_router)
+    app.include_router(evaluation_routes.panels_router)
+    app.include_router(evaluation_routes.forms_router)
+    app.include_router(evaluation_routes.interview_eval_router)
+    app.include_router(evaluation_routes.pipeline_router)
+    app.include_router(evaluation_routes.settings_router)
+    app.include_router(masters_routes.router)
+    app.include_router(files_routes.router)
+    app.include_router(invitation_routes.router)
+    app.include_router(invitation_routes.public_router)
+    app.include_router(branding_routes.router)
+    app.include_router(branding_routes.public_router)
+    app.include_router(branding_routes.platform_router)
+    app.include_router(plan_routes.router)
+    app.include_router(application_routes.router)
+    app.include_router(career_page_routes.router)
+    app.include_router(career_page_routes.public_router)
+    app.include_router(audit_routes.router)
+    app.include_router(candidates_routes.router)
+    app.include_router(skill_intelligence_routes.router)
+    app.include_router(notifications_routes.router)
+    app.include_router(operations_routes.router)
+    app.include_router(pipeline_routes.router)
     # ── Serve Frontend Static Files ──────────────────────────────────────────────
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dist_path = os.path.join(os.path.dirname(BASE_DIR), "dist")

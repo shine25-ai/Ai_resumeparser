@@ -1,3 +1,4 @@
+from app.core.dependencies import require_access
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
@@ -6,7 +7,15 @@ from app.controllers.resume_template_controller import ResumeTemplateController
 from app.core.dependencies import get_current_active_user
 
 # Logged-in users only (list, edit, delete and export were open before)
-router = APIRouter(prefix="/api/v1/resume-templates", tags=["resume_templates"], dependencies=[Depends(get_current_active_user)])
+
+_CANDIDATES_ACCESS = require_access("candidates", {
+    ("POST", "/api/v1/resume-templates"): "settings:edit",
+    ("PUT", "/api/v1/resume-templates/{template_id}"): "settings:edit",
+    ("DELETE", "/api/v1/resume-templates/{template_id}"): "settings:edit",
+    ("POST", "/api/v1/resume-templates/upload"): "settings:edit",
+    ("GET", "/api/v1/resume-templates/{template_id}/export"): "candidates:export",
+})
+router = APIRouter(prefix="/api/v1/resume-templates", tags=["resume_templates"], dependencies=[Depends(_CANDIDATES_ACCESS), Depends(get_current_active_user)])
 
 def get_controller():
     return ResumeTemplateController()

@@ -16,6 +16,12 @@ export const setCareersApiBaseUrl = (url: string) => {
 
 const publicJobsUrl = () => `${apiBaseUrl}/public/jobs`;
 
+/** Set by the embed script: its job requests say so, so the portal can show "Connected — seen on <site>". */
+let embedded = false;
+export const markEmbedded = () => {
+  embedded = true;
+};
+
 /** Page address of a company in the resume portal, e.g. "acme". Empty shows the default company. */
 const companyQuery = (company?: string) => {
   const slug = (company || "").trim().toLowerCase();
@@ -43,6 +49,21 @@ export interface PublicJob {
   preferred_skills: string[];
   open_positions: number;
   created_at: string;
+  // Newer fields; older API versions leave them out.
+  code?: string;
+  category?: string;
+  work_mode?: string;
+  certifications?: string[];
+  what_we_offer?: string[];
+  tags?: string[];
+  salary?: { min: number | null; max: number | null; currency: string; period?: "year" | "month" | "hour" } | null;
+  closing_date?: string | null;
+  posted_at?: string;
+  /** One line under the title on the job page. */
+  tagline?: string;
+  /** "Requirements" and "Good to have" bullet lists on the job page. */
+  requirements?: string[];
+  nice_to_have?: string[];
 }
 
 /** Editable text on the careers page. The header and footer are fixed. */
@@ -77,6 +98,10 @@ export const readJson = async (response: Response) => {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = body?.message || body?.detail;
+    // "Validation failed" alone doesn't say what to fix: show the first field error, without the "body -> " path.
+    const first = Array.isArray(body?.errors) && typeof body.errors[0] === "string" ? body.errors[0] : "";
+    const field = first ? first.replace(/^body -> /, "").replace(/ -> /g, " ") : "";
+    if (field && detail === "Validation failed") throw new Error(`Please check ${field}`);
     throw new Error(typeof detail === "string" ? detail : "Request failed. Please try again.");
   }
   return body.data ?? body;
@@ -99,7 +124,9 @@ const normalizeJob = (job: Partial<PublicJob> & { id: string; title: string }): 
 });
 
 export const fetchPublicJobs = async (company?: string): Promise<PublicJob[]> =>
-  ((await readJson(await fetch(`${publicJobsUrl()}${companyQuery(company)}`))) as PublicJob[]).map(normalizeJob);
+  ((await readJson(
+    await fetch(`${publicJobsUrl()}${companyQuery(company)}`, embedded ? { headers: { "X-Careers-Embed": "1" } } : undefined)
+  )) as PublicJob[]).map(normalizeJob);
 
 export const fetchPageSettings = async (company?: string): Promise<CareersPageSettings> => ({
   ...DEFAULT_PAGE_SETTINGS,
@@ -140,21 +167,190 @@ export const heardFromOptions = (companyName = "Shinelogics") => [
 ];
 export const HEARD_FROM_OPTIONS = heardFromOptions();
 
-export const submitApplication = async (
-  jobId: string,
-  applicantToken: string,
-  file: File,
-  details: { heardFrom?: string; note?: string } = {}
-) => {
+// ── The 5-step application (Phase 5) ─────────────────────────────────────────
+
+export interface EducationEntry { degree: string; specialization: string; institution: string; year: string; score: string }
+export interface ExperienceEntry { company: string; designation: string; start: string; end: string; current: boolean; responsibilities: string }
+
+export interface ApplicationForm {
+  personal: { full_name: string; email: string; phone_code: string; phone: string; location: string; linkedin: string; portfolio: string };
+  notice_period: string;
+  expected_ctc: number | null;
+  current_ctc: number | null;
+  currency: string;
+  total_experience_years: number | null;
+  education: EducationEntry[];
+  experience: ExperienceEntry[];
+  skills: string[];
+  certifications: string[];
+  heard_from: string;
+  cover_note: string;
+}
+
+export const emptyApplicationForm = (email = ""): ApplicationForm => ({
+  personal: { full_name: "", email, phone_code: "+91", phone: "", location: "", linkedin: "", portfolio: "" },
+  notice_period: "", expected_ctc: null, current_ctc: null, currency: "INR", total_experience_years: null,
+  education: [], experience: [], skills: [], certifications: [], heard_from: "", cover_note: "",
+});
+
+export interface ResumeDraft {
+  draft_id: string;
+  filename: string;
+  size: number;
+  /** queued / processing: the AI is reading it; done: `extracted` is ready; failed / unavailable: fill in by hand. */
+  parse_status: "queued" | "processing" | "done" | "failed" | "unavailable";
+  parse_error: string;
+  extracted: ApplicationForm | null;
+  confidence: { score: number; level: "high" | "medium" | "low"; fields: Record<string, boolean>; email_matches: boolean } | null;
+  summary: { total_experience_years: number | null; highest_education: string; top_skills: string[] } | null;
+  expires_at: string;
+}
+
+/** Step 1: upload the resume; the AI starts reading it straight away. */
+export const uploadApplicationResume = async (jobId: string, applicantToken: string, file: File): Promise<ResumeDraft> => {
   const form = new FormData();
   form.append("file", file);
-  if (details.heardFrom) form.append("heard_from", details.heardFrom);
-  if (details.note?.trim()) form.append("note", details.note.trim());
-  return readJson(
-    await fetch(`${publicJobsUrl()}/${jobId}/apply`, {
+  return readJson(await fetch(`${publicJobsUrl()}/${jobId}/resume`, { method: "POST", headers: { "X-Applicant-Token": applicantToken }, body: form }));
+};
+
+export const fetchResumeDraft = async (jobId: string, draftId: string, applicantToken: string): Promise<ResumeDraft> =>
+  readJson(await fetch(`${publicJobsUrl()}/${jobId}/drafts/${encodeURIComponent(draftId)}`, { headers: { "X-Applicant-Token": applicantToken } }));
+
+export const submitApplicationForm = async (
+  jobId: string,
+  applicantToken: string,
+  body: { draft_id: string; form: ApplicationForm; consent: boolean }
+): Promise<{ application_id: string; opening_title: string; company_name: string }> =>
+  readJson(
+    await fetch(`${publicJobsUrl()}/${jobId}/applications`, {
       method: "POST",
-      headers: { "X-Applicant-Token": applicantToken },
-      body: form,
+      headers: { "Content-Type": "application/json", "X-Applicant-Token": applicantToken },
+      body: JSON.stringify(body),
     })
   );
+
+export const NOTICE_PERIODS = ["Immediate", "15 Days", "30 Days", "45 Days", "60 Days", "90 Days", "More than 90 Days"];
+
+// ── Career page (builder content, published) ─────────────────────────────────
+
+export interface CareerLink {
+  label: string;
+  url: string;
+}
+
+export type CareerSectionType =
+  | "open_positions" | "about" | "culture" | "life" | "benefits" | "testimonials" | "faq" | "gallery" | "video"
+  | "highlights";
+
+/** Where a button goes: a section on the page ("#open_positions") or a link. */
+export interface CareerButton {
+  label: string;
+  target: string;
+}
+
+export interface CareerItem {
+  title?: string;
+  text?: string;
+  image_url?: string;
+  name?: string;
+  role?: string;
+  quote?: string;
+  photo_url?: string;
+  q?: string;
+  a?: string;
+  /** Icon name (lucide, kebab-case) for benefits, highlights and life items. */
+  icon?: string;
+}
+
+export interface CareerSection {
+  id: string;
+  type: CareerSectionType;
+  visible: boolean;
+  title: string;
+  subtitle?: string;
+  text?: string;
+  image_url?: string;
+  items?: CareerItem[];
+  images?: string[];
+  url?: string;
+  /** About: figures such as {value: "200+", label: "Team members"}, at most 4, and a photo or video. */
+  stats?: { value: string; label: string }[];
+  video_url?: string;
+}
+
+export interface CareerPageContent {
+  template: "classic" | "modern" | "minimal";
+  header: { show: boolean; links: CareerLink[]; cta?: CareerButton };
+  hero: {
+    eyebrow: string; title: string; subtitle: string; banner_url: string; cta_label: string;
+    secondary_cta_label?: string; secondary_cta_target?: string;
+    /** Short handwritten-style text over the banner ("People · Products · Impact"). */
+    badge_text?: string;
+    /** background: the banner fills the hero; split: text on the left, photo on the right. */
+    layout?: "background" | "split";
+  };
+  sections: CareerSection[];
+  texts: {
+    search_placeholder: string; empty_message: string; success_title: string; success_message: string;
+    /** The job page's closing banner. */
+    job_cta_title?: string; job_cta_text?: string;
+  };
+  footer: { show: boolean; text: string; website: string; email: string; linkedin: string; links: CareerLink[] };
+  seo: { title: string; description: string; share_image_url: string };
+}
+
+/** The company's branding as the careers page needs it (no email settings). */
+export interface CareerBranding {
+  app_name: string;
+  colors: { primary: string; accent: string; sidebar_bg: string; sidebar_text: string; background: string; secondary?: string; text?: string };
+  font_family?: string;
+  radius?: string;
+  logo_url: string;
+  favicon_url?: string;
+}
+
+export interface CareerCompany {
+  id: string;
+  name: string;
+  slug: string;
+  website: string;
+  industry: string;
+  description: string;
+  city: string;
+  short_name?: string;
+  company_size?: string;
+}
+
+export interface PublicCareerPage {
+  content: CareerPageContent;
+  company: CareerCompany;
+  branding: CareerBranding;
+  published_at?: string;
+}
+
+export const fetchCareerPage = async (company?: string): Promise<PublicCareerPage> =>
+  readJson(await fetch(`${apiBaseUrl}/public/career-page${companyQuery(company)}`));
+
+/** Images uploaded to the portal are served by its API (stored as /api/v1/...). */
+export const careerAssetUrl = (url?: string): string => {
+  if (!url) return "";
+  if (url.startsWith("/api/")) {
+    try {
+      return new URL(apiBaseUrl).origin + url;
+    } catch {
+      return url;
+    }
+  }
+  return url;
 };
+
+/** The page used when the API has no career page yet (older servers): the old page text over the defaults. */
+export const contentFromOldSettings = (s: CareersPageSettings): CareerPageContent => ({
+  template: "classic",
+  header: { show: true, links: [] },
+  hero: { eyebrow: s.hero_eyebrow, title: s.hero_title, subtitle: s.hero_subtitle, banner_url: "", cta_label: "Explore open positions" },
+  sections: [{ id: "open_positions", type: "open_positions", visible: true, title: s.listing_title, subtitle: s.listing_subtitle }],
+  texts: { search_placeholder: s.search_placeholder, empty_message: s.empty_message, success_title: s.success_title, success_message: s.success_message },
+  footer: { show: true, text: "", website: "", email: "", linkedin: "", links: [] },
+  seo: { title: s.hero_eyebrow, description: s.hero_subtitle, share_image_url: "" },
+});

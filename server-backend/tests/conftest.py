@@ -8,27 +8,25 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from app.core.config import settings
 from app.core.security import create_access_token, hash_password
-from app.main import app
 from app.models.user import UserDocument
 from app.utils.enums import UserRole
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest.fixture
 async def async_client() -> AsyncGenerator[AsyncClient, None]:
-    """Async HTTPX client for requesting FastAPI routes in tests."""
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://testserver",
-    ) as client:
-        yield client
+    """Async HTTPX client for requesting FastAPI routes in tests. Opens the database the app uses, as its startup does."""
+    from app.core.database import db_manager
+    from app.main import app
+
+    await db_manager.connect_to_database()
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            yield client
+    finally:
+        await db_manager.close_database_connection()
 
 
 @pytest.fixture

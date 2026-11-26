@@ -34,6 +34,11 @@ class AuthorizationError(AppException):
         super().__init__(message=message, status_code=status.HTTP_403_FORBIDDEN, errors=errors)
 
 
+# Aliases for standard naming compatibility
+ForbiddenError = AuthorizationError
+UnauthorizedError = AuthenticationError
+
+
 class BadRequestError(AppException):
     """Raised when request payload or parameters are invalid."""
 
@@ -76,7 +81,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def app_exception_handler(request: Request, exc: AppException):
         logger.warning(f"AppException [{exc.status_code}] on {request.method} {request.url.path}: {exc.message}")
         request.state.error_message = exc.message
-        return error_response(message=exc.message, errors=exc.errors, status_code=exc.status_code)
+        response = error_response(message=exc.message, errors=exc.errors, status_code=exc.status_code)
+        if getattr(exc, "retry_after", None):
+            response.headers["Retry-After"] = str(exc.retry_after)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -97,5 +105,12 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
-        logger.exception(f"Unhandled exception on {request.method} {request.url.path}")
-        return error_response(message="Internal Server Error", errors=[str(exc)], status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # The details go to the log only: exception text can show queries, paths or data. The reference
+        # in the response finds the full trace in the log.
+        import uuid
+        reference = uuid.uuid4().hex[:12]
+        logger.exception(f"Unhandled exception [{reference}] on {request.method} {request.url.path}")
+        return error_response(
+            message=f"Something went wrong on our side. Reference: {reference}",
+            errors=[], status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

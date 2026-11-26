@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Download, RefreshCw, ShieldCheck, X, Loader2 } from 'lucide-react';
 import { fetchAuditLogs, type AuditLogEntry } from '../utils/atsApi';
+import AdminAuditLog from '../components/AdminAuditLog';
 
-export default function AuditLog() {
+function RecruitmentActivityLog() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [users, setUsers] = useState<string[]>([]);
   const [actions, setActions] = useState<string[]>([]);
@@ -220,3 +221,35 @@ export default function AuditLog() {
   );
 }
 
+
+
+/** Two views: admin & security changes (central audit log), and the recruitment activity timeline. */
+export default function AuditLog() {
+  const [view, setView] = useState<'admin' | 'activity'>('admin');
+  return (
+    <div className="max-w-[1440px] mx-auto space-y-4 pb-8 font-sans text-slate-900">
+      <div className="flex gap-1 rounded-lg bg-slate-100 p-1 text-xs font-semibold w-fit">
+        {([['admin', 'Admin & security changes'], ['activity', 'Recruitment activity']] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setView(id)}
+            className={`rounded-md px-3 py-1.5 ${view === id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === 'admin' ? (
+        <div className="space-y-3">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Audit Log</h1>
+            <p className="text-xs text-slate-500">Changes to companies, users, roles, invitations and master data, with before and after values.</p>
+          </div>
+          <AdminAuditLog />
+        </div>
+      ) : (
+        <RecruitmentActivityLog />
+      )}
+    </div>
+  );
+}

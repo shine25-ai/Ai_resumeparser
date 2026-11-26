@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.core.database import get_database
+from app.core.tenant import company_scope, system_scope
+from app.models.company import DEFAULT_COMPANY_ID
 from app.utils.constants import RESUMES_COLLECTION, INTERVIEWS_COLLECTION, RESUME_LOGS_COLLECTION
 from app.utils.hiring_stage import STAGES, stage_of
 from app.services.dashboard_service import DashboardService
@@ -226,10 +228,14 @@ class AtsOperationsService:
             raise ValueError(f"Invalid stage '{target_stage}'. Must be one of {sorted(VALID_STAGES)}")
         db = get_database()
         now_iso = _utc_iso()
-        await db[RESUMES_COLLECTION].update_one(
-            {"$or": [{"id": candidate_id}, {"resume_id": candidate_id}]},
+        from app.core.exceptions import NotFoundError
+        result = await db[RESUMES_COLLECTION].update_one(
+            {"$or": [{"id": candidate_id}, {"resume_id": candidate_id}, {"candidate_id": candidate_id}]},
             {"$set": {"manual_stage": target_stage, "stage_updated_at": now_iso, "updated_at": now_iso}},
         )
+        if result.matched_count == 0:
+            # Nothing in this company matches: never report a move that did not happen.
+            raise NotFoundError("Candidate not found in this company.")
         await _log_audit(
             "STAGE_MOVED",
             actor,
@@ -441,7 +447,38 @@ class AtsOperationsService:
         db = get_database()
         return await db["ats_scorecards"].find({}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(length=200)
 
-    async def save_scorecard(self, payload: Dict[str, Any], actor: str) -> Dict[str, Any]:
+    async def save_scorecard(self, payload: Dict[str, Any], actor: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
+        # One system: when exactly one live interview matches this candidate and role, the scorecard becomes
+        # that interview's evaluation (same rule as the migration). Otherwise it stays a legacy scorecard.
+        from app.core.tenant import current_company_id
+        from app.models.company import DEFAULT_COMPANY_ID
+        from app.services.scorecard_migration import build_evaluation, plan_matches
+        from app.utils.constants import INTERVIEW_EVALUATIONS_COLLECTION, INTERVIEWS_COLLECTION
+        from app.utils.helpers import utc_now as _now
+
+        db = get_database()
+        candidate_id = str(payload.get("candidate_id") or "")
+        role = str(payload.get("role") or "")
+        if candidate_id:
+            interviews = await db[INTERVIEWS_COLLECTION].find({"candidate_id": candidate_id}).to_list(length=500)
+            pseudo = {"id": f"sc-{_now().timestamp()}", "candidate_id": candidate_id, "role": role,
+                      "technical": payload.get("technical", 3), "communication": payload.get("communication", 3),
+                      "culture_fit": payload.get("culture_fit", 3), "recommendation": payload.get("recommendation") or "",
+                      "notes": payload.get("notes") or "", "evaluator": actor, "created_at": _now().isoformat()}
+            plan = plan_matches([pseudo], interviews)
+            if plan["matched"]:
+                _, interview = plan["matched"][0]
+                company_id = current_company_id() or DEFAULT_COMPANY_ID
+                doc = build_evaluation(pseudo, interview, company_id)
+                if actor_id:
+                    doc["interviewer_user_id"] = actor_id
+                doc["id"] = f"ats-{pseudo['id']}"
+                await db[INTERVIEW_EVALUATIONS_COLLECTION].insert_one(doc)
+                await _log_audit("SCORECARD_SUBMITTED", actor, candidate_id,
+                                 f"Scorecard recorded as evaluation for interview {interview.get('id')}")
+                doc.pop("_id", None)
+                return {**doc, "stored_as": "evaluation"}
+
         tech = max(1.0, min(5.0, float(payload.get("technical", 3))))
         comm = max(1.0, min(5.0, float(payload.get("communication", 3))))
         culture = max(1.0, min(5.0, float(payload.get("culture_fit", 3))))
@@ -658,7 +695,18 @@ class AtsOperationsService:
         return {"candidate_id": candidate_id, "token": token, "path": f"/track/{token}"}
 
     async def get_public_tracking_status(self, token: str) -> Optional[Dict[str, Any]]:
+        """Public link: the token says which candidate (and so which company); the rest runs in that company."""
+        if not token or len(token) < 16:
+            return None
         db = get_database()
+        with system_scope():
+            owner = await db[RESUMES_COLLECTION].find_one({"tracking_token": token}, {"_id": 0, "company_id": 1})
+        if not owner:
+            return None
+        with company_scope(owner.get("company_id") or DEFAULT_COMPANY_ID):
+            return await self._public_tracking_status(db, token)
+
+    async def _public_tracking_status(self, db: Any, token: str) -> Optional[Dict[str, Any]]:
         r = await db[RESUMES_COLLECTION].find_one(
             {"tracking_token": token},
             {
@@ -746,11 +794,24 @@ class AtsOperationsService:
             {}, {"_id": 0, "applicant_email": 1, "opening_title": 1, "submitted_at": 1}
         ).sort("submitted_at", -1).limit(80).to_list(length=80)
 
-        ats_logs, res_logs, invs, apps = await asyncio.gather(
-            ats_logs_task, res_logs_task, invs_task, apps_task
+        central_task = db["audit_logs"].find({}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(length=200)
+
+        ats_logs, res_logs, invs, apps, central = await asyncio.gather(
+            ats_logs_task, res_logs_task, invs_task, apps_task, central_task
         )
 
         combined: List[Dict[str, Any]] = []
+        for log in central:
+            actor_info = log.get("actor") or {}
+            changed = ", ".join((log.get("changes") or {}).keys())
+            combined.append({
+                "id": str(log.get("id") or uuid.uuid4()),
+                "action": str(log.get("action") or "EVENT").upper().replace(".", "_"),
+                "user": str(actor_info.get("name") or actor_info.get("email") or "System"),
+                "target": str(log.get("entity_label") or log.get("entity_id") or log.get("entity_type") or ""),
+                "details": str(log.get("details") or (f"Changed: {changed}" if changed else "")),
+                "created_at": str(log.get("created_at") or ""),
+            })
         for log in ats_logs:
             combined.append({
                 "id": str(log.get("id") or uuid.uuid4()),

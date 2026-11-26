@@ -41,6 +41,9 @@ from app.utils.encryption import decrypt_password
 from app.utils.enums import InterviewStatus
 from app.utils.helpers import utc_now
 from app.utils.validators import validate_uploaded_file
+from app.core.database import get_database
+from app.services.mailer import address, brandify, email_context
+from app.services.interview_invites import KIND_CANCEL, KIND_INVITE, KIND_RESCHEDULE, InterviewInviteService
 
 
 def build_summary_csv(headers: List[str], rows: List[List[Any]]) -> bytes:
@@ -219,6 +222,8 @@ class InterviewService:
             interviewer_email=payload.interviewer_email,
             meeting_link=payload.meeting_link,
             meeting_platform=payload.meeting_platform,
+            interview_mode=getattr(payload, 'interview_mode', None),
+            application_id=getattr(payload, 'application_id', None),
             location=payload.location or payload.interview_location,
             interview_location=payload.interview_location or payload.location,
             hr_call_verification=payload.hr_call_verification,
@@ -251,7 +256,43 @@ class InterviewService:
 
         created = await self.interview_repo.create(interview_doc.to_dict())
         logger.info(f"Scheduled new interview ID '{interview_doc.id}' for candidate '{payload.candidate_name}'")
+        await self._notify_interviewers(created, "scheduled", created_by)
+        if getattr(payload, "send_invite", False):
+            await self._dispatch_invite(interview_doc.id, KIND_INVITE)
         return InterviewResponse.model_validate(created)
+
+    async def _dispatch_invite(self, interview_id: str, kind: str, reason: Optional[str] = None) -> Dict[str, Any]:
+        """Send an invite email with its .ics. A mail failure is logged and never fails the calendar action."""
+        db = self.interview_repo.db
+        result = await InterviewInviteService(db, self.interview_repo).send(interview_id, kind, reason)
+        if not result.get("sent"):
+            logger.warning(f"Interview {kind} email not sent for {interview_id}: {result.get('reason')}")
+        return result
+
+    async def _notify_interviewers(self, interview: Optional[Dict[str, Any]], change: str, actor_id: Optional[str] = None) -> None:
+        """In-app notice to the interview's assigned interviewers (not the person who made the change). Never raises."""
+        if not interview:
+            return
+        try:
+            from app.services.evaluation_service import assigned_interviewer_ids
+            from app.services.notification_service import NotificationService
+
+            to = [u for u in assigned_interviewer_ids(interview) if u != actor_id]
+            if not to:
+                return
+            who = interview.get("candidate_name") or "a candidate"
+            job = f" for {interview['job_title']}" if interview.get("job_title") else ""
+            when = " ".join(x for x in (interview.get("scheduled_date"), interview.get("scheduled_time")) if x)
+            titles = {"scheduled": "Interview scheduled", "rescheduled": "Interview rescheduled",
+                      "updated": "Interview updated", "cancelled": "Interview cancelled"}
+            message = f"Interview with {who}{job}" + (f" on {when}" if when and change != "cancelled" else "") + (
+                " was cancelled." if change == "cancelled" else ".")
+            await NotificationService(self.interview_repo.db).notify_users(
+                to, title=titles.get(change, "Interview updated"), message=message,
+                notification_type="interview", link="/interviews", company_id=interview.get("company_id"),
+            )
+        except Exception as exc:
+            logger.warning(f"Interview notification not created for {interview.get('id')}: {exc}")
 
     async def batch_create_interviews(
         self, payload: InterviewBatchCreateRequest, created_by: Optional[str] = None
@@ -307,6 +348,7 @@ class InterviewService:
                 interviewer_email=payload.interviewer_email,
                 meeting_link=payload.meeting_link,
                 meeting_platform=payload.meeting_platform,
+                interview_mode=getattr(payload, 'interview_mode', None),
                 location=loc,
                 interview_location=loc,
                 hr_call_verification=payload.hr_call_verification,
@@ -339,6 +381,7 @@ class InterviewService:
 
             created = await self.interview_repo.create(interview_doc.to_dict())
             created_interviews.append(InterviewResponse.model_validate(created))
+            await self._notify_interviewers(created, "scheduled", created_by)
 
         logger.info(f"Batch scheduled {len(created_interviews)} interviews for job '{payload.job_title}'")
         return created_interviews
@@ -466,6 +509,9 @@ class InterviewService:
 
         updated_doc = await self.interview_repo.update(interview_id, update_fields)
         logger.info(f"Updated interview record '{interview_id}'")
+        watched = ("scheduled_date", "scheduled_time", "timezone", "interviewer_id", "interviewers")
+        if any(k in update_fields and update_fields[k] != existing.get(k) for k in watched):
+            await self._notify_interviewers(updated_doc, "updated", updated_by)
         return InterviewResponse.model_validate(updated_doc)
 
     async def reschedule_interview(
@@ -515,6 +561,8 @@ class InterviewService:
         )
 
         logger.info(f"Rescheduled interview ID '{interview_id}' to date {payload.scheduled_date} at {payload.scheduled_time}")
+        await self._dispatch_invite(interview_id, KIND_RESCHEDULE)
+        await self._notify_interviewers(updated_doc, "rescheduled", updated_by)
         return InterviewResponse.model_validate(updated_doc)
 
     async def submit_feedback(
@@ -572,6 +620,9 @@ class InterviewService:
         )
 
         logger.info(f"Submitted feedback for interview ID '{interview_id}'")
+        # Phase 9: interview ratings feed the candidate's skill matrix
+        from app.services.skill_intelligence_service import recalculate_skills_for
+        await recalculate_skills_for(self.interview_repo.db, existing.get("candidate_id"), existing.get("resume_id"))
         return InterviewResponse.model_validate(updated_doc)
 
     async def get_next_round_number(
@@ -724,7 +775,7 @@ class InterviewService:
         candidate_email = payload.candidate_email or existing.get("candidate_email")
         if not candidate_email and existing.get("resume_id"):
             try:
-                db = self.interview_repo.collection.database
+                db = self.interview_repo.db
                 resume_doc = await db.resumes.find_one({"_id": existing.get("resume_id")})
                 if resume_doc:
                     parsed = resume_doc.get("parsed_data") or {}
@@ -748,6 +799,7 @@ class InterviewService:
         fb_files = existing.get("interview_feedback_files") or []
         combined_attachment_urls = list(dict.fromkeys([f for f in (doc_files + fb_files) if f and str(f).strip()]))
 
+        mail_ctx = await email_context(get_database())
         replacements = {
             "candidate_name": existing.get("candidate_name", ""),
             "candidate_email": candidate_email or "N/A",
@@ -764,7 +816,8 @@ class InterviewService:
             "interview_type": str(existing.get("interview_type", "")).replace("_", " "),
             "round_number": str(existing.get("round_number", 1)),
             "notes": notes_content,
-            "company_name": config_model.sender_name or "HR Team",
+            "company_name": mail_ctx.get("company_name") or config_model.sender_name or "HR Team",
+            "app_name": mail_ctx.get("app_name") or "",
         }
 
         def render_text(text: str) -> str:
@@ -983,10 +1036,10 @@ class InterviewService:
 
                 msg_cand = EmailMessage()
                 msg_cand["Subject"] = cand_subject
-                msg_cand["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+                address(msg_cand, config_model, mail_ctx)
                 msg_cand["To"] = ", ".join(cand_addrs)
                 msg_cand.set_content("Please enable HTML to view this email.")
-                msg_cand.add_alternative(cand_final_html, subtype='html')
+                msg_cand.add_alternative(brandify(cand_final_html, mail_ctx), subtype='html')
 
                 if config_model.use_ssl:
                     server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
@@ -1044,10 +1097,10 @@ class InterviewService:
 
                 msg_int = EmailMessage()
                 msg_int["Subject"] = int_subject
-                msg_int["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+                address(msg_int, config_model, mail_ctx)
                 msg_int["To"] = ", ".join(int_addrs)
                 msg_int.set_content("Please enable HTML to view this email.")
-                msg_int.add_alternative(int_final_html, subtype='html')
+                msg_int.add_alternative(brandify(int_final_html, mail_ctx), subtype='html')
 
                 if config_model.use_ssl:
                     server = smtplib.SMTP_SSL(config_model.smtp_server, config_model.smtp_port)
@@ -1102,7 +1155,7 @@ class InterviewService:
         # Resolve interview type labels from configured types (by id, then code)
         type_labels: Dict[str, str] = {}
         try:
-            db = self.interview_repo.collection.database
+            db = self.interview_repo.db
             async for t in db.interview_types.find({}, {"id": 1, "code": 1, "name": 1}):
                 if t.get("id"):
                     type_labels[str(t["id"])] = t.get("name", "")
@@ -1220,12 +1273,13 @@ class InterviewService:
 </html>"""
 
         to_addrs = list(dict.fromkeys(str(e) for e in payload.to_emails))
+        mail_ctx = await email_context(get_database())
         msg = EmailMessage()
         msg["Subject"] = f"Interview Status Summary - {len(docs)} Candidate Session{'s' if len(docs) != 1 else ''}"
-        msg["From"] = f"{config_model.sender_name} <{config_model.sender_email}>"
+        address(msg, config_model, mail_ctx)
         msg["To"] = ", ".join(to_addrs)
         msg.set_content("Please enable HTML to view this email.")
-        msg.add_alternative(email_html, subtype="html")
+        msg.add_alternative(brandify(email_html, mail_ctx), subtype="html")
 
         if payload.attachment_format != "none":
             export_headers = [
@@ -1389,21 +1443,11 @@ class InterviewService:
         updated_doc = await self.interview_repo.update(interview_id, update_fields)
 
         if payload.send_email:
-            try:
-                candidate_email = existing.get("candidate_email")
-                interviewer_email = existing.get("interviewer_email")
-                email_payload = SendInterviewEmailRequest(
-                    send_to_candidate=True if candidate_email else False,
-                    candidate_email=candidate_email,
-                    send_to_interviewer=True if interviewer_email else False,
-                    interviewer_email=interviewer_email,
-                    custom_notes=f"Interview Session Cancelled. Reason: {reason_str or 'No reason specified'}",
-                )
-                await self.send_interview_email(interview_id, email_payload)
-            except Exception as e:
-                logger.warning(f"Interview cancelled successfully but failed to dispatch cancellation email: {e}")
+            # Cancellation is sent as an .ics CANCEL so calendar clients remove the event
+            await self._dispatch_invite(interview_id, KIND_CANCEL, reason_str)
 
         logger.info(f"Cancelled interview ID '{interview_id}'")
+        await self._notify_interviewers(updated_doc or existing, "cancelled", updated_by)
         return InterviewResponse.model_validate(updated_doc)
 
 

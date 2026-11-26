@@ -12,7 +12,7 @@ data. Startup jobs, sign-in and the super admin's own screens run in `system_sco
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Generator, Iterator, List, Optional
 
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
@@ -32,16 +32,43 @@ TENANT_COLLECTIONS = frozenset({
     "job_openings",
     "careers_page_settings",
     "job_applications",
+    # Interview panels, evaluation forms and per-interviewer evaluations (Phase 8)
+    "interview_panels",
+    "evaluation_forms",
+    "interview_evaluations",
     "integration_api_keys",
     "integration_api_logs",
     "settings",
     "mail_templates",
     "resume_templates",
+    "masters",
+    "audit_logs",
+    "user_invitations",
+    "job_templates",
+    "career_pages",
+    "application_drafts",
+    "candidates",
+    "candidate_documents",
+    "interview_panels",
+    "evaluation_forms",
+    "interview_evaluations",
+    "candidate_skills",
+    "notifications",
+    "notification_logs",
+    "usage_meters",
+    "workflows",
+    "application_history",
+    # ATS hub (pipeline, offers, onboarding, scorecards, automation templates, its audit trail)
+    "ats_audit_logs",
+    "ats_automation_templates",
+    "ats_offers",
+    "ats_onboarding",
+    "ats_scorecards",
 })
 
-# In these, documents with no company (the built-in system roles) can be read by every company,
-# but only changed from system scope.
-SHARED_READ_COLLECTIONS = frozenset({"roles"})
+# In these, documents with no company (built-in system roles, platform master data) can be read by every
+# company, but only changed from system scope.
+SHARED_READ_COLLECTIONS = frozenset({"roles", "masters"})
 
 _SYSTEM = "__system__"
 _scope: ContextVar[Optional[str]] = ContextVar("company_scope", default=None)
@@ -69,7 +96,7 @@ def in_system_scope() -> bool:
 
 
 @contextmanager
-def system_scope() -> Iterator[None]:
+def system_scope() -> Generator[None, None, None]:
     """See and change every company's data. For startup jobs, sign-in and super admin screens only."""
     token = _scope.set(_SYSTEM)
     try:
@@ -79,7 +106,7 @@ def system_scope() -> Iterator[None]:
 
 
 @contextmanager
-def company_scope(company_id: str) -> Iterator[None]:
+def company_scope(company_id: str) -> Generator[None, None, None]:
     """Run a block for one company, then return to the previous scope."""
     if not company_id:
         raise TenantScopeError("A company is required.")
@@ -113,9 +140,9 @@ def _and(query: Optional[Dict[str, Any]], condition: Dict[str, Any]) -> Dict[str
 class ScopedCollection:
     """A Motor collection limited to the request's company. Unknown attributes pass through (name, indexes)."""
 
-    def __init__(self, collection: AsyncIOMotorCollection):
+    def __init__(self, collection: Any):
         self._c = collection
-        self._name = collection.name
+        self._name = getattr(collection, "name", "")
         self._shared_read = self._name in SHARED_READ_COLLECTIONS
 
     # ── filters ──
@@ -228,11 +255,12 @@ class ScopedCollection:
 class ScopedDatabase:
     """A Motor database whose company collections are ScopedCollections."""
 
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db: Any):
         self._db = db
 
-    def _wrap(self, collection: AsyncIOMotorCollection):
-        return ScopedCollection(collection) if collection.name in TENANT_COLLECTIONS else collection
+    def _wrap(self, collection: Any):
+        name = getattr(collection, "name", "")
+        return ScopedCollection(collection) if name in TENANT_COLLECTIONS else collection
 
     def __getitem__(self, name: str):
         return self._wrap(self._db[name])

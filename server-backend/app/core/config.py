@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "ai_resume_parser_db"
+    # Interview reminder emails (24h and 1h). Turn off on a copy of real data to avoid emailing real people.
+    INTERVIEW_REMINDERS_ENABLED: bool = True
 
     SECRET_KEY: str = "super-secret-key-change-in-production-ai-resume-parser-2026"
     ALGORITHM: str = "HS256"
@@ -43,6 +45,11 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
     DEFAULT_ADMIN_PASSWORD: str = "Admin@123"
     DEFAULT_ADMIN_ROLE: str = "admin"
+    # Role permission checks on the API: "warn" logs a missing permission and lets the request through,
+    # "enforce" refuses it. Start with "warn" on existing data, check the logs, then switch.
+    PERMISSIONS_MODE: str = "warn"
+    # Rate limits on sign-in and the public applicant endpoints (app.core.rate_limit)
+    RATE_LIMITS_ENABLED: bool = True
 
     UPLOAD_FOLDER: str = "uploads"
     OPENAI_API_KEY: str = "sk-placeholder-api-key"
@@ -57,6 +64,18 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-south-1"
     AWS_BUCKET_NAME: str = "farm2bagv4live"
     S3_UR: str = "https://farm2bagv4live.s3.ap-south-1.amazonaws.com/"
+    # New uploads are private; the API hands out signed links that expire (app.core.file_access).
+    # Set to "public-read" only to go back to the old public URLs.
+    S3_OBJECT_ACL: str = "private"
+    FILE_LINK_TTL_MINUTES: int = 60
+    # Public address of this API (e.g. https://api.example.com), used for logo links inside emails.
+    # Empty: the address of the request that triggered the email.
+    PUBLIC_API_BASE_URL: str = ""
+    # Base domain for company careers subdomains, e.g. "careers.hirelogics.com" -> acme.careers.hirelogics.com.
+    # Empty: platform subdomains are off; custom domains still work.
+    CAREERS_DOMAIN: str = ""
+    # The built embed script (npm run build:careers), served at /api/v1/public/careers-embed.js.
+    CAREERS_EMBED_FILE: str = os.path.join(os.path.dirname(BASE_DIR), "dist-careers", "shinelogics-careers.js")
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),

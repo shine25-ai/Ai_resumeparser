@@ -48,7 +48,7 @@ def service(monkeypatch):
 
     sent = {}
 
-    def _fake_send(config, to_email, code):
+    def _fake_send(config, to_email, code, ctx=None):
         sent["to"] = to_email
         sent["code"] = code
 

@@ -1,5 +1,6 @@
 import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { loginPath } from "../theme/brandingCache";
 
 const ROUTE_PERMISSION_MAP: Record<string, string> = {
   "/": "dashboard",
@@ -11,6 +12,8 @@ const ROUTE_PERMISSION_MAP: Record<string, string> = {
   "/interviews": "interviews",
   "/analytics": "analytics",
   "/settings": "settings",
+  "/career-page": "career-page",
+  "/audit-log": "audit-log",
 };
 
 export const ProtectedRoute: React.FC = () => {
@@ -20,7 +23,7 @@ export const ProtectedRoute: React.FC = () => {
   const userStr = localStorage.getItem("user");
 
   if (!accessToken || !refreshToken || !userStr) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={loginPath()} replace />;
   }
 
   try {

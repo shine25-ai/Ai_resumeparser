@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.controllers.interview_controller import InterviewController
 from app.core.database import get_database
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import require_access, get_current_active_user
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
     InterviewAiPrepRequest,
@@ -26,7 +26,18 @@ from app.schemas.interview import (
 from app.services.interview_service import InterviewService
 from app.utils.enums import InterviewStatus
 
-router = APIRouter(prefix="/api/v1/interviews", tags=["Interviews"])
+
+_INTERVIEWS_ACCESS = require_access("interviews", {
+    ("POST", "/api/v1/interviews/check-conflict"): "interviews:view",
+    ("POST", "/api/v1/interviews/upload-document"): "interviews:edit",
+    ("POST", "/api/v1/interviews/share-summary"): "interviews:view",
+    ("PUT", "/api/v1/interviews/bulk-feedback"): "evaluations:create",
+    ("POST", "/api/v1/interviews/{interview_id}/feedback"): "evaluations:create",
+    ("POST", "/api/v1/interviews/{interview_id}/reschedule"): "interviews:edit",
+    ("POST", "/api/v1/interviews/{interview_id}/cancel"): "interviews:edit",
+    ("POST", "/api/v1/interviews/{interview_id}/send-mail"): "interviews:edit",
+})
+router = APIRouter(prefix="/api/v1/interviews", tags=["Interviews"], dependencies=[Depends(_INTERVIEWS_ACCESS)])
 
 
 def get_interview_controller(db: AsyncIOMotorDatabase = Depends(get_database)) -> InterviewController:

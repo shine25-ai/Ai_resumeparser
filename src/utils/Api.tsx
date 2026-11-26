@@ -56,6 +56,8 @@ export const DASHBOARD_INSIGHTS = `${BASE_URL}/dashboard/insights`;
 export interface LoginPayload {
   email: string;
   password: string;
+  /** Company sign-in page (/<slug>/login): only that company's users may sign in there */
+  company?: string;
 }
 
 export interface UserProfile {
@@ -69,6 +71,7 @@ export interface UserProfile {
   company_id?: string;
   company_name?: string;
   is_superadmin?: boolean;
+  department?: string;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +82,7 @@ export interface UserCreatePayload {
   password: string;
   role?: string;
   is_active?: boolean;
+  department?: string;
 }
 
 export interface UserUpdatePayload {
@@ -87,6 +91,7 @@ export interface UserUpdatePayload {
   password?: string;
   role?: string;
   is_active?: boolean;
+  department?: string;
 }
 
 export interface RoleItem {
@@ -98,6 +103,8 @@ export interface RoleItem {
   is_system: boolean;
   created_at: string;
   updated_at: string;
+  /** Module permissions ("jobs:view") the role really has, with old page names expanded. */
+  effective_permissions?: string[];
 }
 
 export interface RoleCreatePayload {
@@ -128,7 +135,11 @@ export interface AuthSuccessResult {
   access_token: string;
   refresh_token: string;
   token_type: string;
-  user: UserProfile;
+  user?: UserProfile;
+  mfa_required?: boolean;
+  mfa_enrolled?: boolean;
+  mfa_token?: string;
+  email?: string;
 }
 
 /**
@@ -192,9 +203,60 @@ export const loginUser = async (credentials: LoginPayload): Promise<AuthSuccessR
     throw new Error((resData as any).detail || resData.message || "Invalid email or password");
   }
 
+  if ((resData.data as any)?.mfa_required) {
+    return {
+      access_token: "",
+      refresh_token: "",
+      token_type: resData.data.token_type || "bearer",
+      mfa_required: true,
+      mfa_enrolled: (resData.data as any).mfa_enrolled,
+      mfa_token: (resData.data as any).mfa_token,
+      email: (resData.data as any).email,
+    };
+  }
+
   const { access_token, refresh_token, token_type } = resData.data;
   const user = await fetchUserProfile(access_token);
 
+  return {
+    access_token,
+    refresh_token,
+    token_type,
+    user,
+  };
+};
+
+const mfaSignInPost = async (path: string, body: Record<string, string>) => {
+  const response = await fetch(`${BASE_URL}/auth/mfa/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const resData = await response.json().catch(() => ({}));
+  if (!response.ok || !resData.success) {
+    throw new Error(resData.message || resData.detail || "Invalid verification code");
+  }
+  return resData.data;
+};
+
+const finishMfaSignIn = async (data: { access_token: string; refresh_token: string; token_type: string }): Promise<AuthSuccessResult> => {
+  const { access_token, refresh_token, token_type } = data;
+  const user = await fetchUserProfile(access_token);
+  return { access_token, refresh_token, token_type, user };
+};
+
+export interface MfaSetup { secret: string; otpauth_url: string; backup_codes: string[]; qr_svg: string }
+
+/** First-time two-factor setup during sign-in (MFA is required but the account has no authenticator yet). */
+export const startMfaSetup = async (mfa_token: string): Promise<MfaSetup> => mfaSignInPost("setup/start", { mfa_token });
+
+export const confirmMfaSetup = async (mfa_token: string, code: string): Promise<AuthSuccessResult> =>
+  finishMfaSignIn(await mfaSignInPost("setup/confirm", { mfa_token, code }));
+
+export const verifyMfaLogin = async (mfa_token: string, code: string): Promise<AuthSuccessResult> => {
+  const resData = { data: await mfaSignInPost("verify", { mfa_token, code }) };
+  const { access_token, refresh_token, token_type } = resData.data;
+  const user = await fetchUserProfile(access_token);
   return {
     access_token,
     refresh_token,
@@ -2048,3 +2110,122 @@ export const getIntegrationUsage = (days: number, keyId?: string) =>
 
 export const getIntegrationLogs = (params: { page: number; limit: number; key_id?: string; outcome?: string; endpoint?: string }) =>
   integrationRequest<IntegrationLogPage>(`/logs${toQuery(params)}`);
+
+// ── Phase 11: SaaS & Operations APIs ──────────────────────────────────────────
+
+export interface UsageMeterItem {
+  used: number;
+  limit: number;
+  pct: number;
+  is_unlimited: boolean;
+}
+
+export interface CompanyUsageMeters {
+  company_id: string;
+  company_name: string;
+  plan: string;
+  plan_valid_until?: string | null;
+  is_expired: boolean;
+  billing_mode: string;
+  month: string;
+  users: UsageMeterItem;
+  active_jobs: UsageMeterItem;
+  storage_mb: UsageMeterItem;
+  ai_parses: UsageMeterItem;
+}
+
+export const fetchCompanyUsageMeters = async (companyId: string): Promise<CompanyUsageMeters> => {
+  const token = localStorage.getItem("access_token") || "";
+  const res = await apiFetch(`${BASE_URL}/companies/${companyId}/usage`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  return data.data || data;
+};
+
+export interface InAppNotification {
+  id: string;
+  company_id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: string;
+  link?: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export const fetchInAppNotifications = async (unreadOnly = false): Promise<{ notifications: InAppNotification[]; unread_count: number }> => {
+  const token = localStorage.getItem("access_token") || "";
+  const res = await apiFetch(`${BASE_URL}/notifications?unread_only=${unreadOnly}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  return data.data || { notifications: [], unread_count: 0 };
+};
+
+export const markInAppNotificationRead = async (id: string): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  await apiFetch(`${BASE_URL}/notifications/${id}/read`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const markAllInAppNotificationsRead = async (): Promise<void> => {
+  const token = localStorage.getItem("access_token") || "";
+  await apiFetch(`${BASE_URL}/notifications/read-all`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const fetchSystemHealthMetrics = async (): Promise<any> => {
+  const token = localStorage.getItem("access_token") || "";
+  const res = await apiFetch(`${BASE_URL}/operations/health`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  return data.data || data;
+};
+
+export const runDataRetentionDryRun = async (companyId?: string): Promise<any> => {
+  const token = localStorage.getItem("access_token") || "";
+  const res = await apiFetch(`${BASE_URL}/operations/retention/dry-run`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ company_id: companyId }),
+  });
+  const data = await res.json();
+  return data.data || data;
+};
+
+export const applyDataRetention = async (companyId?: string): Promise<any> => {
+  const token = localStorage.getItem("access_token") || "";
+  const res = await apiFetch(`${BASE_URL}/operations/retention/apply`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ company_id: companyId }),
+  });
+  const data = await res.json();
+  return data.data || data;
+};
+
+export const startMfaEnrolment = async (): Promise<MfaSetup> => {
+  const res = await apiFetch(`${BASE_URL}/auth/mfa/enrol/start`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.detail || "Could not start two-factor setup");
+  return data.data || data;
+};
+
+export const confirmMfaEnrolment = async (code: string): Promise<{ success: boolean; message: string }> => {
+  const res = await apiFetch(`${BASE_URL}/auth/mfa/enrol/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.detail || "Verification failed");
+  return data.data || data;
+};
+

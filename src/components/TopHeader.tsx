@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Home,
-  ChevronRight,
   Bell,
+  HelpCircle,
+  Search,
   ChevronDown,
   Moon,
   Sun,
@@ -11,30 +11,19 @@ import {
   LogOut,
   CheckCheck,
 } from 'lucide-react';
-import { getDashboardNotifications } from '../utils/Api';
+import {
+  getDashboardNotifications,
+  fetchInAppNotifications,
+  markInAppNotificationRead,
+  markAllInAppNotificationsRead,
+} from '../utils/Api';
 import type { DashboardNotification } from '../types/dashboard';
+import { clearBrandingCache, useTheme } from '../theme/ThemeProvider';
+import { loginPath } from '../theme/brandingCache';
+import CommandPalette from './shell/CommandPalette';
+import { isPlatformMode, roleLabel } from './shell/navigation';
 
-const STORAGE_DARK_KEY = 'ats_dark_mode';
 const STORAGE_READ_NOTIFS_KEY = 'dashboard_read_notifs_v1';
-
-const ROUTE_TITLES: Record<string, string> = {
-  '/': 'Dashboard',
-  '/upload': 'Upload Resume',
-  '/database': 'Candidates',
-  '/resume-templates': 'Resume Templates',
-  '/jd-match': 'JD Match',
-  '/job-openings': 'Job Openings',
-  '/interviews': 'Interviews',
-  '/analytics': 'Analytics',
-  '/audit-log': 'Audit Log',
-  '/settings': 'Settings',
-};
-
-function getPageTitle(pathname: string): string {
-  if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
-  if (pathname.startsWith('/candidates/')) return 'Candidate Profile';
-  return 'Dashboard';
-}
 
 function getSeverityDot(severity: DashboardNotification['severity']) {
   if (severity === 'danger') return 'bg-rose-500';
@@ -51,13 +40,8 @@ export function TopHeader() {
   const [userRole, setUserRole] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(STORAGE_DARK_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Dark mode follows the company's setting (off / user's choice / system): see ThemeProvider.
+  const { isDark: darkMode, canToggleDark, toggleDark, branding } = useTheme();
 
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => {
@@ -74,18 +58,26 @@ export function TopHeader() {
   });
 
   const [notifOpen, setNotifOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpRef = useRef<HTMLDivElement>(null);
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+
+  // Ctrl+K / ⌘K opens the search from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [profileOpen, setProfileOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    try {
-      localStorage.setItem(STORAGE_DARK_KEY, String(darkMode));
-    } catch {
-      // ignore
-    }
-  }, [darkMode]);
 
   useEffect(() => {
     try {
@@ -94,7 +86,7 @@ export function TopHeader() {
         const u = JSON.parse(raw);
         if (u.full_name) setUserName(u.full_name);
         if (u.email) setUserEmail(u.email);
-        if (u.role) setUserRole(u.role.charAt(0).toUpperCase() + u.role.slice(1));
+        setUserRole(isPlatformMode(u) ? 'Super Admin' : roleLabel(u.role));
       }
     } catch {
       // ignore
@@ -103,14 +95,46 @@ export function TopHeader() {
 
   useEffect(() => {
     let active = true;
-    getDashboardNotifications(7)
+    fetchInAppNotifications()
       .then((res) => {
-        if (active && Array.isArray(res?.notifications)) {
-          setNotifications(res.notifications);
+        if (!active) return;
+        if (Array.isArray(res?.notifications) && res.notifications.length > 0) {
+          const mapped: (DashboardNotification & { inAppId?: string; isRead?: boolean })[] = res.notifications.map((n) => ({
+            id: n.id,
+            inAppId: n.id,
+            title: n.title,
+            description: n.message,
+            time: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+            type: n.type || 'info',
+            severity: (n.type === 'limit_warning' || n.type === 'warning' ? 'warning' : n.type === 'error' ? 'danger' : 'info') as any,
+            actionPath: n.link || '',
+            isRead: n.is_read,
+          }));
+          setNotifications(mapped);
+          const read = new Set<string>();
+          mapped.forEach((m) => {
+            if (m.isRead) read.add(m.id);
+          });
+          setReadIds(read);
+          return;
         }
+        // Fallback to dashboard notifications
+        getDashboardNotifications(7)
+          .then((dRes) => {
+            if (active && Array.isArray(dRes?.notifications)) {
+              setNotifications(dRes.notifications);
+            }
+          })
+          .catch(() => undefined);
       })
       .catch(() => {
-        // silent fallback
+        getDashboardNotifications(7)
+          .then((dRes) => {
+            if (active && Array.isArray(dRes?.notifications)) {
+              setNotifications(dRes.notifications);
+            }
+          })
+          .catch(() => undefined);
       });
     return () => {
       active = false;
@@ -118,11 +142,12 @@ export function TopHeader() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!notifOpen && !profileOpen) return;
+    if (!notifOpen && !profileOpen && !helpOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setNotifOpen(false);
         setProfileOpen(false);
+        setHelpOpen(false);
       }
     };
     const onClick = (e: MouseEvent) => {
@@ -132,6 +157,9 @@ export function TopHeader() {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
       }
+      if (helpRef.current && !helpRef.current.contains(e.target as Node)) {
+        setHelpOpen(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     document.addEventListener('mousedown', onClick);
@@ -139,11 +167,12 @@ export function TopHeader() {
       window.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('mousedown', onClick);
     };
-  }, [notifOpen, profileOpen]);
+  }, [notifOpen, profileOpen, helpOpen]);
 
   const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
 
   const markRead = (id: string) => {
+    markInAppNotificationRead(id).catch(() => undefined);
     setReadIds((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
@@ -158,6 +187,7 @@ export function TopHeader() {
   };
 
   const markAllRead = () => {
+    markAllInAppNotificationsRead().catch(() => undefined);
     setReadIds((prev) => {
       const next = new Set(prev);
       notifications.forEach((n) => next.add(n.id));
@@ -172,9 +202,10 @@ export function TopHeader() {
 
   const handleLogout = () => {
     localStorage.removeItem('access_token');
+    clearBrandingCache();
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
-    navigate('/login');
+    navigate(loginPath());
   };
 
   const initials =
@@ -185,36 +216,35 @@ export function TopHeader() {
       .map((part) => part.charAt(0).toUpperCase())
       .join('') || 'U';
 
-  const pageTitle = getPageTitle(location.pathname);
 
   return (
-    <header className="h-16 shrink-0 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30">
-      {/* Left: Clean Breadcrumb (Home > AI Recruiter > Current Page) */}
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[13px] min-w-0">
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-900 transition-colors shrink-0 cursor-pointer"
-        >
-          <Home size={14} className="text-slate-400" />
-          <span className="hidden sm:inline font-medium">AI Recruiter</span>
-        </button>
-        <ChevronRight size={13} className="text-slate-300 shrink-0" />
-        <span className="font-semibold text-slate-900 truncate">{pageTitle}</span>
-      </nav>
+    <header className="h-[68px] shrink-0 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30">
+      {/* Left: search (Ctrl+K) */}
+      <button
+        type="button"
+        onClick={() => setSearchOpen(true)}
+        className="flex h-10 w-full max-w-md items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-400 transition-colors hover:border-slate-300 hover:bg-white cursor-pointer"
+      >
+        <Search size={16} className="shrink-0" />
+        <span className="flex-1 truncate">{isPlatformMode(JSON.parse(localStorage.getItem('user') || 'null')) ? 'Search companies, pages…' : 'Search candidates, jobs, pages…'}</span>
+        <kbd className="hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 sm:inline">{isMac ? '⌘ K' : 'Ctrl + K'}</kbd>
+      </button>
+      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Right: Theme, Notifications Bell, User Avatar */}
       <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-        {/* Theme Toggle */}
+        {/* Theme Toggle (only when the company lets each user choose) */}
+        {canToggleDark && (
         <button
           type="button"
-          onClick={() => setDarkMode((d) => !d)}
+          onClick={toggleDark}
           title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
         >
           {darkMode ? <Sun size={15} className="text-amber-500" /> : <Moon size={15} />}
         </button>
+        )}
 
         {/* Notifications Bell with Unread Badge */}
         <div ref={notifRef} className="relative">
@@ -309,6 +339,29 @@ export function TopHeader() {
           )}
         </div>
 
+        {/* Help */}
+        <div ref={helpRef} className="relative">
+          <button
+            type="button"
+            onClick={() => { setHelpOpen((v) => !v); setNotifOpen(false); setProfileOpen(false); }}
+            aria-label="Help"
+            aria-expanded={helpOpen}
+            className="h-9 w-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <HelpCircle size={17} />
+          </button>
+          {helpOpen && (
+            <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-xl z-50">
+              <p className="mb-2 text-xs font-semibold text-slate-900">Shortcuts</p>
+              <div className="flex items-center justify-between py-1"><span>Search anything</span><kbd className="rounded border border-slate-200 px-1.5 text-[11px]">{isMac ? '⌘ K' : 'Ctrl + K'}</kbd></div>
+              <div className="flex items-center justify-between py-1"><span>Close a pop-up</span><kbd className="rounded border border-slate-200 px-1.5 text-[11px]">Esc</kbd></div>
+              <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-500">Need help? Ask your company administrator{branding.app_name ? ` or the ${branding.app_name} team` : ''}.</p>
+            </div>
+          )}
+        </div>
+
+        <span className="hidden h-8 w-px bg-slate-200 sm:block" />
+
         {/* User Avatar + Dropdown */}
         <div ref={profileRef} className="relative">
           <button
@@ -318,26 +371,30 @@ export function TopHeader() {
               setNotifOpen(false);
             }}
             aria-expanded={profileOpen}
-            className="flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
-            title={`${userName || 'Shine'} (${userRole || 'Admin'})`}
+            className="flex items-center gap-2.5 pl-1 pr-2 py-1 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+            title={`${userName || 'User'} (${userRole})`}
           >
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-white font-semibold text-[11px] flex items-center justify-center shadow-xs shrink-0">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-white font-semibold text-xs flex items-center justify-center shadow-xs shrink-0">
               {initials}
             </div>
-            <ChevronDown size={12} className="text-slate-400 hidden sm:block" />
+            <div className="hidden lg:block text-left leading-tight">
+              <div className="text-sm font-semibold text-slate-900 max-w-[160px] truncate">{userName || 'User'}</div>
+              <div className="text-xs text-slate-500">{userRole}</div>
+            </div>
+            <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
           </button>
 
           {profileOpen && (
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl border border-slate-200 shadow-xl shadow-slate-900/10 py-1.5 z-50">
               <div className="px-3.5 py-2 border-b border-slate-100">
                 <div className="text-xs font-semibold text-slate-900 truncate">
-                  {userName || 'Shine'}
+                  {userName || 'User'}
                 </div>
                 {userEmail && (
                   <div className="text-[11px] text-slate-400 truncate">{userEmail}</div>
                 )}
                 <div className="text-[10px] font-semibold text-indigo-600 uppercase tracking-wider mt-0.5">
-                  {userRole || 'Admin'}
+                  {userRole}
                 </div>
               </div>
 

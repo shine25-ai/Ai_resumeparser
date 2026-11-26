@@ -17,7 +17,13 @@ class UserResponse(BaseModel):
     is_active: bool
     company_id: Optional[str] = None
     company_name: Optional[str] = None
+    company_slug: Optional[str] = None
     is_superadmin: bool = False
+    department: Optional[str] = ""
+    phone: Optional[str] = ""
+    avatar_url: Optional[str] = ""
+    last_login_at: Optional[str] = None
+    ui_theme: Optional[str] = ""
     created_at: str
     updated_at: str
 
@@ -32,6 +38,8 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=6)
     role: str = "user"
     is_active: bool = True
+    department: Optional[str] = Field(default="", max_length=120)
+    phone: Optional[str] = Field(default="", max_length=30)
 
 
 class UserUpdate(BaseModel):
@@ -42,6 +50,11 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=6)
     is_active: Optional[bool] = None
     role: Optional[str] = None
+    department: Optional[str] = Field(None, max_length=120)
+    phone: Optional[str] = Field(None, max_length=30)
+    # A profile photo: an uploaded image (/api/v1/public/branding/assets/...) or an https:// link.
+    avatar_url: Optional[str] = Field(None, max_length=500, pattern=r"^(|https://\S+|/api/v1/public/branding/assets/\S+)$")
+    ui_theme: Optional[str] = Field(None, pattern="^(|light|dark)$")
 
 
 class UserRoleUpdate(BaseModel):
