@@ -8,7 +8,7 @@ Provides:
 3. Pure SVG QR Code renderer (zero external dependencies)
 4. Verification with window drift (±30s)
 5. 8 single-use recovery backup codes
-6. Enforcement checks (Super Admin always; company/platform policies)
+6. Enforcement checks (platform and company policies)
 7. Brute-force protection: 5 wrong codes pause MFA for 15 minutes; a TOTP code works once
 """
 
@@ -106,15 +106,20 @@ class MfaService:
     ) -> bool:
         """
         Check if MFA is mandatory for this user:
-        1. Platform Super Admin: ALWAYS required.
+        1. Platform Super Admin: `security.require_mfa_superadmin`, `security.require_mfa_all_staff`, or `user.mfa_enabled`
         2. Platform policy: `security.require_mfa_all_staff`
         3. Company policy: `tenant_settings.require_mfa`
         4. User voluntary enrolment: `user.mfa_enabled`
         """
+        security = (platform_settings or {}).get("security") or {}
         if user.get("is_superadmin") or user.get("role") == "superadmin":
-            return True
+            return bool(
+                security.get("require_mfa_superadmin")
+                or security.get("require_mfa_all_staff")
+                or user.get("mfa_enabled")
+            )
 
-        if platform_settings and (platform_settings.get("security") or {}).get("require_mfa_all_staff"):
+        if security.get("require_mfa_all_staff"):
             return True
 
         if company and (company.get("tenant_settings") or {}).get("require_mfa"):
@@ -265,9 +270,11 @@ class MfaService:
         if not user:
             raise NotFoundError("User not found.")
 
-        if user.get("is_superadmin") or user.get("role") == "superadmin":
-            raise ForbiddenError("MFA is permanently mandatory for Super Admin accounts.")
         if self.is_mfa_required({**user, "mfa_enabled": False}, company, platform_settings):
+            security = (platform_settings or {}).get("security") or {}
+            is_super = bool(user.get("is_superadmin") or user.get("role") == "superadmin")
+            if security.get("require_mfa_all_staff") or (is_super and security.get("require_mfa_superadmin")):
+                raise ForbiddenError("Two-factor sign-in is required by platform policy, so it can't be turned off.")
             raise ForbiddenError("Two-factor sign-in is required for your company, so it can't be turned off.")
         if self.locked_until(user):
             raise ForbiddenError("Too many wrong codes. Try again later.")

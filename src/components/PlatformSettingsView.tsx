@@ -30,6 +30,7 @@ interface PlatformSettingsData {
   default_language: string;
   allowed_resume_types: string[];
   security: {
+    require_mfa_superadmin: boolean;
     require_mfa_all_staff: boolean;
     session_timeout_minutes: number;
   };
@@ -299,15 +300,25 @@ export default function PlatformSettingsView() {
               <h2 className="text-sm font-bold text-slate-900">Security & Authentication Policies</h2>
             </div>
             <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3.5 border border-slate-200/60">
+              <label className="flex items-center justify-between rounded-xl border border-slate-200 p-3.5 cursor-pointer">
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Platform Super Admin MFA</p>
-                  <p className="text-[11px] text-slate-500">Permanently enforced for root platform operators.</p>
+                  <p className="text-xs font-bold text-slate-900">Require MFA for the super admin</p>
+                  <p className="text-[11px] text-slate-500">
+                    Require TOTP authenticator setup for platform super admin accounts at login (off by default).
+                  </p>
                 </div>
-                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                  Always Mandatory
-                </span>
-              </div>
+                <input
+                  type="checkbox"
+                  checked={settings.security?.require_mfa_superadmin ?? false}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      security: { ...settings.security, require_mfa_superadmin: e.target.checked },
+                    })
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+              </label>
 
               <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3.5">
                 <div>
