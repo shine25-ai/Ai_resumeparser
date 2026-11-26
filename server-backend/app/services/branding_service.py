@@ -56,6 +56,12 @@ DEFAULT_INTEGRATIONS = [
     {"id": "webhooks", "name": "Custom Webhooks", "category": "developer", "is_enabled": False, "description": "Post HTTP payloads on candidate and application events."},
 ]
 
+DEFAULT_SECURITY = {
+    "require_mfa_superadmin": False,
+    "require_mfa_all_staff": False,
+    "session_timeout_minutes": 1440,
+}
+
 DEFAULT_EMAIL_TEMPLATES = {
     "welcome": {"subject": "Welcome to {app_name}", "body": "Hello {user_name}, welcome to your recruitment workspace."},
     "interview_invite": {"subject": "Interview Invitation: {job_title} at {company_name}", "body": "Dear {candidate_name}, you are invited for an interview."},
@@ -82,9 +88,9 @@ class BrandingService:
             "default_language": doc.get("default_language") or "en",
             "allowed_resume_types": doc.get("allowed_resume_types") or list(RESUME_TYPES),
             "branding": doc.get("branding") or {},
-            "security": doc.get("security") or {
-                "require_mfa_all_staff": False,
-                "session_timeout_minutes": 1440,
+            "security": {
+                **DEFAULT_SECURITY,
+                **(doc.get("security") or {}),
             },
             "email_templates": doc.get("email_templates") or DEFAULT_EMAIL_TEMPLATES,
             "integrations": doc.get("integrations") or DEFAULT_INTEGRATIONS,
@@ -113,8 +119,10 @@ class BrandingService:
         if isinstance(changes.get("branding"), dict):
             update["branding"] = _merge_partial(current["branding"], clean_branding(changes["branding"]))
         if "security" in changes and isinstance(changes["security"], dict):
-            sec = dict(current.get("security") or {})
+            sec = dict(current.get("security") or DEFAULT_SECURITY)
             sec.update(changes["security"])
+            for key in ("require_mfa_superadmin", "require_mfa_all_staff"):
+                sec[key] = bool(sec.get(key, False))
             update["security"] = sec
         if "email_templates" in changes and isinstance(changes["email_templates"], dict):
             tmpl = dict(current.get("email_templates") or {})

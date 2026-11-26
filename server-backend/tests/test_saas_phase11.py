@@ -688,3 +688,35 @@ async def test_p11_09_change_company_plan_limits_and_history():
     assert comp_doc["plan_history"][0]["to_plan"] == "growth"
 
 
+@pytest.mark.asyncio
+async def test_mfa_superadmin_off_by_default_and_policy_checks():
+    """Super Admin MFA is off by default and controlled by security.require_mfa_superadmin."""
+    from app.services.branding_service import BrandingService
+
+    db = FakeDatabase()
+    branding = BrandingService(db)
+    settings = await branding.platform_settings()
+    assert settings["security"]["require_mfa_superadmin"] is False
+    assert settings["security"]["require_mfa_all_staff"] is False
+
+    mfa_svc = MfaService(db)
+    superadmin = {"id": "sa-p11", "email": "root@platform.com", "role": "superadmin", "mfa_enabled": False}
+    staff = {"id": "st-p11", "email": "staff@co.com", "role": "recruiter", "mfa_enabled": False}
+
+    # Off by default for both superadmin and staff
+    assert mfa_svc.is_mfa_required(superadmin, None, settings) is False
+    assert mfa_svc.is_mfa_required(staff, None, settings) is False
+
+    # require_mfa_superadmin affects superadmin only
+    sa_required = {"security": {"require_mfa_superadmin": True, "require_mfa_all_staff": False}}
+    assert mfa_svc.is_mfa_required(superadmin, None, sa_required) is True
+    assert mfa_svc.is_mfa_required(staff, None, sa_required) is False
+
+    # Voluntary enrolment still requires MFA for superadmin
+    assert mfa_svc.is_mfa_required({**superadmin, "mfa_enabled": True}, None, settings) is True
+
+    # Staff policies remain enforced
+    assert mfa_svc.is_mfa_required(staff, {"tenant_settings": {"require_mfa": True}}, settings) is True
+    assert mfa_svc.is_mfa_required(staff, None, {"security": {"require_mfa_all_staff": True}}) is True
+
+
