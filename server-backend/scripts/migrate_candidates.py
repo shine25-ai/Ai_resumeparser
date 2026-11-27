@@ -88,6 +88,14 @@ def print_table(title: str, table: Dict[str, Counter], names: Dict[str, str]):
     print()
 
 
+def _years(value: Any) -> Optional[float]:
+    """Parsed experience can be a number, "5", "5.5 years" or empty; the candidate stores a number or nothing."""
+    try:
+        return float(str(value).split()[0]) if value not in (None, "") else None
+    except (ValueError, IndexError):
+        return None
+
+
 async def run_migration(db, apply: bool = False) -> Dict[str, int]:
     now = utc_now().isoformat()
     stats = {
@@ -162,11 +170,11 @@ async def run_migration(db, apply: bool = False) -> Dict[str, int]:
                         phone=phone,
                         normalized_phone=norm_ph,
                         phones=[phone] if phone else [],
-                        location=pd.get("location", ""),
-                        linkedin=pd.get("linkedin", ""),
-                        portfolio=pd.get("portfolio", ""),
-                        total_experience_years=pd.get("total_experience_years"),
-                        current_role=pd.get("current_role") or primary_r.get("job_title", ""),
+                        location=pd.get("location") or "",
+                        linkedin=pd.get("linkedin") or "",
+                        portfolio=pd.get("portfolio") or "",
+                        total_experience_years=_years(pd.get("total_experience_years")),
+                        current_role=pd.get("current_role") or primary_r.get("job_title") or "",
                         skills=skills,
                         tags=tags,
                         source=primary_r.get("resume_source") or "Upload",

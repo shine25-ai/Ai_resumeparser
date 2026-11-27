@@ -314,3 +314,6 @@ class FakeDatabase:
         return self.collections.setdefault(name, FakeCollection(name))
 
     get_collection = __getitem__
+
+    async def list_collection_names(self) -> List[str]:
+        return [name for name, coll in self.collections.items() if coll.docs]
